@@ -1,0 +1,18 @@
+# Claude Code session data
+/.claude
+
+# Gradle caches and build outputs
+.gradle/
+build/
+app/build/
+
+# Android Studio / IntelliJ project files
+.idea/
+*.iml
+
+# Local machine config — never commit (contains your SDK path)
+local.properties
+
+# OS noise
+.DS_Store
+Thumbs.db

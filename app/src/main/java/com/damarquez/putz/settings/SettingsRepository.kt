@@ -1,0 +1,61 @@
+package com.damarquez.putz.settings
+
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import com.damarquez.putz.security.SecureStorage
+import com.damarquez.putz.ui.theme.AppCategory
+import com.damarquez.putz.ui.theme.AppMode
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class SettingsRepository @Inject constructor(
+    private val dataStore: DataStore<Preferences>,
+    private val secureStorage: SecureStorage,
+) {
+    // Auth token lives in EncryptedSharedPreferences via SecureStorage.
+    // StateFlow so callers get the current value on first collection, no null-initial workaround needed.
+    val authTokenFlow: StateFlow<String> get() = secureStorage.authTokenFlow
+
+    val oauthClientIdFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.OAUTH_CLIENT_ID] ?: ""
+    }
+
+    val appCategoryFlow: Flow<AppCategory> = dataStore.data.map { prefs ->
+        when (prefs[AppSettingsKeys.APP_CATEGORY]) {
+            AppCategory.EINK.name -> AppCategory.EINK
+            else -> AppCategory.NORMAL
+        }
+    }
+
+    val appModeFlow: Flow<AppMode> = dataStore.data.map { prefs ->
+        when (prefs[AppSettingsKeys.APP_MODE]) {
+            AppMode.LIGHT.name -> AppMode.LIGHT
+            AppMode.DARK.name -> AppMode.DARK
+            else -> AppMode.SYSTEM
+        }
+    }
+
+    fun saveAuthToken(token: String) = secureStorage.saveAuthToken(token)
+
+    fun clearAuth() = secureStorage.clearAuthToken()
+
+    suspend fun saveOauthClientId(clientId: String) {
+        dataStore.edit { prefs ->
+            if (clientId.isBlank()) prefs.remove(AppSettingsKeys.OAUTH_CLIENT_ID)
+            else prefs[AppSettingsKeys.OAUTH_CLIENT_ID] = clientId.trim()
+        }
+    }
+
+    suspend fun saveAppCategory(category: AppCategory) {
+        dataStore.edit { prefs -> prefs[AppSettingsKeys.APP_CATEGORY] = category.name }
+    }
+
+    suspend fun saveAppMode(mode: AppMode) {
+        dataStore.edit { prefs -> prefs[AppSettingsKeys.APP_MODE] = mode.name }
+    }
+}
