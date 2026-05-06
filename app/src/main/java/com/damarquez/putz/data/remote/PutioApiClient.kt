@@ -14,6 +14,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Serializable
+private data class BaseResponse(
+    val status: String = "",
+    @SerialName("error_type") val errorType: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
 private data class FilesListResponse(
     val files: List<PutioFile> = emptyList(),
     val parent: PutioFile? = null,
@@ -174,6 +181,42 @@ class PutioApiClient @Inject constructor(
                 NetworkResult.Success(transfer)
             }
         } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun cancelTransfers(token: String, transferIds: List<Long>): NetworkResult<Unit> {
+        return try {
+            println("PutioApiClient: Canceling transfers: ${transferIds.joinToString(",")}")
+            val body = FormBody.Builder()
+                .add("transfer_ids", transferIds.joinToString(","))
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/transfers/cancel")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                println("PutioApiClient: Cancel response code: ${response.code}")
+                println("PutioApiClient: Cancel response body: $bodyStr")
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<BaseResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<BaseResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            println("PutioApiClient: Cancel exception: ${e.message}")
             NetworkResult.Error(e.message ?: "Unknown error")
         }
     }

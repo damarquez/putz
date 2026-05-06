@@ -23,8 +23,9 @@ interface AppTransferDao {
     @Query("DELETE FROM app_transfers WHERE putioId = :id")
     suspend fun deleteById(id: Long)
 
-    /** Removes records whose put.io ID is no longer present in put.io's transfer list. */
-    @Query("DELETE FROM app_transfers WHERE putioId NOT IN (:activeIds)")
+    /** Removes records whose put.io ID is no longer present in put.io's transfer list,
+     *  unless they were intentionally stopped by the user. */
+    @Query("DELETE FROM app_transfers WHERE isStopped = 0 AND putioId NOT IN (:activeIds)")
     suspend fun deleteStale(activeIds: List<Long>)
 
     @Query("DELETE FROM app_transfers")

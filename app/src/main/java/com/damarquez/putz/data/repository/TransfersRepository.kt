@@ -24,15 +24,75 @@ class TransfersRepository @Inject constructor(
             when (val result = apiClient.listTransfers(token)) {
                 is NetworkResult.Success -> {
                     val apiTransfers = result.data
-                    val merged = mergeWithLocal(apiTransfers)
+                    val mergedFromApi = mergeWithLocal(apiTransfers)
                     val activeIds = apiTransfers.map { it.id }
-                    if (activeIds.isNotEmpty()) dao.deleteStale(activeIds) else dao.deleteAll()
-                    NetworkResult.Success(merged)
+                    
+                    if (activeIds.isNotEmpty()) dao.deleteStale(activeIds) else dao.deleteStale(emptyList())
+
+                    val stoppedEntities = dao.getAll().filter { it.isStopped }
+                    val stoppedMerged = stoppedEntities.map { entity ->
+                        MergedTransfer(
+                            transfer = PutioTransfer(
+                                id = entity.putioId,
+                                name = entity.putioName,
+                                status = "STOPPED",
+                            ),
+                            appDisplayName = entity.displayName,
+                            magnetLink = entity.magnetLink,
+                            addedByApp = entity.addedByApp,
+                            isStopped = true,
+                        )
+                    }
+
+                    NetworkResult.Success(mergedFromApi + stoppedMerged)
                 }
                 is NetworkResult.Error -> result
                 NetworkResult.Loading -> NetworkResult.Loading
             }
         }
+
+    suspend fun stopTransfer(token: String, id: Long): NetworkResult<Unit> = withContext(Dispatchers.IO) {
+        println("TransfersRepository: Stopping $id")
+        val result = apiClient.cancelTransfers(token, listOf(id))
+        println("TransfersRepository: Cancel API result: $result")
+        if (result is NetworkResult.Success) {
+            val local = dao.getById(id)
+            if (local != null) {
+                println("TransfersRepository: Marking $id as stopped in DAO")
+                dao.upsert(local.copy(isStopped = true))
+            }
+        }
+        result
+    }
+
+    suspend fun removeTransfer(token: String, id: Long): NetworkResult<Unit> = withContext(Dispatchers.IO) {
+        println("TransfersRepository: Removing $id")
+        // Try to cancel on put.io in case it's still there
+        val result = apiClient.cancelTransfers(token, listOf(id))
+        println("TransfersRepository: Cancel API result for remove: $result")
+        dao.deleteById(id)
+        println("TransfersRepository: Deleted $id from DAO")
+        NetworkResult.Success(Unit)
+    }
+
+    suspend fun resumeTransfer(token: String, id: Long): NetworkResult<Unit> = withContext(Dispatchers.IO) {
+        println("TransfersRepository: Resuming $id")
+        val local = dao.getById(id) ?: return@withContext NetworkResult.Error("Transfer not found")
+        val magnet = local.magnetLink ?: return@withContext NetworkResult.Error("No magnet link for resume")
+
+        when (val result = addTransfer(token, magnet)) {
+            is NetworkResult.Success -> {
+                println("TransfersRepository: Resume add success, deleting stopped record $id")
+                dao.deleteById(id)
+                NetworkResult.Success(Unit)
+            }
+            is NetworkResult.Error -> {
+                println("TransfersRepository: Resume add failed: ${result.message}")
+                result
+            }
+            NetworkResult.Loading -> NetworkResult.Loading
+        }
+    }
 
     suspend fun addTransfer(
         token: String,
@@ -91,7 +151,7 @@ class TransfersRepository @Inject constructor(
                     putioId = transfer.id,
                     displayName = transfer.name,
                     putioName = transfer.name,
-                    magnetLink = null,
+                    magnetLink = transfer.source?.takeIf { it.startsWith("magnet:") },
                     infoHash = null,
                     addedByApp = false,
                     addedAt = System.currentTimeMillis(),
@@ -101,7 +161,7 @@ class TransfersRepository @Inject constructor(
                 MergedTransfer(
                     transfer = transfer,
                     appDisplayName = transfer.name,
-                    magnetLink = null,
+                    magnetLink = entity.magnetLink,
                     addedByApp = false,
                 )
             } else {
@@ -110,11 +170,14 @@ class TransfersRepository @Inject constructor(
                     TransferStatus.from(transfer.status) in RESOLVING_STATUSES
 
                 val updatedDisplayName = if (shouldResolve) transfer.name else local.displayName
-                if (shouldResolve || local.putioName != transfer.name) {
+                val updatedMagnetLink = local.magnetLink ?: transfer.source?.takeIf { it.startsWith("magnet:") }
+                
+                if (shouldResolve || local.putioName != transfer.name || local.magnetLink != updatedMagnetLink) {
                     dao.upsert(
                         local.copy(
                             displayName = updatedDisplayName,
                             putioName = transfer.name,
+                            magnetLink = updatedMagnetLink,
                             nameResolved = local.nameResolved || shouldResolve,
                         )
                     )
@@ -122,7 +185,7 @@ class TransfersRepository @Inject constructor(
                 MergedTransfer(
                     transfer = transfer,
                     appDisplayName = updatedDisplayName,
-                    magnetLink = local.magnetLink,
+                    magnetLink = updatedMagnetLink,
                     addedByApp = local.addedByApp,
                 )
             }

@@ -132,7 +132,10 @@ fun TransfersScreen(
                                             scope.launch {
                                                 snackbarHostState.showSnackbar("Magnet link copied")
                                             }
-                                        }
+                                        },
+                                        onStop = { viewModel.stopTransfer(it) },
+                                        onRemove = { viewModel.removeTransfer(it) },
+                                        onResume = { viewModel.resumeTransfer(it) },
                                     )
                                 }
                                 item(key = "divider_${group.name}") {

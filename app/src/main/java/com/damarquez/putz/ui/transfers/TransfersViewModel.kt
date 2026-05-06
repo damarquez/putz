@@ -137,6 +137,36 @@ class TransfersViewModel @Inject constructor(
         }
     }
 
+    fun stopTransfer(id: Long) {
+        println("TransfersViewModel: Stopping transfer $id")
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val result = transfersRepository.stopTransfer(token, id)
+            println("TransfersViewModel: Stop result: $result")
+            refresh()
+        }
+    }
+
+    fun removeTransfer(id: Long) {
+        println("TransfersViewModel: Removing transfer $id")
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val result = transfersRepository.removeTransfer(token, id)
+            println("TransfersViewModel: Remove result: $result")
+            refresh()
+        }
+    }
+
+    fun resumeTransfer(id: Long) {
+        println("TransfersViewModel: Resuming transfer $id")
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val result = transfersRepository.resumeTransfer(token, id)
+            println("TransfersViewModel: Resume result: $result")
+            refresh()
+        }
+    }
+
     private fun buildGroupedMap(transfers: List<MergedTransfer>): Map<TransferGroup, List<MergedTransfer>> {
         val grouped = transfers.groupBy { it.transfer.group() }
         return buildMap {

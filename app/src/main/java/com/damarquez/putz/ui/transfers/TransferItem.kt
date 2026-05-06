@@ -23,11 +23,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Pending
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.HorizontalDivider
@@ -55,11 +58,14 @@ import com.damarquez.putz.ui.theme.LocalAppStyling
 fun TransferItem(
     merged: MergedTransfer,
     onCopyMagnet: (String) -> Unit,
+    onStop: (Long) -> Unit,
+    onRemove: (Long) -> Unit,
+    onResume: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val transfer = merged.transfer
     val styling = LocalAppStyling.current
-    val status = TransferStatus.from(transfer.status)
+    val status = if (merged.isStopped) TransferStatus.STOPPED else TransferStatus.from(transfer.status)
     val cornerRadius = styling.cornerRadiusDp.dp
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -67,7 +73,7 @@ fun TransferItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.Top,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             TransferStatusIcon(status = status, cornerRadius = cornerRadius.value.toInt())
 
@@ -87,25 +93,78 @@ fun TransferItem(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f),
                     )
+                    
                     if (merged.magnetLink != null) {
-                        Spacer(Modifier.width(8.dp))
                         androidx.compose.material3.IconButton(
-                            onClick = { onCopyMagnet(merged.magnetLink) },
-                            modifier = Modifier.size(24.dp)
+                            onClick = { 
+                                println("TransferItem: Copy clicked for ${merged.appDisplayName}")
+                                onCopyMagnet(merged.magnetLink) 
+                            },
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Link,
                                 contentDescription = "Copy magnet link",
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                             )
                         }
+                    }
+
+                    if (merged.isStopped) {
+                        androidx.compose.material3.IconButton(
+                            onClick = { 
+                                println("TransferItem: Resume clicked for id ${transfer.id}")
+                                onResume(transfer.id) 
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Resume",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    } else {
+                        androidx.compose.material3.IconButton(
+                            onClick = { 
+                                println("TransferItem: Stop clicked for id ${transfer.id}")
+                                onStop(transfer.id) 
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    androidx.compose.material3.IconButton(
+                        onClick = { 
+                            println("TransferItem: Remove clicked for id ${transfer.id}")
+                            onRemove(transfer.id) 
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Remove",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
 
                 Spacer(Modifier.height(6.dp))
 
-                when (status) {
+                if (merged.isStopped) {
+                    StoppedInfo(merged = merged)
+                } else {
+                    when (status) {
                     TransferStatus.DOWNLOADING, TransferStatus.COMPLETING -> {
                         DownloadProgress(transfer = transfer)
                     }
@@ -122,6 +181,7 @@ fun TransferItem(
                     TransferStatus.PREPARING_DOWNLOAD -> {
                         QueuedInfo(transfer = transfer)
                     }
+                }
                 }
             }
         }
@@ -255,6 +315,15 @@ private fun QueuedInfo(transfer: PutioTransfer) {
             append(TransferStatus.from(transfer.status).label)
             if (transfer.size > 0) append("  •  ${formatSize(transfer.size)}")
         },
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun StoppedInfo(merged: MergedTransfer) {
+    Text(
+        text = "Stopped locally",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

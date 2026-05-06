@@ -38,4 +38,7 @@ data class AppTransferEntity(
     /** True once displayName has been promoted to put.io's resolved torrent name.
      *  Prevents re-applying the update if the name later changes again on put.io. */
     val nameResolved: Boolean,
+
+    /** True if the user stopped this transfer (removed from put.io but kept in app). */
+    val isStopped: Boolean = false,
 )

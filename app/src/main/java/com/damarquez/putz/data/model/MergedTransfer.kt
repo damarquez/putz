@@ -17,4 +17,7 @@ data class MergedTransfer(
 
     /** True if the user added this through our app (vs. added externally). */
     val addedByApp: Boolean,
+
+    /** True if this transfer was stopped (removed from put.io but kept in app). */
+    val isStopped: Boolean = false,
 )
