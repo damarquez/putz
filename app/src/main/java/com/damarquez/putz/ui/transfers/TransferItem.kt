@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.Sync
@@ -42,19 +43,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.PutioTransfer
 import com.damarquez.putz.data.model.TransferStatus
 import com.damarquez.putz.ui.theme.LocalAppStyling
 
 @Composable
 fun TransferItem(
-    transfer: PutioTransfer,
+    merged: MergedTransfer,
+    onCopyMagnet: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val transfer = merged.transfer
     val styling = LocalAppStyling.current
     val status = TransferStatus.from(transfer.status)
     val cornerRadius = styling.cornerRadiusDp.dp
@@ -71,14 +74,34 @@ fun TransferItem(
             Spacer(Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transfer.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = merged.appDisplayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (merged.magnetLink != null) {
+                        Spacer(Modifier.width(8.dp))
+                        androidx.compose.material3.IconButton(
+                            onClick = { onCopyMagnet(merged.magnetLink) },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Link,
+                                contentDescription = "Copy magnet link",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
 
                 Spacer(Modifier.height(6.dp))
 

@@ -8,17 +8,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,11 +35,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.ui.components.ErrorView
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.ui.graphics.Color
+
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +50,14 @@ fun TransfersScreen(
     viewModel: TransfersViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val showAddSheet by viewModel.showAddSheet.collectAsState()
+    val prefillMagnet by viewModel.prefillMagnet.collectAsState()
+    val addState by viewModel.addState.collectAsState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
 
     Scaffold(
         topBar = {
@@ -55,6 +73,14 @@ fun TransfersScreen(
                 ),
             )
         },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { viewModel.openAddSheet() },
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Add") },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
         when (val state = uiState) {
@@ -97,9 +123,17 @@ fun TransfersScreen(
                                 }
                                 items(
                                     items = transfers,
-                                    key = { it.id },
-                                ) { transfer ->
-                                    TransferItem(transfer = transfer)
+                                    key = { it.transfer.id },
+                                ) { merged ->
+                                    TransferItem(
+                                        merged = merged,
+                                        onCopyMagnet = { link ->
+                                            clipboardManager.setText(AnnotatedString(link))
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Magnet link copied")
+                                            }
+                                        }
+                                    )
                                 }
                                 item(key = "divider_${group.name}") {
                                     HorizontalDivider(
@@ -113,6 +147,16 @@ fun TransfersScreen(
                 }
             }
         }
+    }
+
+    if (showAddSheet) {
+        AddTransferSheet(
+            sheetState = sheetState,
+            prefill = prefillMagnet,
+            addState = addState,
+            onDismiss = { viewModel.dismissAddSheet() },
+            onSubmit = { viewModel.submitTransfer(it) },
+        )
     }
 }
 

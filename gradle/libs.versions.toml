@@ -13,6 +13,7 @@ coroutines = "1.9.0"
 kotlinx-serialization = "1.7.3"
 browser = "1.8.0"
 security-crypto = "1.1.0-alpha06"
+room = "2.6.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.15.0" }
@@ -38,6 +39,9 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -1,4 +1,5 @@
 -keep class com.damarquez.putz.data.model.** { *; }
+-keep class com.damarquez.putz.data.local.** { *; }
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }

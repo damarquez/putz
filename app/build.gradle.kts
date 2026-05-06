@@ -72,5 +72,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.browser)
     implementation(libs.security.crypto)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    kapt(libs.room.compiler)
     debugImplementation(libs.compose.ui.tooling)
 }

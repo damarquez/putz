@@ -7,6 +7,7 @@ import com.damarquez.putz.data.model.PutioTransfer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -16,6 +17,14 @@ import javax.inject.Singleton
 private data class FilesListResponse(
     val files: List<PutioFile> = emptyList(),
     val parent: PutioFile? = null,
+    val status: String = "",
+    @SerialName("error_type") val errorType: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+private data class AddTransferResponse(
+    val transfer: PutioTransfer? = null,
     val status: String = "",
     @SerialName("error_type") val errorType: String? = null,
     val error: String? = null,
@@ -125,6 +134,44 @@ class PutioApiClient @Inject constructor(
                     return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
                 }
                 NetworkResult.Success(parsed.transfers)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun addTransfer(
+        token: String,
+        magnetOrUrl: String,
+        saveParentId: Long = 0L,
+    ): NetworkResult<PutioTransfer> {
+        return try {
+            val body = FormBody.Builder()
+                .add("url", magnetOrUrl)
+                .add("save_parent_id", saveParentId.toString())
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/transfers/add")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val raw = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<AddTransferResponse>(raw) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<AddTransferResponse>(raw)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                val transfer = parsed.transfer ?: return NetworkResult.Error("No transfer in response")
+                NetworkResult.Success(transfer)
             }
         } catch (e: Exception) {
             NetworkResult.Error(e.message ?: "Unknown error")
