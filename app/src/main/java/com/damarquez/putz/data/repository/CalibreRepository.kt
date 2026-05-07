@@ -101,11 +101,13 @@ class CalibreRepository @Inject constructor(
                             "FAILED" -> CalibreTransferStatus.FAILED
                             else -> transfer.status
                         }
-                        calibreTransferDao.updateTransfer(transfer.copy(
-                            status = newStatus,
-                            errorMessage = response.error,
-                            lastUpdatedAt = System.currentTimeMillis()
-                        ))
+                        if (newStatus.ordinal > transfer.status.ordinal) {
+                            calibreTransferDao.updateTransfer(transfer.copy(
+                                status = newStatus,
+                                errorMessage = response.error,
+                                lastUpdatedAt = System.currentTimeMillis()
+                            ))
+                        }
                     }
                     // Delete response file once processed
                     gDriveManager.deleteFile(googleAccount, file.id)

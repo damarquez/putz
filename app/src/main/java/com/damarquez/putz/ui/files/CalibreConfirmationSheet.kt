@@ -13,9 +13,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -112,7 +114,18 @@ fun CalibreConfirmationSheet(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             )
 
-            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { val tmp = title; title = author; author = tmp }) {
+                    Icon(
+                        imageVector = Icons.Default.SwapVert,
+                        contentDescription = "Swap title and author",
+                    )
+                }
+            }
 
             OutlinedTextField(
                 value = author,
