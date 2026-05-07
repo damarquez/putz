@@ -20,11 +20,19 @@ import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,16 +42,20 @@ import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.model.PutioFileType
 import com.damarquez.putz.ui.theme.LocalAppStyling
+import com.damarquez.putz.util.MetadataUtils
 
 @Composable
 fun FileItem(
     file: PutioFile,
     onClick: () -> Unit,
+    onSendToCalibre: (PutioFile) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val styling = LocalAppStyling.current
     val cornerRadius = styling.cornerRadiusDp.dp
     val fileType = PutioFileType.from(file.fileType)
+    val isEbook = MetadataUtils.isEbook(file.name)
+    var showMenu by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -83,6 +95,30 @@ fun FileItem(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+            }
+
+            if (isEbook) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More actions",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Send to Calibre") },
+                            onClick = {
+                                showMenu = false
+                                onSendToCalibre(file)
+                            },
+                        )
+                    }
                 }
             }
         }

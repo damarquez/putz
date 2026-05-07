@@ -14,6 +14,10 @@ kotlinx-serialization = "1.7.3"
 browser = "1.8.0"
 security-crypto = "1.1.0-alpha06"
 room = "2.6.1"
+playServicesAuth = "21.2.0"
+googleDrive = "v3-rev20240521-2.0.0"
+googleApiClient = "2.7.0"
+googleHttpClientGson = "1.45.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.15.0" }
@@ -42,6 +46,10 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+google-api-services-drive = { group = "com.google.apis", name = "google-api-services-drive", version.ref = "googleDrive" }
+google-api-client-android = { group = "com.google.api-client", name = "google-api-client-android", version.ref = "googleApiClient" }
+google-http-client-gson = { group = "com.google.http-client", name = "google-http-client-gson", version.ref = "googleHttpClientGson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

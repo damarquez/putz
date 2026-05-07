@@ -1,20 +1,24 @@
 package com.damarquez.putz.ui.files
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.model.AccountInfo
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 sealed class FilesUiState {
@@ -29,8 +33,10 @@ sealed class FilesUiState {
 
 @HiltViewModel
 class FilesViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
     private val filesRepository: FilesRepository,
+    private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
@@ -42,6 +48,9 @@ class FilesViewModel @Inject constructor(
 
     private val _accountInfo = MutableStateFlow<AccountInfo?>(null)
     val accountInfo: StateFlow<AccountInfo?> = _accountInfo.asStateFlow()
+
+    private val _snackbarMessage = MutableStateFlow<String?>(null)
+    val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
     init {
         loadFiles()
@@ -75,6 +84,33 @@ class FilesViewModel @Inject constructor(
                 NetworkResult.Loading -> Unit
             }
         }
+    }
+
+    fun sendToCalibre(file: PutioFile, title: String, author: String) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+            calibreRepository.addTransfer(
+                putioFileId = file.id,
+                fileName = file.name,
+                title = title,
+                author = author,
+                googleAccount = googleAccount
+            )
+            _snackbarMessage.value = "Transfer requested for $title"
+        }
+    }
+
+    fun onSnackbarShown() {
+        _snackbarMessage.value = null
+    }
+
+    suspend fun checkBookExists(title: String, author: String): Boolean {
+        val dbFile = File(context.filesDir, "metadata.db")
+        return calibreRepository.checkExists(dbFile, title, author)
     }
 
     private fun loadAccountInfo() {

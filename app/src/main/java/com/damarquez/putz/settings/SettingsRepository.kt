@@ -21,6 +21,8 @@ class SettingsRepository @Inject constructor(
     // StateFlow so callers get the current value on first collection, no null-initial workaround needed.
     val authTokenFlow: StateFlow<String> get() = secureStorage.authTokenFlow
 
+    val googleTokenFlow: StateFlow<String> get() = secureStorage.googleTokenFlow
+
     val oauthClientIdFlow: Flow<String> = dataStore.data.map { prefs ->
         prefs[AppSettingsKeys.OAUTH_CLIENT_ID] ?: ""
     }
@@ -40,9 +42,17 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    val googleWebClientIdFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.GOOGLE_WEB_CLIENT_ID] ?: ""
+    }
+
     fun saveAuthToken(token: String) = secureStorage.saveAuthToken(token)
 
     fun clearAuth() = secureStorage.clearAuthToken()
+
+    fun saveGoogleToken(token: String) = secureStorage.saveGoogleToken(token)
+
+    fun clearGoogleToken() = secureStorage.clearGoogleToken()
 
     suspend fun saveOauthClientId(clientId: String) {
         dataStore.edit { prefs ->
@@ -57,5 +67,12 @@ class SettingsRepository @Inject constructor(
 
     suspend fun saveAppMode(mode: AppMode) {
         dataStore.edit { prefs -> prefs[AppSettingsKeys.APP_MODE] = mode.name }
+    }
+
+    suspend fun saveGoogleWebClientId(clientId: String) {
+        dataStore.edit { prefs ->
+            if (clientId.isBlank()) prefs.remove(AppSettingsKeys.GOOGLE_WEB_CLIENT_ID)
+            else prefs[AppSettingsKeys.GOOGLE_WEB_CLIENT_ID] = clientId.trim()
+        }
     }
 }

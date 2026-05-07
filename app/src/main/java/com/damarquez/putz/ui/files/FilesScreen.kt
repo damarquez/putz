@@ -30,9 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +45,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileItem
 import com.damarquez.putz.ui.navigation.Screen
@@ -57,10 +62,35 @@ fun FilesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val accountInfo by viewModel.accountInfo.collectAsState()
+    val snackbarMessage by viewModel.snackbarMessage.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
+
+    LaunchedEffect(snackbarMessage) {
+        snackbarMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.onSnackbarShown()
+        }
+    }
+
+    var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
+    val calibreSheetState = rememberModalBottomSheetState()
 
     val isRoot = viewModel.parentId == 0L
     val folderName = viewModel.folderName
+
+    if (selectedFileForCalibre != null) {
+        CalibreConfirmationSheet(
+            file = selectedFileForCalibre!!,
+            sheetState = calibreSheetState,
+            onDismiss = { selectedFileForCalibre = null },
+            onConfirm = { title, author ->
+                viewModel.sendToCalibre(selectedFileForCalibre!!, title, author)
+                selectedFileForCalibre = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -157,6 +187,7 @@ fun FilesScreen(
                 ),
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
         when (val state = uiState) {
@@ -206,6 +237,7 @@ fun FilesScreen(
                                             onNavigateToFolder(file.id, file.name)
                                         }
                                     },
+                                    onSendToCalibre = { selectedFileForCalibre = it },
                                 )
                             }
                         }

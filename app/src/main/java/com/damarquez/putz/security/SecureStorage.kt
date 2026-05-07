@@ -22,6 +22,9 @@ class SecureStorage @Inject constructor(
     private val _authToken = MutableStateFlow(prefs.getString(KEY_AUTH_TOKEN, "") ?: "")
     val authTokenFlow: StateFlow<String> = _authToken.asStateFlow()
 
+    private val _googleToken = MutableStateFlow(prefs.getString(KEY_GOOGLE_TOKEN, "") ?: "")
+    val googleTokenFlow: StateFlow<String> = _googleToken.asStateFlow()
+
     fun saveAuthToken(token: String) {
         prefs.edit().putString(KEY_AUTH_TOKEN, token).apply()
         _authToken.value = token
@@ -30,6 +33,16 @@ class SecureStorage @Inject constructor(
     fun clearAuthToken() {
         prefs.edit().remove(KEY_AUTH_TOKEN).apply()
         _authToken.value = ""
+    }
+
+    fun saveGoogleToken(token: String) {
+        prefs.edit().putString(KEY_GOOGLE_TOKEN, token).apply()
+        _googleToken.value = token
+    }
+
+    fun clearGoogleToken() {
+        prefs.edit().remove(KEY_GOOGLE_TOKEN).apply()
+        _googleToken.value = ""
     }
 
     private fun createPrefs(): SharedPreferences {
@@ -56,5 +69,6 @@ class SecureStorage @Inject constructor(
         private const val TAG = "SecureStorage"
         private const val FILE_NAME = "putz_secure"
         private const val KEY_AUTH_TOKEN = "auth_token"
+        private const val KEY_GOOGLE_TOKEN = "google_token"
     }
 }

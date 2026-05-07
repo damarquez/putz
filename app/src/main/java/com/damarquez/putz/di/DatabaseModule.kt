@@ -24,4 +24,7 @@ object DatabaseModule {
 
     @Provides
     fun provideAppTransferDao(db: PutzDatabase): AppTransferDao = db.appTransferDao()
+
+    @Provides
+    fun provideCalibreTransferDao(db: PutzDatabase) = db.calibreTransferDao()
 }

@@ -28,6 +28,7 @@ import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.auth.AuthScreen
 import com.damarquez.putz.ui.files.FilesScreen
 import com.damarquez.putz.ui.settings.SettingsScreen
+import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
 
 private const val ROOT_FOLDER_NAME = "Your Files"
@@ -143,7 +144,15 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
             composable(Screen.Settings.route) {
                 SettingsScreen(
                     onNavigateUp = { navController.navigateUp() },
+                    onNavigateToCalibreTransfers = { navController.navigate(Screen.CalibreTransfers.route) },
                     viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.CalibreTransfers.route) {
+                CalibreTransfersScreen(
+                    onNavigateUp = { navController.navigateUp() },
+                    viewModel = hiltViewModel()
                 )
             }
         }

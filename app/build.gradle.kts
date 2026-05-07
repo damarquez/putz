@@ -47,6 +47,14 @@ android {
         compose = true
         buildConfig = true
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/DEPENDENCIES"
+        }
+    }
 }
 
 dependencies {
@@ -75,5 +83,11 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     kapt(libs.room.compiler)
+
+    implementation(libs.play.services.auth)
+    implementation(libs.google.api.services.drive)
+    implementation(libs.google.api.client.android)
+    implementation(libs.google.http.client.gson)
+
     debugImplementation(libs.compose.ui.tooling)
 }

@@ -12,4 +12,5 @@ object AppSettingsKeys {
     val OAUTH_CLIENT_ID = stringPreferencesKey("oauth_client_id")
     val APP_CATEGORY = stringPreferencesKey("app_category")
     val APP_MODE = stringPreferencesKey("app_mode")
+    val GOOGLE_WEB_CLIENT_ID = stringPreferencesKey("google_web_client_id")
 }

@@ -1,0 +1,56 @@
+package com.damarquez.putz.ui.transfers
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.damarquez.putz.data.local.CalibreTransferEntity
+import com.damarquez.putz.data.repository.CalibreRepository
+import com.damarquez.putz.settings.SettingsRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.File
+import javax.inject.Inject
+
+@HiltViewModel
+class CalibreTransfersViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val calibreRepository: CalibreRepository,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
+
+    val transfers: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        startPolling()
+    }
+
+    private fun startPolling() {
+        viewModelScope.launch {
+            while (isActive) {
+                val account = settingsRepository.googleTokenFlow.first()
+                if (account.isNotBlank()) {
+                    calibreRepository.pollResponses(account)
+                }
+                delay(30_000) // Poll every 30 seconds
+            }
+        }
+    }
+
+    fun syncMetadata() {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isNotBlank()) {
+                val dbFile = File(context.filesDir, "metadata.db")
+                calibreRepository.syncMetadataDb(account, dbFile)
+            }
+        }
+    }
+}

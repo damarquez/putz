@@ -15,4 +15,5 @@ sealed class Screen(val route: String) {
     data object Transfers : Screen("transfers")
 
     data object Settings : Screen("settings")
+    data object CalibreTransfers : Screen("calibre_transfers")
 }
