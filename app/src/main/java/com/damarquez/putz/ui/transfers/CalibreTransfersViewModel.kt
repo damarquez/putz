@@ -39,7 +39,7 @@ class CalibreTransfersViewModel @Inject constructor(
                 if (account.isNotBlank()) {
                     calibreRepository.pollResponses(account)
                 }
-                delay(30_000) // Poll every 30 seconds
+                delay(10_000) // Poll every 10 seconds
             }
         }
     }

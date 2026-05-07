@@ -6,6 +6,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
@@ -48,13 +49,15 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
 
     val showBottomNav = when {
         currentRoute == Screen.Transfers.route -> true
+        currentRoute == Screen.CalibreTransfers.route -> true
         currentRoute == Screen.Files.route && currentParentId == 0L -> true
         else -> false
     }
 
-    // Files tab is highlighted for ANY files route (including subfolders)
+    // Tab selection state
     val filesSelected = currentRoute == Screen.Files.route
     val transfersSelected = currentRoute == Screen.Transfers.route
+    val calibreSelected = currentRoute == Screen.CalibreTransfers.route
 
     Scaffold(
         bottomBar = {
@@ -86,6 +89,17 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
                         },
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Transfers") },
                         label = { Text("Transfers") },
+                    )
+                    NavigationBarItem(
+                        selected = calibreSelected,
+                        onClick = {
+                            navController.navigate(Screen.CalibreTransfers.route) {
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Book, contentDescription = "Calibre") },
+                        label = { Text("Calibre") },
                     )
                 }
             }
