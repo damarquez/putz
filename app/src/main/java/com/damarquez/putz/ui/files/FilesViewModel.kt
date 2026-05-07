@@ -128,5 +128,21 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun deleteFiles(ids: List<Long>) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            when (val result = filesRepository.deleteFiles(token, ids)) {
+                is NetworkResult.Success -> {
+                    _snackbarMessage.value = if (ids.size == 1) "Deleted" else "${ids.size} items deleted"
+                    loadFiles(isRefresh = true)
+                }
+                is NetworkResult.Error -> {
+                    _snackbarMessage.value = "Delete failed: ${result.message}"
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
     fun signOut() = settingsRepository.clearAuth()
 }

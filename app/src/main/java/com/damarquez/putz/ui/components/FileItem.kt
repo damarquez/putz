@@ -1,8 +1,9 @@
 package com.damarquez.putz.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -44,11 +47,16 @@ import com.damarquez.putz.data.model.PutioFileType
 import com.damarquez.putz.ui.theme.LocalAppStyling
 import com.damarquez.putz.util.MetadataUtils
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileItem(
     file: PutioFile,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
+    onDelete: () -> Unit,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val styling = LocalAppStyling.current
@@ -61,10 +69,18 @@ fun FileItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+
             FileTypeIcon(
                 fileType = fileType,
                 isFolder = file.isFolder,
@@ -98,7 +114,7 @@ fun FileItem(
                 }
             }
 
-            if (isEbook) {
+            if (!isSelectionMode) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
@@ -111,11 +127,28 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
+                        if (isEbook) {
+                            DropdownMenuItem(
+                                text = { Text("Send to Calibre") },
+                                onClick = {
+                                    showMenu = false
+                                    onSendToCalibre(file)
+                                },
+                            )
+                            HorizontalDivider()
+                        }
                         DropdownMenuItem(
-                            text = { Text("Send to Calibre") },
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
                             onClick = {
                                 showMenu = false
-                                onSendToCalibre(file)
+                                onDelete()
                             },
                         )
                     }

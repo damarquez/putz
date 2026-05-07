@@ -1,5 +1,6 @@
 package com.damarquez.putz.ui.files
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,9 +16,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -29,6 +35,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -65,6 +72,12 @@ fun FilesScreen(
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    val isSelectionMode = selectedIds.isNotEmpty()
+    var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = isSelectionMode) { selectedIds = emptySet() }
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
@@ -92,93 +105,152 @@ fun FilesScreen(
         )
     }
 
+    fileToDelete?.let { file ->
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Delete \"${file.name}\"?") },
+            text = {
+                Text(
+                    if (file.isFolder) "This folder and all its contents will be permanently deleted."
+                    else "This file will be permanently deleted."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteFiles(listOf(file.id))
+                        fileToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showBatchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            title = { Text("Delete ${selectedIds.size} items?") },
+            text = { Text("Selected files and folders will be permanently deleted.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteFiles(selectedIds.toList())
+                        selectedIds = emptySet()
+                        showBatchDeleteConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    if (isSelectionMode) {
                         Text(
-                            text = folderName,
+                            text = "${selectedIds.size} selected",
                             style = MaterialTheme.typography.titleLarge,
-                            maxLines = 1,
                         )
-                        accountInfo?.let { info ->
-                            if (isRoot) {
-                                Text(
-                                    text = info.username,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                    } else {
+                        Column {
+                            Text(
+                                text = folderName,
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                            )
+                            accountInfo?.let { info ->
+                                if (isRoot) {
+                                    Text(
+                                        text = info.username,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
                 },
                 navigationIcon = {
-                    if (!isRoot) {
-                        IconButton(onClick = onNavigateUp) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                            )
+                    when {
+                        isSelectionMode -> IconButton(onClick = { selectedIds = emptySet() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                        }
+                        !isRoot -> IconButton(onClick = onNavigateUp) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                    }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                    if (isSelectionMode) {
+                        IconButton(onClick = { showBatchDeleteConfirm = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete selected")
                         }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                        ) {
-                            accountInfo?.let { info ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                text = info.username,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                            )
-                                            Text(
-                                                text = info.mail ?: "",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                            StorageBar(
-                                                usedPercent = info.diskUsedPercent,
-                                                modifier = Modifier.padding(top = 6.dp),
-                                            )
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.AccountCircle,
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {},
-                                )
-                                HorizontalDivider()
+                    } else {
+                        IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        }
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More")
                             }
-                            DropdownMenuItem(
-                                text = { Text("Settings") },
-                                onClick = {
-                                    showMenu = false
-                                    onNavigateToSettings()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    showMenu = false
-                                    viewModel.signOut()
-                                    onSignOut()
-                                },
-                            )
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                            ) {
+                                accountInfo?.let { info ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = info.username,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                )
+                                                Text(
+                                                    text = info.mail ?: "",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                                StorageBar(
+                                                    usedPercent = info.diskUsedPercent,
+                                                    modifier = Modifier.padding(top = 6.dp),
+                                                )
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.AccountCircle,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        onClick = {},
+                                    )
+                                    HorizontalDivider()
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Settings") },
+                                    onClick = {
+                                        showMenu = false
+                                        onNavigateToSettings()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.signOut()
+                                        onSignOut()
+                                    },
+                                )
+                            }
                         }
                     }
                 },
@@ -233,11 +305,18 @@ fun FilesScreen(
                                 FileItem(
                                     file = file,
                                     onClick = {
-                                        if (file.isFolder) {
+                                        if (isSelectionMode) {
+                                            selectedIds = if (file.id in selectedIds)
+                                                selectedIds - file.id else selectedIds + file.id
+                                        } else if (file.isFolder) {
                                             onNavigateToFolder(file.id, file.name)
                                         }
                                     },
+                                    onLongClick = { selectedIds = selectedIds + file.id },
                                     onSendToCalibre = { selectedFileForCalibre = it },
+                                    onDelete = { fileToDelete = file },
+                                    isSelected = file.id in selectedIds,
+                                    isSelectionMode = isSelectionMode,
                                 )
                             }
                         }

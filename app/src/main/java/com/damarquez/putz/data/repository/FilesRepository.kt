@@ -29,4 +29,9 @@ class FilesRepository @Inject constructor(
     fun getDownloadUrl(token: String, fileId: Long): String {
         return "${PutioApiClient.BASE_URL}/files/$fileId/download?oauth_token=$token"
     }
+
+    suspend fun deleteFiles(token: String, fileIds: List<Long>): NetworkResult<Unit> =
+        withContext(Dispatchers.IO) {
+            apiClient.deleteFiles(token, fileIds)
+        }
 }

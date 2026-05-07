@@ -24,6 +24,16 @@ object MetadataUtils {
             return Pair(match.groupValues[1].trim(), match.groupValues[2].trim())
         }
         
+        // Pattern: Title by Author
+        val byIndex = nameWithoutExt.lastIndexOf(" by ", ignoreCase = true)
+        if (byIndex != -1) {
+            val title = nameWithoutExt.substring(0, byIndex).trim()
+            val author = nameWithoutExt.substring(byIndex + 4).trim()
+            if (title.isNotEmpty() && author.isNotEmpty()) {
+                return Pair(title, author)
+            }
+        }
+
         return Pair(nameWithoutExt, "Unknown")
     }
 }

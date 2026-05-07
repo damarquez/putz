@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -127,17 +128,37 @@ fun CalibreConfirmationSheet(
                 }
             }
 
-            OutlinedTextField(
-                value = author,
-                onValueChange = { author = it },
-                label = { Text("Author") },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = {
-                    onConfirm(title.trim(), author.trim())
-                }),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = author,
+                    onValueChange = { author = it },
+                    label = { Text("Author") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        onConfirm(title.trim(), author.trim())
+                    }),
+                )
+                if (author.count { it == ',' } == 1) {
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(
+                        onClick = {
+                            val (surname, given) = author.split(",", limit = 2)
+                            author = "${given.trim()} ${surname.trim()}"
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PersonSearch,
+                            contentDescription = "Swap surname and given name",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
 

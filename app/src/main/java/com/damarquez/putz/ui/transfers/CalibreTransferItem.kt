@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Sync
@@ -33,8 +32,7 @@ import java.util.Locale
 @Composable
 fun CalibreTransferItem(
     transfer: CalibreTransferEntity,
-    onRemove: () -> Unit,
-    onDeleteFromPutio: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
@@ -83,17 +81,7 @@ fun CalibreTransferItem(
 
             StatusBadge(status = transfer.status)
 
-            if (transfer.status == CalibreTransferStatus.COMPLETED) {
-                IconButton(onClick = onDeleteFromPutio) {
-                    Icon(
-                        imageVector = Icons.Default.CloudOff,
-                        contentDescription = "Delete from put.io",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            IconButton(onClick = onRemove) {
+            IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = "Remove",

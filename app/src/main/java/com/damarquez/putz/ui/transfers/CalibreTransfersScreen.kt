@@ -1,6 +1,7 @@
 package com.damarquez.putz.ui.transfers
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,7 +11,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.data.local.CalibreTransferEntity
+import com.damarquez.putz.data.local.CalibreTransferStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,29 +40,44 @@ fun CalibreTransfersScreen(
     viewModel: CalibreTransfersViewModel,
 ) {
     val transfers by viewModel.transfers.collectAsState()
-    var fileToDeleteFromPutio by remember { mutableStateOf<Long?>(null) }
+    var transferToDelete by remember { mutableStateOf<CalibreTransferEntity?>(null) }
+    var alsoDeleteFromPutio by remember { mutableStateOf(false) }
 
-    if (fileToDeleteFromPutio != null) {
+    transferToDelete?.let { transfer ->
+        val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
         AlertDialog(
-            onDismissRequest = { fileToDeleteFromPutio = null },
-            title = { Text("Delete from put.io?") },
-            text = { Text("The book has been successfully added to Calibre. Do you want to remove the original file from your put.io account now?") },
+            onDismissRequest = { transferToDelete = null },
+            title = { Text("Remove transfer?") },
+            text = {
+                if (isCompleted) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = alsoDeleteFromPutio,
+                            onCheckedChange = { alsoDeleteFromPutio = it },
+                        )
+                        Text("Also delete file from put.io")
+                    }
+                } else {
+                    Text("Remove this transfer from the list?")
+                }
+            },
             confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteFromPutio(fileToDeleteFromPutio!!)
-                        fileToDeleteFromPutio = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Delete File")
+                Button(onClick = {
+                    if (isCompleted && alsoDeleteFromPutio) {
+                        viewModel.deleteFromPutio(transfer.putioFileId)
+                    } else {
+                        viewModel.removeTransfer(transfer.putioFileId)
+                    }
+                    transferToDelete = null
+                }) {
+                    Text("Remove")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { fileToDeleteFromPutio = null }) {
-                    Text("Keep File")
+                TextButton(onClick = { transferToDelete = null }) {
+                    Text("Cancel")
                 }
-            }
+            },
         )
     }
 
@@ -107,8 +125,10 @@ fun CalibreTransfersScreen(
                 ) { transfer ->
                     CalibreTransferItem(
                         transfer = transfer,
-                        onRemove = { viewModel.removeTransfer(transfer.putioFileId) },
-                        onDeleteFromPutio = { fileToDeleteFromPutio = transfer.putioFileId }
+                        onDelete = {
+                            alsoDeleteFromPutio = transfer.status == CalibreTransferStatus.COMPLETED
+                            transferToDelete = transfer
+                        },
                     )
                 }
             }
