@@ -52,11 +52,27 @@ class GDriveManager @Inject constructor(
         service.files().create(metadata).setFields("id").execute().id
     }
 
+    private suspend fun getLibraryFolderId(service: Drive): String? {
+        val libResult = service.files().list()
+            .setQ("name = 'metadata.db' and trashed = false")
+            .setFields("files(parents)")
+            .execute()
+        return libResult.files.firstOrNull()?.parents?.firstOrNull()
+    }
+
     suspend fun uploadRequest(accountName: String, fileName: String, content: String): String? = withContext(Dispatchers.IO) {
         try {
             Log.d("GDriveManager", "Uploading request $fileName for $accountName")
             val service = getDriveService(accountName)
-            val rootFolderId = findFolder(service, "calibre_integration") ?: createFolder(service, "calibre_integration")
+            
+            val libFolderId = getLibraryFolderId(service) ?: run {
+                Log.e("GDriveManager", "Could not find Calibre library root (metadata.db missing)")
+                return@withContext null
+            }
+
+            val rootFolderId = findFolder(service, ".calibre_integration", libFolderId) 
+                ?: createFolder(service, ".calibre_integration", libFolderId)
+            
             val requestsFolderId = findFolder(service, "requests", rootFolderId) ?: createFolder(service, "requests", rootFolderId)
 
             val tempFile = File(context.cacheDir, fileName).apply { writeText(content) }
@@ -102,7 +118,9 @@ class GDriveManager @Inject constructor(
     suspend fun listResponses(accountName: String): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)
-            val rootId = findFolder(service, "calibre_integration") ?: return@withContext emptyList()
+            val libFolderId = getLibraryFolderId(service) ?: return@withContext emptyList()
+
+            val rootId = findFolder(service, ".calibre_integration", libFolderId) ?: return@withContext emptyList()
             val responsesId = findFolder(service, "responses", rootId) ?: return@withContext emptyList()
 
             val result = service.files().list()
