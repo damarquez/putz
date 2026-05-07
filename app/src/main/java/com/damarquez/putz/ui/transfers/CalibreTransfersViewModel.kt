@@ -53,4 +53,19 @@ class CalibreTransfersViewModel @Inject constructor(
             }
         }
     }
+
+    fun removeTransfer(fileId: Long) {
+        viewModelScope.launch {
+            calibreRepository.removeTransfer(fileId)
+        }
+    }
+
+    fun deleteFromPutio(fileId: Long) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            calibreRepository.deleteFileFromPutio(token, fileId)
+            // After successful delete from put.io, we can also remove from local list
+            calibreRepository.removeTransfer(fileId)
+        }
+    }
 }

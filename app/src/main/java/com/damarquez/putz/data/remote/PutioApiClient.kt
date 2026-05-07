@@ -187,7 +187,6 @@ class PutioApiClient @Inject constructor(
 
     fun cancelTransfers(token: String, transferIds: List<Long>): NetworkResult<Unit> {
         return try {
-            println("PutioApiClient: Canceling transfers: ${transferIds.joinToString(",")}")
             val body = FormBody.Builder()
                 .add("transfer_ids", transferIds.joinToString(","))
                 .build()
@@ -200,8 +199,6 @@ class PutioApiClient @Inject constructor(
 
             okHttpClient.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
-                println("PutioApiClient: Cancel response code: ${response.code}")
-                println("PutioApiClient: Cancel response body: $bodyStr")
                 if (!response.isSuccessful) {
                     val parsed = runCatching { json.decodeFromString<BaseResponse>(bodyStr) }.getOrNull()
                     return NetworkResult.Error(
@@ -216,7 +213,38 @@ class PutioApiClient @Inject constructor(
                 NetworkResult.Success(Unit)
             }
         } catch (e: Exception) {
-            println("PutioApiClient: Cancel exception: ${e.message}")
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun deleteFiles(token: String, fileIds: List<Long>): NetworkResult<Unit> {
+        return try {
+            val body = FormBody.Builder()
+                .add("file_ids", fileIds.joinToString(","))
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/files/delete")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<BaseResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<BaseResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(Unit)
+            }
+        } catch (e: Exception) {
             NetworkResult.Error(e.message ?: "Unknown error")
         }
     }

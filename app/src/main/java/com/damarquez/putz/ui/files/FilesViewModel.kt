@@ -93,12 +93,17 @@ class FilesViewModel @Inject constructor(
                 _snackbarMessage.value = "Link your Google account in Settings first"
                 return@launch
             }
+
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val downloadUrl = filesRepository.getDownloadUrl(putioToken, file.id)
+
             calibreRepository.addTransfer(
                 putioFileId = file.id,
                 fileName = file.name,
                 title = title,
                 author = author,
-                googleAccount = googleAccount
+                googleAccount = googleAccount,
+                downloadUrl = downloadUrl
             )
             _snackbarMessage.value = "Transfer requested for $title"
         }

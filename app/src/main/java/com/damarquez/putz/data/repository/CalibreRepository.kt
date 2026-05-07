@@ -3,7 +3,9 @@ package com.damarquez.putz.data.repository
 import com.damarquez.putz.data.local.CalibreTransferDao
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
+import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.remote.GDriveManager
+import com.damarquez.putz.data.remote.PutioApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -22,6 +24,7 @@ data class CalibreRequest(
     val title: String,
     val author: String,
     val fileName: String,
+    val download_url: String,
 )
 
 @Serializable
@@ -36,6 +39,7 @@ data class CalibreResponse(
 class CalibreRepository @Inject constructor(
     private val calibreTransferDao: CalibreTransferDao,
     private val gDriveManager: GDriveManager,
+    private val putioApiClient: PutioApiClient,
 ) {
     fun getTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
 
@@ -45,6 +49,7 @@ class CalibreRepository @Inject constructor(
         title: String,
         author: String,
         googleAccount: String,
+        downloadUrl: String,
     ) {
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -58,7 +63,7 @@ class CalibreRepository @Inject constructor(
         calibreTransferDao.insertTransfer(transfer)
 
         // Immediately try to upload request
-        val request = CalibreRequest("ADD_BOOK", putioFileId, title, author, fileName)
+        val request = CalibreRequest("ADD_BOOK", putioFileId, title, author, fileName, downloadUrl)
         val json = Json.encodeToString(request)
         val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$putioFileId.json", json)
         
@@ -139,5 +144,15 @@ class CalibreRepository @Inject constructor(
 
     suspend fun getTransfer(fileId: Long): CalibreTransferEntity? {
         return calibreTransferDao.getTransferById(fileId)
+    }
+
+    suspend fun removeTransfer(fileId: Long) {
+        calibreTransferDao.deleteTransfer(fileId)
+    }
+
+    suspend fun deleteFileFromPutio(token: String, fileId: Long): NetworkResult<Unit> {
+        return withContext(Dispatchers.IO) {
+            putioApiClient.deleteFiles(token, listOf(fileId))
+        }
     }
 }

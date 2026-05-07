@@ -73,7 +73,11 @@ fun CalibreTransfersScreen(
                     items = transfers,
                     key = { it.putioFileId }
                 ) { transfer ->
-                    CalibreTransferItem(transfer = transfer)
+                    CalibreTransferItem(
+                        transfer = transfer,
+                        onRemove = { viewModel.removeTransfer(transfer.putioFileId) },
+                        onDeleteFromPutio = { viewModel.deleteFromPutio(transfer.putioFileId) }
+                    )
                 }
             }
         }
