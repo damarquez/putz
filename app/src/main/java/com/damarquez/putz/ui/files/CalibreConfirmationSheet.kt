@@ -22,7 +22,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,12 +46,14 @@ fun CalibreConfirmationSheet(
     initialAuthor: String,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String) -> Unit,
+    onConfirm: (title: String, author: String, archiveMode: String?) -> Unit,
     checkExists: suspend (String, String) -> Boolean,
+    isArchive: Boolean = false,
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
     var existsInLibrary by remember { mutableStateOf(false) }
+    var archiveMode by remember { mutableStateOf("default") }
 
     LaunchedEffect(title, author) {
         if (title.isNotBlank() && author.isNotBlank()) {
@@ -138,7 +143,7 @@ fun CalibreConfirmationSheet(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        onConfirm(title.trim(), author.trim())
+                        onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null)
                     }),
                 )
                 if (author.count { it == ',' } == 1) {
@@ -158,10 +163,32 @@ fun CalibreConfirmationSheet(
                 }
             }
 
+            if (isArchive) {
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "Archive mode",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        selected = archiveMode == "default",
+                        onClick = { archiveMode = "default" },
+                    ) { Text("Default") }
+                    SegmentedButton(
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        selected = archiveMode == "audio",
+                        onClick = { archiveMode = "audio" },
+                    ) { Text("Audio") }
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { onConfirm(title.trim(), author.trim()) },
+                onClick = { onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = title.isNotBlank() && author.isNotBlank(),
             ) {

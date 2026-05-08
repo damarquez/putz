@@ -111,11 +111,12 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCalibre = null },
-            onConfirm = { title, author ->
-                viewModel.sendToCalibre(singleFile, title, author)
+            onConfirm = { title, author, archiveMode ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode)
                 selectedFileForCalibre = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) }
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            isArchive = MetadataUtils.isArchive(singleFile.name),
         )
     }
 
@@ -147,11 +148,11 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = audiobookConfirmSheetState,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author ->
+            onConfirm = { title, author, _ ->
                 viewModel.sendAudiobookPack(packFiles, title, author)
                 selectedPackFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) }
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
         )
     }
 

@@ -14,7 +14,15 @@ data class CalibreTransferEntity(
     val lastUpdatedAt: Long,
     val errorMessage: String? = null,
     val gdriveRequestId: String? = null,
-)
+    // Comma-separated list of all put.io file IDs; for single-file transfers this equals putioFileId
+    val allPutioFileIds: String = "",
+) {
+    fun parsedFileIds(): List<Long> =
+        if (allPutioFileIds.isNotEmpty())
+            allPutioFileIds.split(",").mapNotNull { it.toLongOrNull() }
+        else
+            listOf(putioFileId)
+}
 
 enum class CalibreTransferStatus {
     PENDING,

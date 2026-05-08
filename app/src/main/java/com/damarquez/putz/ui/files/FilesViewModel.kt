@@ -97,7 +97,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -114,7 +114,8 @@ class FilesViewModel @Inject constructor(
                 title = title,
                 author = author,
                 googleAccount = googleAccount,
-                downloadUrl = downloadUrl
+                downloadUrl = downloadUrl,
+                archiveMode = archiveMode,
             )
             _snackbarMessage.value = "Transfer requested for $title"
         }

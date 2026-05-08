@@ -26,6 +26,7 @@ data class CalibreRequest(
     val author: String,
     val fileName: String,
     val download_url: String,
+    val archiveMode: String? = null,
 )
 
 @Serializable
@@ -58,6 +59,7 @@ class CalibreRepository @Inject constructor(
     private val gDriveManager: GDriveManager,
     private val putioApiClient: PutioApiClient,
 ) {
+    private val json = Json { explicitNulls = false }
     fun getTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
 
     suspend fun addTransfer(
@@ -67,6 +69,7 @@ class CalibreRepository @Inject constructor(
         author: String,
         googleAccount: String,
         downloadUrl: String,
+        archiveMode: String? = null,
     ) {
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -75,14 +78,15 @@ class CalibreRepository @Inject constructor(
             author = author,
             status = CalibreTransferStatus.PENDING,
             addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis()
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
         )
         calibreTransferDao.insertTransfer(transfer)
 
         // Immediately try to upload request
-        val request = CalibreRequest("ADD_BOOK", putioFileId, title, author, fileName, downloadUrl)
-        val json = Json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$putioFileId.json", json)
+        val request = CalibreRequest("ADD_BOOK", putioFileId, title, author, fileName, downloadUrl, archiveMode)
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$putioFileId.json", jsonStr)
         
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -114,6 +118,7 @@ class CalibreRepository @Inject constructor(
             status = CalibreTransferStatus.PENDING,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = files.joinToString(",") { (file, _) -> file.id.toString() },
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -127,8 +132,8 @@ class CalibreRepository @Inject constructor(
             author = author,
             files = audioFiles,
         )
-        val json = Json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$primaryFileId.json", json)
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
 
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -217,7 +222,8 @@ class CalibreRepository @Inject constructor(
 
     suspend fun deleteFileFromPutio(token: String, fileId: Long): NetworkResult<Unit> {
         return withContext(Dispatchers.IO) {
-            putioApiClient.deleteFiles(token, listOf(fileId))
+            val ids = calibreTransferDao.getTransferById(fileId)?.parsedFileIds() ?: listOf(fileId)
+            putioApiClient.deleteFiles(token, ids)
         }
     }
 }
