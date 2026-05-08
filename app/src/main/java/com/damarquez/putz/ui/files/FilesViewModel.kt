@@ -60,6 +60,17 @@ class FilesViewModel @Inject constructor(
     fun loadFiles(isRefresh: Boolean = false) {
         viewModelScope.launch {
             if (!isRefresh) {
+                val cached = filesRepository.getCached(parentId)
+                if (cached != null) {
+                    val (files, parent) = cached
+                    _uiState.value = FilesUiState.Success(
+                        files = files.sortedWith(
+                            compareByDescending<PutioFile> { it.isFolder }.thenBy { it.name.lowercase() }
+                        ),
+                        parent = parent,
+                    )
+                    return@launch
+                }
                 _uiState.value = FilesUiState.Loading
             } else {
                 val current = _uiState.value
@@ -106,6 +117,29 @@ class FilesViewModel @Inject constructor(
                 downloadUrl = downloadUrl
             )
             _snackbarMessage.value = "Transfer requested for $title"
+        }
+    }
+
+    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val filesWithUrls = files.map { file ->
+                file to filesRepository.getDownloadUrl(putioToken, file.id)
+            }
+
+            calibreRepository.addAudiobookPackTransfer(
+                files = filesWithUrls,
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+            )
+            _snackbarMessage.value = "Audiobook transfer requested for $title"
         }
     }
 

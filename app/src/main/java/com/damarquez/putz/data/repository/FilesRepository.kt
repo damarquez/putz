@@ -13,12 +13,18 @@ import javax.inject.Singleton
 class FilesRepository @Inject constructor(
     private val apiClient: PutioApiClient,
 ) {
+    private val fileCache = mutableMapOf<Long, Pair<List<PutioFile>, PutioFile?>>()
+
+    fun getCached(parentId: Long): Pair<List<PutioFile>, PutioFile?>? = fileCache[parentId]
+
     suspend fun listFiles(
         token: String,
         parentId: Long = 0L,
     ): NetworkResult<Pair<List<PutioFile>, PutioFile?>> =
         withContext(Dispatchers.IO) {
-            apiClient.listFiles(token, parentId)
+            apiClient.listFiles(token, parentId).also { result ->
+                if (result is NetworkResult.Success) fileCache[parentId] = result.data
+            }
         }
 
     suspend fun getAccountInfo(token: String): NetworkResult<AccountInfo> =

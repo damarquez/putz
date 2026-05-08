@@ -57,6 +57,7 @@ import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileItem
 import com.damarquez.putz.ui.navigation.Screen
+import com.damarquez.putz.util.MetadataUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,20 +87,69 @@ fun FilesScreen(
         }
     }
 
+    // Single-file Calibre send
     var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
     val calibreSheetState = rememberModalBottomSheetState()
+
+    // Audiobook pack flow
+    var audiobookPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedPackFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+    val audiobookPackSheetState = rememberModalBottomSheetState()
+    val audiobookConfirmSheetState = rememberModalBottomSheetState()
 
     val isRoot = viewModel.parentId == 0L
     val folderName = viewModel.folderName
 
     if (selectedFileForCalibre != null) {
+        val singleFile = selectedFileForCalibre!!
+        val (initialTitle, initialAuthor) = remember(singleFile) {
+            MetadataUtils.extractMetadata(singleFile.name)
+        }
         CalibreConfirmationSheet(
-            file = selectedFileForCalibre!!,
+            displayName = singleFile.name,
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCalibre = null },
             onConfirm = { title, author ->
-                viewModel.sendToCalibre(selectedFileForCalibre!!, title, author)
+                viewModel.sendToCalibre(singleFile, title, author)
                 selectedFileForCalibre = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) }
+        )
+    }
+
+    if (audiobookPackTriggerFile != null && selectedPackFiles == null) {
+        val mp3Files = remember(uiState) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isMultiTrackAudio(it.name) }
+                ?: emptyList()
+        }
+        AudiobookPackSheet(
+            mp3Files = mp3Files,
+            sheetState = audiobookPackSheetState,
+            onDismiss = { audiobookPackTriggerFile = null },
+            onConfirm = { files ->
+                selectedPackFiles = files
+                audiobookPackTriggerFile = null
+            },
+        )
+    }
+
+    if (selectedPackFiles != null) {
+        val packFiles = selectedPackFiles!!
+        val (initialTitle, initialAuthor) = remember(packFiles) {
+            MetadataUtils.extractMetadata(packFiles.first().name)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${packFiles.size} MP3 files",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            sheetState = audiobookConfirmSheetState,
+            onDismiss = { selectedPackFiles = null },
+            onConfirm = { title, author ->
+                viewModel.sendAudiobookPack(packFiles, title, author)
+                selectedPackFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) }
         )
@@ -314,6 +364,7 @@ fun FilesScreen(
                                     },
                                     onLongClick = { selectedIds = selectedIds + file.id },
                                     onSendToCalibre = { selectedFileForCalibre = it },
+                                    onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                     onDelete = { fileToDelete = file },
                                     isSelected = file.id in selectedIds,
                                     isSelectionMode = isSelectionMode,

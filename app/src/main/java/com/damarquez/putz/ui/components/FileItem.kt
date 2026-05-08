@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.PutioFile
@@ -54,6 +56,7 @@ fun FileItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
+    onSendAsAudiobookPack: (PutioFile) -> Unit,
     onDelete: () -> Unit,
     isSelected: Boolean,
     isSelectionMode: Boolean,
@@ -63,6 +66,8 @@ fun FileItem(
     val cornerRadius = styling.cornerRadiusDp.dp
     val fileType = PutioFileType.from(file.fileType)
     val isEbook = MetadataUtils.isEbook(file.name)
+    val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.name)
+    val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -135,8 +140,27 @@ fun FileItem(
                                     onSendToCalibre(file)
                                 },
                             )
+                        }
+                        if (isMultiTrackAudio) {
+                            DropdownMenuItem(
+                                text = { Text("Send to Calibre as M4B") },
+                                onClick = {
+                                    showMenu = false
+                                    onSendAsAudiobookPack(file)
+                                },
+                            )
+                        }
+                        if (isEbook || isMultiTrackAudio) {
                             HorizontalDivider()
                         }
+                        DropdownMenuItem(
+                            text = { Text("Copy name") },
+                            onClick = {
+                                showMenu = false
+                                clipboard.setText(AnnotatedString(file.name))
+                            },
+                        )
+                        HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                             leadingIcon = {

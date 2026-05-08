@@ -45,14 +45,10 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
     // Determine bottom nav visibility from the current back-stack entry
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val currentParentId = backStackEntry?.arguments?.getLong(Screen.Files.ARG_PARENT_ID) ?: 0L
 
-    val showBottomNav = when {
-        currentRoute == Screen.Transfers.route -> true
-        currentRoute == Screen.CalibreTransfers.route -> true
-        currentRoute == Screen.Files.route && currentParentId == 0L -> true
-        else -> false
-    }
+    val showBottomNav = currentRoute == Screen.Files.route ||
+                        currentRoute == Screen.Transfers.route ||
+                        currentRoute == Screen.CalibreTransfers.route
 
     // Tab selection state
     val filesSelected = currentRoute == Screen.Files.route
@@ -70,10 +66,21 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
                     NavigationBarItem(
                         selected = filesSelected,
                         onClick = {
-                            navController.navigate(Screen.Files.createRoute(0L, ROOT_FOLDER_NAME)) {
-                                launchSingleTop = true
-                                restoreState = true
-                                popUpTo(Screen.Files.route) { inclusive = true }
+                            if (filesSelected) {
+                                // Already on Files — tap again to pop back to root
+                                navController.popBackStack(
+                                    route = Screen.Files.createRoute(0L, ROOT_FOLDER_NAME),
+                                    inclusive = false,
+                                )
+                            } else {
+                                // Pop the current tab entry to reveal the Files back stack
+                                if (!navController.popBackStack(
+                                        route = Screen.Files.route,
+                                        inclusive = false,
+                                    )
+                                ) {
+                                    navController.navigate(Screen.Files.createRoute(0L, ROOT_FOLDER_NAME))
+                                }
                             }
                         },
                         icon = { Icon(Icons.Default.Folder, contentDescription = "Files") },
@@ -82,9 +89,12 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
                     NavigationBarItem(
                         selected = transfersSelected,
                         onClick = {
-                            navController.navigate(Screen.Transfers.route) {
-                                launchSingleTop = true
-                                restoreState = true
+                            if (!transfersSelected) {
+                                // Pop any other tab entry (e.g. Calibre) to keep Files stack intact
+                                navController.popBackStack(route = Screen.Files.route, inclusive = false)
+                                navController.navigate(Screen.Transfers.route) {
+                                    launchSingleTop = true
+                                }
                             }
                         },
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Transfers") },
@@ -93,9 +103,12 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
                     NavigationBarItem(
                         selected = calibreSelected,
                         onClick = {
-                            navController.navigate(Screen.CalibreTransfers.route) {
-                                launchSingleTop = true
-                                restoreState = true
+                            if (!calibreSelected) {
+                                // Pop any other tab entry (e.g. Transfers) to keep Files stack intact
+                                navController.popBackStack(route = Screen.Files.route, inclusive = false)
+                                navController.navigate(Screen.CalibreTransfers.route) {
+                                    launchSingleTop = true
+                                }
                             }
                         },
                         icon = { Icon(Icons.Default.Book, contentDescription = "Calibre") },

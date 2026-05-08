@@ -2,10 +2,18 @@ package com.damarquez.putz.util
 
 object MetadataUtils {
     private val EBOOK_EXTENSIONS = setOf("epub", "mobi", "pdf", "azw3", "fb2", "cbz", "cbr")
+    private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a")
+    private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a")
 
     fun isEbook(fileName: String): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase()
-        return ext in EBOOK_EXTENSIONS
+        return ext in EBOOK_EXTENSIONS || ext in AUDIO_EXTENSIONS
+    }
+
+    /** True for formats that can be combined into an M4B pack (mp3, m4a). */
+    fun isMultiTrackAudio(fileName: String): Boolean {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return ext in MULTI_TRACK_AUDIO_EXTENSIONS
     }
 
     fun extractMetadata(fileName: String): Pair<String, String> {

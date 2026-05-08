@@ -35,19 +35,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import com.damarquez.putz.data.model.PutioFile
-import com.damarquez.putz.util.MetadataUtils
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalibreConfirmationSheet(
-    file: PutioFile,
+    displayName: String,
+    initialTitle: String,
+    initialAuthor: String,
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onConfirm: (title: String, author: String) -> Unit,
     checkExists: suspend (String, String) -> Boolean,
 ) {
-    val (initialTitle, initialAuthor) = remember(file) { MetadataUtils.extractMetadata(file.name) }
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
     var existsInLibrary by remember { mutableStateOf(false) }
@@ -77,7 +75,7 @@ fun CalibreConfirmationSheet(
             Spacer(Modifier.height(8.dp))
             
             Text(
-                text = file.name,
+                text = displayName,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -4,6 +4,7 @@ import com.damarquez.putz.data.local.CalibreTransferDao
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.remote.GDriveManager
 import com.damarquez.putz.data.remote.PutioApiClient
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +26,22 @@ data class CalibreRequest(
     val author: String,
     val fileName: String,
     val download_url: String,
+)
+
+@Serializable
+data class AudiobookFile(
+    val putio_file_id: Long,
+    val fileName: String,
+    val download_url: String,
+)
+
+@Serializable
+data class AudiobookPackRequest(
+    val action: String,
+    val putio_file_id: Long,
+    val title: String,
+    val author: String,
+    val files: List<AudiobookFile>,
 )
 
 @Serializable
@@ -78,6 +95,52 @@ class CalibreRepository @Inject constructor(
                 status = CalibreTransferStatus.FAILED,
                 errorMessage = "Failed to upload to GDrive",
                 lastUpdatedAt = System.currentTimeMillis()
+            ))
+        }
+    }
+
+    suspend fun addAudiobookPackTransfer(
+        files: List<Pair<PutioFile, String>>,
+        title: String,
+        author: String,
+        googleAccount: String,
+    ) {
+        val primaryFileId = files.first().first.id
+        val transfer = CalibreTransferEntity(
+            putioFileId = primaryFileId,
+            fileName = "${files.size} MP3 files",
+            title = title,
+            author = author,
+            status = CalibreTransferStatus.PENDING,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+        )
+        calibreTransferDao.insertTransfer(transfer)
+
+        val audioFiles = files.map { (file, url) ->
+            AudiobookFile(file.id, file.name, url)
+        }
+        val request = AudiobookPackRequest(
+            action = "ADD_AUDIOBOOK_PACK",
+            putio_file_id = primaryFileId,
+            title = title,
+            author = author,
+            files = audioFiles,
+        )
+        val json = Json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$primaryFileId.json", json)
+
+        if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+            ))
+        } else {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.FAILED,
+                errorMessage = "Failed to upload to GDrive",
+                lastUpdatedAt = System.currentTimeMillis(),
             ))
         }
     }
