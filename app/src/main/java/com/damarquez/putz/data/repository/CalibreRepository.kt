@@ -25,15 +25,16 @@ data class CalibreRequest(
     val title: String,
     val author: String,
     val fileName: String,
-    val download_url: String,
+    val download_url: String? = null,
     val archiveMode: String? = null,
+    val is_probe: Boolean? = null,
 )
 
 @Serializable
 data class AudiobookFile(
     val putio_file_id: Long,
     val fileName: String,
-    val download_url: String,
+    val download_url: String? = null,
 )
 
 @Serializable
@@ -43,6 +44,7 @@ data class AudiobookPackRequest(
     val title: String,
     val author: String,
     val files: List<AudiobookFile>,
+    val is_probe: Boolean? = null,
 )
 
 @Serializable
@@ -210,6 +212,46 @@ class CalibreRepository @Inject constructor(
             e.printStackTrace()
             false
         }
+    }
+
+    suspend fun sendProbeRequest(fileId: Long, googleAccount: String): Boolean {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return false
+        
+        val isPack = transfer.allPutioFileIds.contains(",")
+        val jsonStr = if (isPack) {
+            val audioFiles = transfer.parsedFileIds().map { id ->
+                AudiobookFile(id, "PROBE", null)
+            }
+            val request = AudiobookPackRequest(
+                action = "ADD_AUDIOBOOK_PACK",
+                putio_file_id = transfer.putioFileId,
+                title = transfer.title,
+                author = transfer.author,
+                files = audioFiles,
+                is_probe = true
+            )
+            json.encodeToString(request)
+        } else {
+            val request = CalibreRequest(
+                action = "ADD_BOOK",
+                putio_file_id = transfer.putioFileId,
+                title = transfer.title,
+                author = transfer.author,
+                fileName = transfer.fileName,
+                download_url = null,
+                is_probe = true
+            )
+            json.encodeToString(request)
+        }
+
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_probe_${transfer.putioFileId}.json", jsonStr)
+        if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                lastUpdatedAt = System.currentTimeMillis()
+            ))
+            return true
+        }
+        return false
     }
 
     suspend fun getTransfer(fileId: Long): CalibreTransferEntity? {

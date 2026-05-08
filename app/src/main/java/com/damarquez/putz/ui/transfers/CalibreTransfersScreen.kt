@@ -129,6 +129,9 @@ fun CalibreTransfersScreen(
                             alsoDeleteFromPutio = transfer.status == CalibreTransferStatus.COMPLETED
                             transferToDelete = transfer
                         },
+                        onProbe = {
+                            viewModel.probeTransfer(transfer.putioFileId)
+                        }
                     )
                 }
             }

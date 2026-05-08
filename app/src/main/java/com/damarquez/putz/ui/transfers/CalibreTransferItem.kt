@@ -34,6 +34,7 @@ import java.util.Locale
 fun CalibreTransferItem(
     transfer: CalibreTransferEntity,
     onDelete: () -> Unit,
+    onProbe: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
@@ -96,6 +97,17 @@ fun CalibreTransferItem(
             }
 
             StatusBadge(status = transfer.status)
+
+            if (transfer.status == CalibreTransferStatus.REQUESTED ||
+                transfer.status == CalibreTransferStatus.PROCESSING) {
+                IconButton(onClick = onProbe) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = "Probe status",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
 
             IconButton(onClick = onDelete) {
                 Icon(

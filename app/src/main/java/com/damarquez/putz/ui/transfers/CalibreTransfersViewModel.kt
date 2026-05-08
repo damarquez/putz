@@ -38,8 +38,28 @@ class CalibreTransfersViewModel @Inject constructor(
                 val account = settingsRepository.googleTokenFlow.first()
                 if (account.isNotBlank()) {
                     calibreRepository.pollResponses(account)
+
+                    // Also check for stuck transfers (older than 5 mins)
+                    val currentTransfers = calibreRepository.getTransfers().first()
+                    val now = System.currentTimeMillis()
+                    currentTransfers.forEach { transfer ->
+                        if ((transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.REQUESTED ||
+                                    transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.PROCESSING) &&
+                            now - transfer.lastUpdatedAt > 5 * 60 * 1000) {
+                            calibreRepository.sendProbeRequest(transfer.putioFileId, account)
+                        }
+                    }
                 }
                 delay(10_000) // Poll every 10 seconds
+            }
+        }
+    }
+
+    fun probeTransfer(fileId: Long) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isNotBlank()) {
+                calibreRepository.sendProbeRequest(fileId, account)
             }
         }
     }
