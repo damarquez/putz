@@ -131,6 +131,9 @@ fun CalibreTransfersScreen(
                         },
                         onProbe = {
                             viewModel.probeTransfer(transfer.putioFileId)
+                        },
+                        onRetry = {
+                            viewModel.retryTransfer(transfer.putioFileId)
                         }
                     )
                 }

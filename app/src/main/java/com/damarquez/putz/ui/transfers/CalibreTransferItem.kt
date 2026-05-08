@@ -35,6 +35,7 @@ fun CalibreTransferItem(
     transfer: CalibreTransferEntity,
     onDelete: () -> Unit,
     onProbe: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
@@ -74,6 +75,14 @@ fun CalibreTransferItem(
                     fontSize = 9.sp,
                     color = MaterialTheme.colorScheme.primary,
                 )
+                if (transfer.retryCount > 0) {
+                    Text(
+                        text = "Tried: ${transfer.retryCount}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 8.sp,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
             }
 
             Spacer(Modifier.width(16.dp))
@@ -94,17 +103,36 @@ fun CalibreTransferItem(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
+                if (transfer.status == CalibreTransferStatus.FAILED && !transfer.errorMessage.isNullOrBlank()) {
+                    Text(
+                        text = transfer.errorMessage,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1
+                    )
+                }
             }
 
             StatusBadge(status = transfer.status)
 
-            if (transfer.status == CalibreTransferStatus.REQUESTED ||
+            if (transfer.status == CalibreTransferStatus.PENDING ||
+                transfer.status == CalibreTransferStatus.REQUESTED ||
                 transfer.status == CalibreTransferStatus.PROCESSING) {
                 IconButton(onClick = onProbe) {
                     Icon(
                         imageVector = Icons.Default.Sync,
                         contentDescription = "Probe status",
                         tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (transfer.status == CalibreTransferStatus.FAILED) {
+                IconButton(onClick = onRetry) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = "Retry",
+                        tint = MaterialTheme.colorScheme.tertiary
                     )
                 }
             }

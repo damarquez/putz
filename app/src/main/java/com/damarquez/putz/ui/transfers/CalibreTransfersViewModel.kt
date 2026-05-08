@@ -43,9 +43,11 @@ class CalibreTransfersViewModel @Inject constructor(
                     val currentTransfers = calibreRepository.getTransfers().first()
                     val now = System.currentTimeMillis()
                     currentTransfers.forEach { transfer ->
-                        if ((transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.REQUESTED ||
-                                    transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.PROCESSING) &&
-                            now - transfer.lastUpdatedAt > 5 * 60 * 1000) {
+                        val isStuck = transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.PENDING ||
+                                     transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.REQUESTED ||
+                                     transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.PROCESSING
+                        
+                        if (isStuck && now - transfer.lastUpdatedAt > 5 * 60 * 1000) {
                             calibreRepository.sendProbeRequest(transfer.putioFileId, account)
                         }
                     }
@@ -60,6 +62,16 @@ class CalibreTransfersViewModel @Inject constructor(
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isNotBlank()) {
                 calibreRepository.sendProbeRequest(fileId, account)
+            }
+        }
+    }
+
+    fun retryTransfer(fileId: Long) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            val token = settingsRepository.authTokenFlow.first()
+            if (account.isNotBlank() && token.isNotBlank()) {
+                calibreRepository.retryTransfer(fileId, account, token)
             }
         }
     }

@@ -144,6 +144,16 @@ class GDriveManager @Inject constructor(
         }
     }
 
+    suspend fun checkFileExists(accountName: String, fileId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val service = getDriveService(accountName)
+            val file = service.files().get(fileId).setFields("id, trashed").execute()
+            file != null && !file.getTrashed()
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun deleteFile(accountName: String, fileId: String) = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)

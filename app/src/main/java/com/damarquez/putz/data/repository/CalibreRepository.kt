@@ -216,6 +216,17 @@ class CalibreRepository @Inject constructor(
 
     suspend fun sendProbeRequest(fileId: Long, googleAccount: String): Boolean {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return false
+
+        // If we have a GDrive request ID, check if it still exists
+        transfer.gdriveRequestId?.let { requestId ->
+            if (gDriveManager.checkFileExists(googleAccount, requestId)) {
+                // File still exists, daemon hasn't picked it up. Just update timestamp to wait longer.
+                calibreTransferDao.updateTransfer(transfer.copy(
+                    lastUpdatedAt = System.currentTimeMillis()
+                ))
+                return false
+            }
+        }
         
         val isPack = transfer.allPutioFileIds.contains(",")
         val jsonStr = if (isPack) {
@@ -248,6 +259,54 @@ class CalibreRepository @Inject constructor(
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 lastUpdatedAt = System.currentTimeMillis()
+            ))
+            return true
+        }
+        return false
+    }
+
+    suspend fun retryTransfer(fileId: Long, googleAccount: String, putioToken: String): Boolean {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return false
+        
+        // Re-fetch download URLs for all files
+        val ids = transfer.parsedFileIds()
+        val filesWithUrls = ids.map { id ->
+            id to "${PutioApiClient.BASE_URL}/files/$id/download?oauth_token=$putioToken"
+        }
+        
+        val isPack = transfer.allPutioFileIds.contains(",")
+        val jsonStr = if (isPack) {
+            val audioFiles = filesWithUrls.map { (id, url) ->
+                AudiobookFile(id, "RETRY", url) // We don't store original filename in the list, but daemon uses download_url
+            }
+            val request = AudiobookPackRequest(
+                action = "ADD_AUDIOBOOK_PACK",
+                putio_file_id = transfer.putioFileId,
+                title = transfer.title,
+                author = transfer.author,
+                files = audioFiles,
+            )
+            json.encodeToString(request)
+        } else {
+            val request = CalibreRequest(
+                action = "ADD_BOOK",
+                putio_file_id = transfer.putioFileId,
+                title = transfer.title,
+                author = transfer.author,
+                fileName = transfer.fileName,
+                download_url = filesWithUrls.first().second,
+            )
+            json.encodeToString(request)
+        }
+
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_retry_${transfer.putioFileId}.json", jsonStr)
+        if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+                retryCount = transfer.retryCount + 1,
+                errorMessage = null
             ))
             return true
         }
