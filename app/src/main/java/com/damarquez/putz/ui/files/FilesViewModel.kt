@@ -40,6 +40,7 @@ class FilesViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
     private val filesRepository: FilesRepository,
+    private val localFilesRepository: com.damarquez.putz.data.repository.LocalFilesRepository,
     private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
@@ -47,6 +48,7 @@ class FilesViewModel @Inject constructor(
     val parentId: Long = savedStateHandle[Screen.Files.ARG_PARENT_ID] ?: 0L
     val folderName: String = savedStateHandle[Screen.Files.ARG_FOLDER_NAME] ?: "Your Files"
     val highlightFileId: Long = savedStateHandle[Screen.Files.ARG_HIGHLIGHT_ID] ?: -1L
+    val localUri: String? = savedStateHandle[Screen.Files.ARG_LOCAL_URI]
 
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
@@ -76,14 +78,32 @@ class FilesViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            val isLocalRoot = parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID
+            val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
+
+            if (isLocalRoot) {
+                // Browsing the Local Files virtual root
+                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
+                val attachments = localFilesRepository.getAttachments()
+                _uiState.value = FilesUiState.Success(files = attachments, parent = null)
+                return@launch
+            }
+
+            if (isLocalFolder) {
+                // Browsing inside a local folder
+                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
+                val files = localUri?.let { localFilesRepository.listLocalFolder(it) } ?: emptyList()
+                _uiState.value = FilesUiState.Success(files = files, parent = null)
+                return@launch
+            }
+
+            // Normal put.io loading
             if (!isRefresh) {
                 val cached = filesRepository.getCached(parentId)
                 if (cached != null) {
                     val (files, parent) = cached
                     _uiState.value = FilesUiState.Success(
-                        files = files.sortedWith(
-                            compareByDescending<PutioFile> { it.isFolder }.thenBy { it.name.lowercase() }
-                        ),
+                        files = augmentWithLocal(files),
                         parent = parent,
                     )
                     return@launch
@@ -100,16 +120,37 @@ class FilesViewModel @Inject constructor(
             when (val result = filesRepository.listFiles(token, parentId)) {
                 is NetworkResult.Success -> {
                     val (files, parent) = result.data
-                    val sorted = files.sortedWith(
-                        compareByDescending<PutioFile> { it.isFolder }
-                            .thenBy { it.name.lowercase() }
-                    )
-                    _uiState.value = FilesUiState.Success(files = sorted, parent = parent)
+                    _uiState.value = FilesUiState.Success(files = augmentWithLocal(files), parent = parent)
                 }
                 is NetworkResult.Error -> {
                     _uiState.value = FilesUiState.Error(result.message)
                 }
                 NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    private fun augmentWithLocal(apiFiles: List<PutioFile>): List<PutioFile> {
+        val list = if (parentId == 0L) {
+            val localRoot = PutioFile(
+                id = com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID,
+                name = "Local Files",
+                fileType = "FOLDER",
+                isLocal = true
+            )
+            listOf(localRoot) + apiFiles
+        } else apiFiles
+
+        return list.sortedWith(
+            compareByDescending<PutioFile> { it.isFolder }.thenBy { it.name.lowercase() }
+        )
+    }
+
+    fun attachLocal(uri: android.net.Uri, name: String, isFolder: Boolean) {
+        viewModelScope.launch {
+            localFilesRepository.attach(uri, name, isFolder)
+            if (parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID) {
+                loadFiles(isRefresh = true)
             }
         }
     }
@@ -123,20 +164,63 @@ class FilesViewModel @Inject constructor(
             }
 
             val putioToken = settingsRepository.authTokenFlow.first()
-            val downloadUrl = filesRepository.getDownloadUrl(putioToken, file.id)
+            
+            var targetFileId = file.id
+            var isTempUpload = false
+
+            if (file.isLocal && file.localUri != null) {
+                // Phase 3: Handle local file upload
+                _snackbarMessage.value = "Uploading \"${file.name}\" to put.io..."
+                
+                // 1. Find or create .putz_attachments
+                val rootFiles = filesRepository.listFiles(putioToken, 0).dataOrNull()?.first ?: emptyList()
+                var tempFolderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
+                
+                if (tempFolderId == null) {
+                    val createResult = filesRepository.createFolder(putioToken, 0, ".putz_attachments")
+                    if (createResult is NetworkResult.Success) {
+                        tempFolderId = createResult.data.id
+                    } else {
+                        _snackbarMessage.value = "Failed to create temp folder: ${(createResult as NetworkResult.Error).message}"
+                        return@launch
+                    }
+                }
+
+                // 2. Upload the file
+                val uploadResult = filesRepository.uploadFile(
+                    putioToken, 
+                    tempFolderId!!, 
+                    file.name, 
+                    android.net.Uri.parse(file.localUri), 
+                    context.contentResolver
+                )
+
+                if (uploadResult is NetworkResult.Success) {
+                    targetFileId = uploadResult.data.id
+                    isTempUpload = true
+                } else {
+                    _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
+                    return@launch
+                }
+            }
+
+            val downloadUrl = filesRepository.getDownloadUrl(putioToken, targetFileId)
 
             calibreRepository.addTransfer(
-                putioFileId = file.id,
+                putioFileId = targetFileId,
                 fileName = file.name,
                 title = title,
                 author = author,
                 googleAccount = googleAccount,
                 downloadUrl = downloadUrl,
                 archiveMode = archiveMode,
+                isTempUpload = isTempUpload
             )
             _snackbarMessage.value = "Transfer requested for $title"
         }
     }
+
+    private fun <T> NetworkResult<T>.dataOrNull(): T? = (this as? NetworkResult.Success)?.data
 
     fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String) {
         viewModelScope.launch {
@@ -180,18 +264,31 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun deleteFiles(ids: List<Long>) {
+    fun deleteFiles(files: List<PutioFile>) {
         viewModelScope.launch {
-            val token = settingsRepository.authTokenFlow.first()
-            when (val result = filesRepository.deleteFiles(token, ids)) {
-                is NetworkResult.Success -> {
-                    _snackbarMessage.value = if (ids.size == 1) "Deleted" else "${ids.size} items deleted"
-                    loadFiles(isRefresh = true)
+            val localFiles = files.filter { it.isLocal }
+            val remoteIds = files.filter { !it.isLocal }.map { it.id }
+
+            if (localFiles.isNotEmpty()) {
+                localFiles.forEach { local ->
+                    localFilesRepository.detach(local.id)
                 }
-                is NetworkResult.Error -> {
-                    _snackbarMessage.value = "Delete failed: ${result.message}"
+                _snackbarMessage.value = if (localFiles.size == 1) "Detached" else "${localFiles.size} items detached"
+                loadFiles(isRefresh = true)
+            }
+
+            if (remoteIds.isNotEmpty()) {
+                val token = settingsRepository.authTokenFlow.first()
+                when (val result = filesRepository.deleteFiles(token, remoteIds)) {
+                    is NetworkResult.Success -> {
+                        _snackbarMessage.value = if (remoteIds.size == 1) "Deleted" else "${remoteIds.size} items deleted"
+                        loadFiles(isRefresh = true)
+                    }
+                    is NetworkResult.Error -> {
+                        _snackbarMessage.value = "Delete failed: ${result.message}"
+                    }
+                    NetworkResult.Loading -> Unit
                 }
-                NetworkResult.Loading -> Unit
             }
         }
     }

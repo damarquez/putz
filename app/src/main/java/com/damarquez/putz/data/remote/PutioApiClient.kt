@@ -9,8 +9,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okio.source
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,6 +63,7 @@ class PutioApiClient @Inject constructor(
 ) {
     companion object {
         const val BASE_URL = "https://api.put.io/v2"
+        const val UPLOAD_URL = "https://upload.put.io/v2"
     }
 
     fun listFiles(token: String, parentId: Long = 0L): NetworkResult<Pair<List<PutioFile>, PutioFile?>> {
@@ -315,6 +318,99 @@ class PutioApiClient @Inject constructor(
                     return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
                 }
                 NetworkResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun createFolder(token: String, parentId: Long, name: String): NetworkResult<PutioFile> {
+        return try {
+            val body = FormBody.Builder()
+                .add("name", name)
+                .add("parent_id", parentId.toString())
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/files/create-folder")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<FileResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<FileResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                val file = parsed.file ?: return NetworkResult.Error("Missing file info")
+                NetworkResult.Success(file)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun uploadFile(
+        token: String,
+        parentId: Long,
+        name: String,
+        uri: android.net.Uri,
+        contentResolver: android.content.ContentResolver
+    ): NetworkResult<PutioFile> {
+        return try {
+            val mediaType = (contentResolver.getType(uri) ?: "application/octet-stream").toMediaTypeOrNull()
+            
+            // Get accurate file size from SAF
+            val fileSize = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+
+            val fileBody = object : okhttp3.RequestBody() {
+                override fun contentType() = mediaType
+                override fun contentLength() = fileSize
+                override fun writeTo(sink: okio.BufferedSink) {
+                    contentResolver.openInputStream(uri)?.use { inputStream ->
+                        inputStream.source().use { source ->
+                            sink.writeAll(source)
+                        }
+                    } ?: throw java.io.IOException("Failed to open input stream for $uri")
+                }
+            }
+
+            val multipartBody = okhttp3.MultipartBody.Builder()
+                .setType(okhttp3.MultipartBody.FORM)
+                .addFormDataPart("file", name, fileBody)
+                .addFormDataPart("parent_id", parentId.toString())
+                .addFormDataPart("oauth_token", token)
+                .build()
+
+            val request = Request.Builder()
+                .url("$UPLOAD_URL/files/upload")
+                .header("Accept", "application/json")
+                .post(multipartBody)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<FileResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<FileResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                val file = parsed.file ?: return NetworkResult.Error("Missing file info")
+                NetworkResult.Success(file)
             }
         } catch (e: Exception) {
             NetworkResult.Error(e.message ?: "Unknown error")

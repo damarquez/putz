@@ -54,4 +54,20 @@ class FilesRepository @Inject constructor(
         withContext(Dispatchers.IO) {
             apiClient.deleteFiles(token, fileIds)
         }
+
+    suspend fun createFolder(token: String, parentId: Long, name: String): NetworkResult<PutioFile> =
+        withContext(Dispatchers.IO) {
+            apiClient.createFolder(token, parentId, name)
+        }
+
+    suspend fun uploadFile(
+        token: String,
+        parentId: Long,
+        name: String,
+        uri: android.net.Uri,
+        contentResolver: android.content.ContentResolver
+    ): NetworkResult<PutioFile> =
+        withContext(Dispatchers.IO) {
+            apiClient.uploadFile(token, parentId, name, uri, contentResolver)
+        }
 }

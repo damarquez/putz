@@ -17,6 +17,10 @@ data class PutioFile(
     val icon: String? = null,
     val screenshot: String? = null,
     @SerialName("is_mp4_available") val isMp4Available: Boolean = false,
+
+    // Local file integration
+    val isLocal: Boolean = false,
+    val localUri: String? = null,
 ) {
     val isFolder: Boolean get() = fileType == "FOLDER"
 }

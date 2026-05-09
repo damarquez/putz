@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -72,10 +73,20 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.documentfile.provider.DocumentFile
+
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.filled.CreateNewFolder
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
-    onNavigateToFolder: (Long, String) -> Unit,
+    onNavigateToFolder: (Long, String, String?) -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onSignOut: () -> Unit,
@@ -87,10 +98,26 @@ fun FilesScreen(
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     
+    val context = LocalContext.current
+    val pickFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let {
+            context.contentResolver.takePersistableUriPermission(it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val name = DocumentFile.fromSingleUri(context, it)?.name ?: "Unknown"
+            viewModel.attachLocal(it, name, false)
+        }
+    }
+    val pickFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let {
+            context.contentResolver.takePersistableUriPermission(it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val name = DocumentFile.fromTreeUri(context, it)?.name ?: "Unknown"
+            viewModel.attachLocal(it, name, true)
+        }
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
-    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    val isSelectionMode = selectedIds.isNotEmpty()
+    var selectedFiles by remember { mutableStateOf<Set<PutioFile>>(emptySet()) }
+    val isSelectionMode = selectedFiles.isNotEmpty()
     var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -108,7 +135,7 @@ fun FilesScreen(
 
     BackHandler(enabled = isSelectionMode || isSearchMode) {
         if (isSelectionMode) {
-            selectedIds = emptySet()
+            selectedFiles = emptySet()
         } else if (isSearchMode) {
             viewModel.toggleSearch()
         }
@@ -193,21 +220,22 @@ fun FilesScreen(
     fileToDelete?.let { file ->
         AlertDialog(
             onDismissRequest = { fileToDelete = null },
-            title = { Text("Delete \"${file.name}\"?") },
+            title = { Text("${if (file.isLocal) "Detach" else "Delete"} \"${file.name}\"?") },
             text = {
                 Text(
-                    if (file.isFolder) "This folder and all its contents will be permanently deleted."
-                    else "This file will be permanently deleted."
+                    if (file.isLocal) "This local attachment will be removed from Putz. Your original file will not be touched."
+                    else if (file.isFolder) "This folder and all its contents will be permanently deleted from put.io."
+                    else "This file will be permanently deleted from put.io."
                 )
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteFiles(listOf(file.id))
+                        viewModel.deleteFiles(listOf(file))
                         fileToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("Delete") }
+                ) { Text(if (file.isLocal) "Detach" else "Delete") }
             },
             dismissButton = {
                 TextButton(onClick = { fileToDelete = null }) { Text("Cancel") }
@@ -216,19 +244,27 @@ fun FilesScreen(
     }
 
     if (showBatchDeleteConfirm) {
+        val hasLocal = selectedFiles.any { it.isLocal }
+        val hasRemote = selectedFiles.any { !it.isLocal }
+        val actionText = when {
+            hasLocal && hasRemote -> "Detach/Delete"
+            hasLocal -> "Detach"
+            else -> "Delete"
+        }
+
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
-            title = { Text("Delete ${selectedIds.size} items?") },
-            text = { Text("Selected files and folders will be permanently deleted.") },
+            title = { Text("$actionText ${selectedFiles.size} items?") },
+            text = { Text("Selected items will be removed from Putz/put.io.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteFiles(selectedIds.toList())
-                        selectedIds = emptySet()
+                        viewModel.deleteFiles(selectedFiles.toList())
+                        selectedFiles = emptySet()
                         showBatchDeleteConfirm = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("Delete") }
+                ) { Text(actionText) }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) { Text("Cancel") }
@@ -259,7 +295,7 @@ fun FilesScreen(
                         )
                     } else if (isSelectionMode) {
                         Text(
-                            text = "${selectedIds.size} selected",
+                            text = "${selectedFiles.size} selected",
                             style = MaterialTheme.typography.titleLarge,
                         )
                     } else {
@@ -286,7 +322,7 @@ fun FilesScreen(
                         isSearchMode -> IconButton(onClick = { viewModel.toggleSearch() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
                         }
-                        isSelectionMode -> IconButton(onClick = { selectedIds = emptySet() }) {
+                        isSelectionMode -> IconButton(onClick = { selectedFiles = emptySet() }) {
                             Icon(Icons.Default.Close, contentDescription = "Cancel selection")
                         }
                         !isRoot -> IconButton(onClick = onNavigateUp) {
@@ -374,6 +410,24 @@ fun FilesScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (viewModel.parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID) {
+                Column(horizontalAlignment = Alignment.End) {
+                    SmallFloatingActionButton(
+                        onClick = { pickFolderLauncher.launch(null) },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Icon(Icons.Default.CreateNewFolder, contentDescription = "Attach folder")
+                    }
+                    FloatingActionButton(
+                        onClick = { pickFileLauncher.launch(arrayOf("*/*")) },
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Attach file")
+                    }
+                }
+            }
+        },
         contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
         when (val state = uiState) {
@@ -438,17 +492,18 @@ fun FilesScreen(
                                     file = file,
                                     onClick = {
                                         if (isSelectionMode) {
-                                            selectedIds = if (file.id in selectedIds)
-                                                selectedIds - file.id else selectedIds + file.id
+                                            selectedFiles = if (file in selectedFiles)
+                                                selectedFiles - file else selectedFiles + file
                                         } else if (file.isFolder) {
-                                            onNavigateToFolder(file.id, file.name)
+                                            onNavigateToFolder(file.id, file.name, file.localUri)
                                         }
                                     },
-                                    onLongClick = { selectedIds = selectedIds + file.id },
+                                    onLongClick = { selectedFiles = selectedFiles + file },
+
                                     onSendToCalibre = { selectedFileForCalibre = it },
                                     onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                     onDelete = { fileToDelete = file },
-                                    isSelected = file.id in selectedIds,
+                                    isSelected = file in selectedFiles,
                                     isSelectionMode = isSelectionMode,
                                     isHighlighted = file.id == currentHighlightId,
                                 )

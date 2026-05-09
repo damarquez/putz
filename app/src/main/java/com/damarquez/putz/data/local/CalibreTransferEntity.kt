@@ -17,8 +17,13 @@ data class CalibreTransferEntity(
     // Comma-separated list of all put.io file IDs; for single-file transfers this equals putioFileId
     val allPutioFileIds: String = "",
     val retryCount: Int = 0,
-) {
-    fun parsedFileIds(): List<Long> =
+
+    /** True if the underlying put.io files were temporarily uploaded from local storage 
+     *  and should be deleted upon successful transfer. */
+    val isTempUpload: Boolean = false,
+    ) {
+    fun parsedFileIds(): List<Long> = 
+
         if (allPutioFileIds.isNotEmpty())
             allPutioFileIds.split(",").mapNotNull { it.toLongOrNull() }
         else

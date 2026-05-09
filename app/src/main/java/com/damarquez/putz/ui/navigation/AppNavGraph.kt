@@ -151,11 +151,16 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
                         type = NavType.LongType
                         defaultValue = -1L
                     },
+                    navArgument(Screen.Files.ARG_LOCAL_URI) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
                 ),
             ) {
                 FilesScreen(
-                    onNavigateToFolder = { id, name ->
-                        navController.navigate(Screen.Files.createRoute(id, name))
+                    onNavigateToFolder = { id, name, localUri ->
+                        navController.navigate(Screen.Files.createRoute(id, name, localUri = localUri))
                     },
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },

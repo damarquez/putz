@@ -7,6 +7,8 @@ import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.remote.GDriveManager
 import com.damarquez.putz.data.remote.PutioApiClient
+import com.damarquez.putz.security.SecureStorage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,9 +62,11 @@ data class CalibreResponse(
 
 @Singleton
 class CalibreRepository @Inject constructor(
+    @ApplicationContext private val context: android.content.Context,
     private val calibreTransferDao: CalibreTransferDao,
     private val gDriveManager: GDriveManager,
     private val putioApiClient: PutioApiClient,
+    private val secureStorage: SecureStorage,
 ) {
     private val _daemonStatus = MutableStateFlow<String?>(null)
     val daemonStatus = _daemonStatus.asStateFlow()
@@ -88,6 +92,7 @@ class CalibreRepository @Inject constructor(
         googleAccount: String,
         downloadUrl: String,
         archiveMode: String? = null,
+        isTempUpload: Boolean = false,
     ) {
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -98,6 +103,7 @@ class CalibreRepository @Inject constructor(
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = putioFileId.toString(),
+            isTempUpload = isTempUpload,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -200,6 +206,14 @@ class CalibreRepository @Inject constructor(
                                     errorMessage = response.error,
                                     lastUpdatedAt = System.currentTimeMillis()
                                 ))
+
+                                // Phase 3: Cleanup temporary uploads
+                                if (newStatus == CalibreTransferStatus.COMPLETED && transfer.isTempUpload) {
+                                    val token = secureStorage.authTokenFlow.value
+                                    if (token.isNotBlank()) {
+                                        deleteFileFromPutio(token, transfer.putioFileId)
+                                    }
+                                }
                             } else {
                                 calibreTransferDao.updateTransfer(transfer.copy(
                                     lastUpdatedAt = System.currentTimeMillis()

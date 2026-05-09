@@ -49,6 +49,10 @@ import com.damarquez.putz.data.model.PutioFileType
 import com.damarquez.putz.ui.theme.LocalAppStyling
 import com.damarquez.putz.util.MetadataUtils
 
+import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileItem(
@@ -74,7 +78,7 @@ fun FileItem(
     val backgroundColor = when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
         isHighlighted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-        else -> androidx.compose.ui.graphics.Color.Transparent
+        else -> Color.Transparent
     }
 
     Column(modifier = modifier.fillMaxWidth().background(backgroundColor)) {
@@ -93,11 +97,25 @@ fun FileItem(
                 Spacer(modifier = Modifier.width(4.dp))
             }
 
-            FileTypeIcon(
-                fileType = fileType,
-                isFolder = file.isFolder,
-                cornerRadius = cornerRadius.value.toInt(),
-            )
+            Box {
+                FileTypeIcon(
+                    fileType = fileType,
+                    isFolder = file.isFolder,
+                    cornerRadius = cornerRadius.value.toInt(),
+                )
+                if (file.isLocal) {
+                    Icon(
+                        imageVector = Icons.Default.Smartphone,
+                        contentDescription = "Local file",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .align(Alignment.BottomEnd)
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
+                            .padding(1.dp)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.width(14.dp))
 
@@ -169,19 +187,25 @@ fun FileItem(
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            text = { 
+                                Text(
+                                    text = if (file.isLocal) "Detach from Putz" else "Delete",
+                                    color = MaterialTheme.colorScheme.error
+                                ) 
+                            },
                             leadingIcon = {
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
+                                    tint = MaterialTheme.colorScheme.error
                                 )
                             },
                             onClick = {
                                 showMenu = false
                                 onDelete()
-                            },
+                            }
                         )
+
                     }
                 }
             }

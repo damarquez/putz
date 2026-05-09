@@ -40,6 +40,17 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+private val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(
+            "CREATE TABLE IF NOT EXISTS `local_attachments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uri` TEXT NOT NULL, `name` TEXT NOT NULL, `parentId` INTEGER NOT NULL, `isFolder` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL)"
+        )
+        database.execSQL(
+            "ALTER TABLE calibre_transfers ADD COLUMN isTempUpload INTEGER NOT NULL DEFAULT 0"
+        )
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -48,7 +59,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): PutzDatabase =
         Room.databaseBuilder(context, PutzDatabase::class.java, "putz.db")
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -57,4 +68,7 @@ object DatabaseModule {
 
     @Provides
     fun provideCalibreTransferDao(db: PutzDatabase) = db.calibreTransferDao()
+
+    @Provides
+    fun provideLocalAttachmentDao(db: PutzDatabase) = db.localAttachmentDao()
 }

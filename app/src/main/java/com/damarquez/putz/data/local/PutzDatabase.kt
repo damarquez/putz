@@ -4,11 +4,16 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [AppTransferEntity::class, CalibreTransferEntity::class],
-    version = 6,
+    entities = [
+        AppTransferEntity::class, 
+        CalibreTransferEntity::class,
+        LocalAttachmentEntity::class
+    ],
+    version = 7,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {
     abstract fun appTransferDao(): AppTransferDao
     abstract fun calibreTransferDao(): CalibreTransferDao
+    abstract fun localAttachmentDao(): LocalAttachmentDao
 }
