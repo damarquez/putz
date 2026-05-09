@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +39,7 @@ fun CalibreTransferItem(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
     val dateStr = dateFormat.format(Date(transfer.addedAt))
     val formatLabel = transfer.fileName
@@ -45,12 +47,32 @@ fun CalibreTransferItem(
         .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
         ?.uppercase() ?: "M4B"
 
+    val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
+    val containerColor = if (isCompleted) {
+        if (isDark) {
+            com.damarquez.putz.ui.theme.SuccessGreenContainerDark.copy(alpha = 0.6f)
+        } else {
+            com.damarquez.putz.ui.theme.SuccessGreenContainer.copy(alpha = 0.8f)
+        }
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
+    val contentColor = if (isCompleted) {
+        if (isDark) {
+            com.damarquez.putz.ui.theme.SuccessGreenDark
+        } else {
+            com.damarquez.putz.ui.theme.SuccessGreen
+        }
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = containerColor
         )
     ) {
         Row(
@@ -66,14 +88,14 @@ fun CalibreTransferItem(
                 Icon(
                     imageVector = Icons.Default.Book,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = contentColor,
                     modifier = Modifier.size(28.dp)
                 )
                 Text(
                     text = formatLabel,
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = contentColor,
                 )
                 if (transfer.retryCount > 0) {
                     Text(
@@ -130,7 +152,7 @@ fun CalibreTransferItem(
             if (transfer.status == CalibreTransferStatus.FAILED) {
                 IconButton(onClick = onRetry) {
                     Icon(
-                        imageVector = Icons.Default.Sync,
+                        imageVector = Icons.Default.Refresh,
                         contentDescription = "Retry",
                         tint = MaterialTheme.colorScheme.tertiary
                     )

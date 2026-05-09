@@ -9,6 +9,8 @@ import com.damarquez.putz.data.remote.GDriveManager
 import com.damarquez.putz.data.remote.PutioApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -50,9 +52,10 @@ data class AudiobookPackRequest(
 @Serializable
 data class CalibreResponse(
     val action: String,
-    val putio_file_id: Long,
+    val putio_file_id: Long? = null,
     val status: String,
     val error: String? = null,
+    val daemon_status: String? = null, // "IDLE" or "WORKING"
 )
 
 @Singleton
@@ -61,8 +64,21 @@ class CalibreRepository @Inject constructor(
     private val gDriveManager: GDriveManager,
     private val putioApiClient: PutioApiClient,
 ) {
-    private val json = Json { explicitNulls = false }
+    private val _daemonStatus = MutableStateFlow<String?>(null)
+    val daemonStatus = _daemonStatus.asStateFlow()
+
+    private val json = Json { 
+        explicitNulls = false
+        ignoreUnknownKeys = true
+    }
     fun getTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
+
+    suspend fun sendGlobalStatusProbe(googleAccount: String): Boolean {
+        val request = mapOf("action" to "GLOBAL_STATUS_PROBE")
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_global_status.json", jsonStr)
+        return gDriveId != null
+    }
 
     suspend fun addTransfer(
         putioFileId: Long,
@@ -162,21 +178,33 @@ class CalibreRepository @Inject constructor(
             val content = gDriveManager.downloadFileContent(googleAccount, file.id)
             if (content != null) {
                 try {
-                    val response = Json.decodeFromString<CalibreResponse>(content)
-                    val transfer = calibreTransferDao.getTransferById(response.putio_file_id)
-                    if (transfer != null) {
-                        val newStatus = when (response.status) {
-                            "PROCESSING" -> CalibreTransferStatus.PROCESSING
-                            "COMPLETED" -> CalibreTransferStatus.COMPLETED
-                            "FAILED" -> CalibreTransferStatus.FAILED
-                            else -> transfer.status
-                        }
-                        if (newStatus.ordinal > transfer.status.ordinal) {
-                            calibreTransferDao.updateTransfer(transfer.copy(
-                                status = newStatus,
-                                errorMessage = response.error,
-                                lastUpdatedAt = System.currentTimeMillis()
-                            ))
+                    val response = json.decodeFromString<CalibreResponse>(content)
+                    
+                    if (response.action == "GLOBAL_STATUS_PROBE") {
+                        _daemonStatus.value = response.daemon_status
+                    } else if (response.putio_file_id != null) {
+                        val transfer = calibreTransferDao.getTransferById(response.putio_file_id)
+                        if (transfer != null) {
+                            val newStatus = when (response.status.uppercase()) {
+                                "PROCESSING" -> CalibreTransferStatus.PROCESSING
+                                "COMPLETED" -> CalibreTransferStatus.COMPLETED
+                                "FAILED" -> CalibreTransferStatus.FAILED
+                                else -> transfer.status
+                            }
+                            
+                            // Always update lastUpdatedAt if we got a valid response for this transfer
+                            // This prevents probes from triggering while the daemon is actively sending updates
+                            if (newStatus.ordinal > transfer.status.ordinal) {
+                                calibreTransferDao.updateTransfer(transfer.copy(
+                                    status = newStatus,
+                                    errorMessage = response.error,
+                                    lastUpdatedAt = System.currentTimeMillis()
+                                ))
+                            } else {
+                                calibreTransferDao.updateTransfer(transfer.copy(
+                                    lastUpdatedAt = System.currentTimeMillis()
+                                ))
+                            }
                         }
                     }
                     // Delete response file once processed

@@ -9,8 +9,10 @@ import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -27,6 +29,12 @@ class CalibreTransfersViewModel @Inject constructor(
 
     val transfers: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val daemonStatus: StateFlow<String?> = calibreRepository.daemonStatus
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing = _isSyncing.asStateFlow()
 
     init {
         startPolling()
@@ -80,8 +88,14 @@ class CalibreTransfersViewModel @Inject constructor(
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isNotBlank()) {
-                val dbFile = File(context.filesDir, "metadata.db")
-                calibreRepository.syncMetadataDb(account, dbFile)
+                _isSyncing.value = true
+                try {
+                    calibreRepository.sendGlobalStatusProbe(account)
+                    val dbFile = File(context.filesDir, "metadata.db")
+                    calibreRepository.syncMetadataDb(account, dbFile)
+                } finally {
+                    _isSyncing.value = false
+                }
             }
         }
     }

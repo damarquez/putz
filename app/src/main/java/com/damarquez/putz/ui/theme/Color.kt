@@ -33,6 +33,12 @@ val NormalOnSurfaceDark = Color(0xFFEDE0DC)
 val NormalOnSurfaceVariantDark = Color(0xFFD8C2BC)
 val NormalOutlineDark = Color(0xFFA08C87)
 
+// Success / Completion colors
+val SuccessGreen = Color(0xFF4CAF50)
+val SuccessGreenContainer = Color(0xFFE8F5E9)
+val SuccessGreenDark = Color(0xFFB9F6CA)
+val SuccessGreenContainerDark = Color(0xFF00391C)
+
 // E-ink (always high contrast black/white)
 val EinkBlack = Color(0xFF000000)
 val EinkWhite = Color(0xFFFFFFFF)
