@@ -284,7 +284,11 @@ class FilesViewModel @Inject constructor(
 
             if (localFiles.isNotEmpty()) {
                 localFiles.forEach { local ->
-                    localFilesRepository.detach(local.id)
+                    if (local.localUri != null) {
+                        localFilesRepository.detachOrHide(local.localUri)
+                    } else {
+                        localFilesRepository.detach(local.id)
+                    }
                 }
                 _snackbarMessage.value = if (localFiles.size == 1) "Detached" else "${localFiles.size} items detached"
                 loadFiles(isRefresh = true)
@@ -334,6 +338,39 @@ class FilesViewModel @Inject constructor(
 
         searchJob = viewModelScope.launch {
             delay(300) // Debounce
+            
+            val isLocalRoot = parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID
+            val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
+
+            if (isLocalRoot || isLocalFolder) {
+                // LOCAL SEARCH - STREAMED
+                val current = _uiState.value
+                if (current is FilesUiState.Success) {
+                    // Instant shallow filter of already loaded files
+                    val immediateResults = current.files.filter { it.name.contains(query, ignoreCase = true) }
+                    _uiState.value = current.copy(
+                        isSearching = true, 
+                        searchResults = immediateResults
+                    )
+                }
+
+                localFilesRepository.searchLocalFiles(query, localUri).collect { results ->
+                    val cur = _uiState.value
+                    if (cur is FilesUiState.Success) {
+                        // Merge immediate results with background scan results (Set removes duplicates)
+                        val merged = (cur.searchResults.orEmpty() + results).distinctBy { it.localUri ?: it.id }
+                        _uiState.value = cur.copy(searchResults = merged, isSearching = true)
+                    }
+                }
+                
+                val curFinal = _uiState.value
+                if (curFinal is FilesUiState.Success) {
+                    _uiState.value = curFinal.copy(isSearching = false)
+                }
+                return@launch
+            }
+
+            // CLOUD SEARCH
             val current = _uiState.value
             if (current is FilesUiState.Success) {
                 _uiState.value = current.copy(isSearching = true)

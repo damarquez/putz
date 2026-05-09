@@ -112,6 +112,93 @@ class LocalFilesRepository @Inject constructor(
         dao.deleteById(realId)
     }
 
+    fun searchLocalFiles(query: String, uriString: String? = null): Flow<List<PutioFile>> = flow {
+        val hiddenUris = hiddenDao.getAllUris().toSet()
+        val results = mutableListOf<PutioFile>()
+        var count = 0
+
+        if (uriString == null) {
+            // Searching in Local Files virtual root (attachments)
+            dao.getAll()
+                .filter { it.name.contains(query, ignoreCase = true) }
+                .forEach { entity ->
+                    results.add(
+                        PutioFile(
+                            id = LOCAL_FOLDER_PREFIX_ID - entity.id,
+                            name = entity.name,
+                            fileType = if (entity.isFolder) "FOLDER" else "OTHER",
+                            isLocal = true,
+                            localUri = entity.uri
+                        )
+                    )
+                }
+            emit(results.toList())
+        } else {
+            // Recursive search inside an attached folder
+            val rootUri = Uri.parse(uriString)
+            
+            suspend fun doScan(parentUri: Uri, collector: kotlinx.coroutines.flow.FlowCollector<List<PutioFile>>) {
+                val documentId = if (parentUri == rootUri) {
+                    DocumentsContract.getTreeDocumentId(parentUri)
+                } else {
+                    DocumentsContract.getDocumentId(parentUri)
+                }
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, documentId)
+
+                context.contentResolver.query(
+                    childrenUri,
+                    arrayOf(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE,
+                        DocumentsContract.Document.COLUMN_SIZE
+                    ),
+                    null, null, null
+                )?.use { cursor ->
+                    val idIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val sizeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+
+                    while (cursor.moveToNext()) {
+                        val docId = cursor.getString(idIdx)
+                        val name = cursor.getString(nameIdx) ?: "Unknown"
+                        val mime = cursor.getString(mimeIdx)
+                        val size = cursor.getLong(sizeIdx)
+                        
+                        val docUri = DocumentsContract.buildDocumentUriUsingTree(rootUri, docId)
+                        if (docUri.toString() in hiddenUris) continue
+
+                        val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                        val matches = name.contains(query, ignoreCase = true)
+
+                        if (matches && (isDir || MetadataUtils.isEbook(name))) {
+                            results.add(
+                                PutioFile(
+                                    id = (docUri.toString().hashCode().toLong().let { if (it > 0) -it else it })
+                                        .coerceAtMost(LOCAL_FOLDER_PREFIX_ID - 1000),
+                                    name = name,
+                                    fileType = if (isDir) "FOLDER" else "OTHER",
+                                    size = size,
+                                    isLocal = true,
+                                    localUri = docUri.toString()
+                                )
+                            )
+                            count++
+                            if (count % 10 == 0) collector.emit(results.toList())
+                        }
+
+                        if (isDir) {
+                            doScan(docUri, collector)
+                        }
+                    }
+                }
+            }
+            doScan(rootUri, this)
+            emit(results.toList().sortedBy { it.name.lowercase() })
+        }
+    }.flowOn(Dispatchers.IO)
+
     suspend fun detachOrHide(uri: String) {
         val attachments = dao.getAll()
         val direct = attachments.find { it.uri == uri }
