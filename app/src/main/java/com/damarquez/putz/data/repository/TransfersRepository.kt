@@ -29,13 +29,15 @@ class TransfersRepository @Inject constructor(
                     
                     if (activeIds.isNotEmpty()) dao.deleteStale(activeIds) else dao.deleteStale(emptyList())
 
-                    val stoppedEntities = dao.getAll().filter { it.isStopped }
+                    val stoppedEntities = dao.getAll().filter { it.isStopped && it.putioId !in activeIds }
                     val stoppedMerged = stoppedEntities.map { entity ->
                         MergedTransfer(
                             transfer = PutioTransfer(
                                 id = entity.putioId,
                                 name = entity.putioName,
-                                status = "STOPPED",
+                                status = if (entity.percentDone >= 100) "COMPLETED" else "STOPPED",
+                                percentDone = entity.percentDone,
+                                size = entity.size,
                             ),
                             appDisplayName = entity.displayName,
                             magnetLink = entity.magnetLink,
@@ -126,6 +128,8 @@ class TransfersRepository @Inject constructor(
                     addedByApp = true,
                     addedAt = System.currentTimeMillis(),
                     nameResolved = false,
+                    percentDone = transfer.percentDone,
+                    size = transfer.size,
                 )
                 dao.upsert(entity)
 
@@ -147,20 +151,29 @@ class TransfersRepository @Inject constructor(
         return apiTransfers.map { transfer ->
             val local = dao.getById(transfer.id)
             if (local == null) {
+                val magnetLink = transfer.source?.takeIf { it.startsWith("magnet:") }
+                val displayName = if (magnetLink != null) {
+                    MagnetParser.extractDisplayName(magnetLink)?.takeIf { it.isNotBlank() } ?: transfer.name
+                } else {
+                    transfer.name
+                }
+
                 val entity = AppTransferEntity(
                     putioId = transfer.id,
-                    displayName = transfer.name,
+                    displayName = displayName,
                     putioName = transfer.name,
-                    magnetLink = transfer.source?.takeIf { it.startsWith("magnet:") },
+                    magnetLink = magnetLink,
                     infoHash = null,
                     addedByApp = false,
                     addedAt = System.currentTimeMillis(),
                     nameResolved = isRealName(transfer.name),
+                    percentDone = transfer.percentDone,
+                    size = transfer.size,
                 )
                 dao.upsert(entity)
                 MergedTransfer(
                     transfer = transfer,
-                    appDisplayName = transfer.name,
+                    appDisplayName = displayName,
                     magnetLink = entity.magnetLink,
                     addedByApp = false,
                 )
@@ -172,13 +185,17 @@ class TransfersRepository @Inject constructor(
                 val updatedDisplayName = if (shouldResolve) transfer.name else local.displayName
                 val updatedMagnetLink = local.magnetLink ?: transfer.source?.takeIf { it.startsWith("magnet:") }
                 
-                if (shouldResolve || local.putioName != transfer.name || local.magnetLink != updatedMagnetLink) {
+                if (shouldResolve || local.putioName != transfer.name || local.magnetLink != updatedMagnetLink || 
+                    local.percentDone != transfer.percentDone || local.size != transfer.size || local.isStopped) {
                     dao.upsert(
                         local.copy(
                             displayName = updatedDisplayName,
                             putioName = transfer.name,
                             magnetLink = updatedMagnetLink,
                             nameResolved = local.nameResolved || shouldResolve,
+                            percentDone = transfer.percentDone,
+                            size = transfer.size,
+                            isStopped = false,
                         )
                     )
                 }

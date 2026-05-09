@@ -29,6 +29,17 @@ private val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+private val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(
+            "ALTER TABLE app_transfers ADD COLUMN percentDone INTEGER NOT NULL DEFAULT 0"
+        )
+        database.execSQL(
+            "ALTER TABLE app_transfers ADD COLUMN size INTEGER NOT NULL DEFAULT 0"
+        )
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -37,7 +48,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): PutzDatabase =
         Room.databaseBuilder(context, PutzDatabase::class.java, "putz.db")
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigration()
             .build()
 

@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [AppTransferEntity::class, CalibreTransferEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {

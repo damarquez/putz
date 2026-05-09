@@ -65,7 +65,7 @@ fun TransferItem(
 ) {
     val transfer = merged.transfer
     val styling = LocalAppStyling.current
-    val status = if (merged.isStopped) TransferStatus.STOPPED else TransferStatus.from(transfer.status)
+    val status = TransferStatus.from(transfer.status)
     val cornerRadius = styling.cornerRadiusDp.dp
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -161,7 +161,7 @@ fun TransferItem(
 
                 Spacer(Modifier.height(6.dp))
 
-                if (merged.isStopped) {
+                if (merged.isStopped && status != TransferStatus.COMPLETED) {
                     StoppedInfo(merged = merged)
                 } else {
                     when (status) {

@@ -41,4 +41,11 @@ data class AppTransferEntity(
 
     /** True if the user stopped this transfer (removed from put.io but kept in app). */
     val isStopped: Boolean = false,
+
+    /** Last known progress percentage (0-100). Used to differentiate between 
+     *  stopped-during-download and stopped-after-completion. */
+    val percentDone: Int = 0,
+
+    /** Total size of the transfer in bytes. */
+    val size: Long = 0L,
 )
