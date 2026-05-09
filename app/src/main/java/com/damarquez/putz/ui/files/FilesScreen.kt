@@ -59,6 +59,11 @@ import com.damarquez.putz.ui.components.FileItem
 import com.damarquez.putz.ui.navigation.Screen
 import com.damarquez.putz.util.MetadataUtils
 
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
@@ -77,6 +82,25 @@ fun FilesScreen(
     val isSelectionMode = selectedIds.isNotEmpty()
     var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    var currentHighlightId by remember { mutableStateOf(viewModel.highlightFileId) }
+
+    LaunchedEffect(uiState) {
+        if (uiState is FilesUiState.Success && currentHighlightId != -1L) {
+            val files = (uiState as FilesUiState.Success).files
+            val index = files.indexOfFirst { it.id == currentHighlightId }
+            if (index != -1) {
+                scope.launch {
+                    delay(300) // Let layout settle
+                    listState.animateScrollToItem(index)
+                    delay(2000) // Show highlight for 2s
+                    currentHighlightId = -1L
+                }
+            }
+        }
+    }
 
     BackHandler(enabled = isSelectionMode) { selectedIds = emptySet() }
 
@@ -348,7 +372,10 @@ fun FilesScreen(
                             modifier = Modifier.fillMaxSize(),
                         )
                     } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            state = listState
+                        ) {
                             items(
                                 items = state.files,
                                 key = { it.id },
@@ -369,6 +396,7 @@ fun FilesScreen(
                                     onDelete = { fileToDelete = file },
                                     isSelected = file.id in selectedIds,
                                     isSelectionMode = isSelectionMode,
+                                    isHighlighted = file.id == currentHighlightId,
                                 )
                             }
                         }

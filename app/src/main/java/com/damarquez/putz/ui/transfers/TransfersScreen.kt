@@ -25,39 +25,83 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.ui.components.ErrorView
-
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import com.damarquez.putz.ui.navigation.Screen
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransfersScreen(
     viewModel: TransfersViewModel,
+    onNavigateToFiles: (Long, String, Long) -> Unit = { _, _, _ -> },
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val showAddSheet by viewModel.showAddSheet.collectAsState()
     val prefillMagnet by viewModel.prefillMagnet.collectAsState()
     val addState by viewModel.addState.collectAsState()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val navigationEvent by viewModel.navigationEvent.collectAsState()
     
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
+
+    var editNameTransferId by remember { mutableStateOf<Long?>(null) }
+    var editNameValue by remember { mutableStateOf("") }
+
+    LaunchedEffect(navigationEvent) {
+        navigationEvent?.let { event ->
+            if (event is TransfersNavigationEvent.NavigateToFiles) {
+                onNavigateToFiles(event.parentId, event.folderName, event.highlightFileId)
+                viewModel.onNavigationHandled()
+            }
+        }
+    }
+
+    if (editNameTransferId != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editNameTransferId = null },
+            title = { Text("Edit display name") },
+            text = {
+                OutlinedTextField(
+                    value = editNameValue,
+                    onValueChange = { editNameValue = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.updateDisplayName(editNameTransferId!!, editNameValue)
+                    editNameTransferId = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editNameTransferId = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -136,6 +180,13 @@ fun TransfersScreen(
                                         onStop = { viewModel.stopTransfer(it) },
                                         onRemove = { viewModel.removeTransfer(it) },
                                         onResume = { viewModel.resumeTransfer(it) },
+                                        onEditName = { id, currentName ->
+                                            editNameValue = currentName
+                                            editNameTransferId = id
+                                        },
+                                        onGoToFiles = { fileId ->
+                                            viewModel.goToFiles(fileId)
+                                        }
                                     )
                                 }
                                 item(key = "divider_${group.name}") {

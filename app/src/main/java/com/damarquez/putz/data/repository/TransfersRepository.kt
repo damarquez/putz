@@ -147,6 +147,13 @@ class TransfersRepository @Inject constructor(
         }
     }
 
+    suspend fun updateDisplayName(id: Long, newName: String) = withContext(Dispatchers.IO) {
+        val local = dao.getById(id)
+        if (local != null) {
+            dao.upsert(local.copy(displayName = newName))
+        }
+    }
+
     private suspend fun mergeWithLocal(apiTransfers: List<PutioTransfer>): List<MergedTransfer> {
         return apiTransfers.map { transfer ->
             val local = dao.getById(transfer.id)

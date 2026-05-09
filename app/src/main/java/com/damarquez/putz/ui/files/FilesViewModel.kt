@@ -42,6 +42,7 @@ class FilesViewModel @Inject constructor(
 
     val parentId: Long = savedStateHandle[Screen.Files.ARG_PARENT_ID] ?: 0L
     val folderName: String = savedStateHandle[Screen.Files.ARG_FOLDER_NAME] ?: "Your Files"
+    val highlightFileId: Long = savedStateHandle[Screen.Files.ARG_HIGHLIGHT_ID] ?: -1L
 
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
@@ -180,4 +181,9 @@ class FilesViewModel @Inject constructor(
     }
 
     fun signOut() = settingsRepository.clearAuth()
+
+    fun onHighlightHandled() {
+        // We can't easily modify SavedStateHandle once read, 
+        // but the Screen can use this to stop the highlighting effect.
+    }
 }

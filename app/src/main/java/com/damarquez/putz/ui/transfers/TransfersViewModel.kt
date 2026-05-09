@@ -37,9 +37,14 @@ sealed class AddTransferState {
     data class Failed(val message: String) : AddTransferState()
 }
 
+sealed class TransfersNavigationEvent {
+    data class NavigateToFiles(val parentId: Long, val folderName: String, val highlightFileId: Long) : TransfersNavigationEvent()
+}
+
 @HiltViewModel
 class TransfersViewModel @Inject constructor(
     private val transfersRepository: TransfersRepository,
+    private val filesRepository: com.damarquez.putz.data.repository.FilesRepository,
     private val settingsRepository: SettingsRepository,
     private val pendingMagnetRepository: PendingMagnetRepository,
 ) : ViewModel() {
@@ -55,6 +60,9 @@ class TransfersViewModel @Inject constructor(
 
     private val _addState = MutableStateFlow<AddTransferState>(AddTransferState.Idle)
     val addState: StateFlow<AddTransferState> = _addState.asStateFlow()
+
+    private val _navigationEvent = MutableStateFlow<TransfersNavigationEvent?>(null)
+    val navigationEvent: StateFlow<TransfersNavigationEvent?> = _navigationEvent.asStateFlow()
 
     private var pollJob: Job? = null
 
@@ -165,6 +173,54 @@ class TransfersViewModel @Inject constructor(
             println("TransfersViewModel: Resume result: $result")
             refresh()
         }
+    }
+
+    fun updateDisplayName(id: Long, newName: String) {
+        viewModelScope.launch {
+            transfersRepository.updateDisplayName(id, newName)
+            refresh()
+        }
+    }
+
+    fun goToFiles(fileId: Long) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            when (val result = filesRepository.getFile(token, fileId)) {
+                is NetworkResult.Success -> {
+                    val file = result.data
+                    // If it's the root or we don't know the parent name, just use a default or fetch it
+                    // For now, let's assume if it's not root, we might want the parent's info.
+                    // But the Screen.Files expects the folder name to DISPLAY. 
+                    // If we navigate to parentId, the name should be the parent's name.
+                    
+                    var targetParentId = file.parentId
+                    var targetFolderName = "Your Files" // Default for root
+
+                    if (targetParentId != 0L) {
+                        when (val parentResult = filesRepository.getFile(token, targetParentId)) {
+                            is NetworkResult.Success -> {
+                                targetFolderName = parentResult.data.name
+                            }
+                            else -> { /* keep default */ }
+                        }
+                    }
+
+                    _navigationEvent.value = TransfersNavigationEvent.NavigateToFiles(
+                        parentId = targetParentId,
+                        folderName = targetFolderName,
+                        highlightFileId = file.id
+                    )
+                }
+                is NetworkResult.Error -> {
+                    // Maybe show a snackbar?
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun onNavigationHandled() {
+        _navigationEvent.value = null
     }
 
     private fun buildGroupedMap(transfers: List<MergedTransfer>): Map<TransferGroup, List<MergedTransfer>> {

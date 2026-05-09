@@ -32,6 +32,11 @@ class FilesRepository @Inject constructor(
             apiClient.getAccountInfo(token)
         }
 
+    suspend fun getFile(token: String, fileId: Long): NetworkResult<PutioFile> =
+        withContext(Dispatchers.IO) {
+            apiClient.getFile(token, fileId)
+        }
+
     fun getDownloadUrl(token: String, fileId: Long): String {
         return "${PutioApiClient.BASE_URL}/files/$fileId/download?oauth_token=$token"
     }

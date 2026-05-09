@@ -60,6 +60,7 @@ fun FileItem(
     onDelete: () -> Unit,
     isSelected: Boolean,
     isSelectionMode: Boolean,
+    isHighlighted: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val styling = LocalAppStyling.current
@@ -70,7 +71,13 @@ fun FileItem(
     val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    val backgroundColor = when {
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        isHighlighted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+        else -> androidx.compose.ui.graphics.Color.Transparent
+    }
+
+    Column(modifier = modifier.fillMaxWidth().background(backgroundColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

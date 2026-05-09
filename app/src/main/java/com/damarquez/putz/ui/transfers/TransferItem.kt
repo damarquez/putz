@@ -54,6 +54,17 @@ import com.damarquez.putz.data.model.PutioTransfer
 import com.damarquez.putz.data.model.TransferStatus
 import com.damarquez.putz.ui.theme.LocalAppStyling
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransferItem(
     merged: MergedTransfer,
@@ -61,14 +72,29 @@ fun TransferItem(
     onStop: (Long) -> Unit,
     onRemove: (Long) -> Unit,
     onResume: (Long) -> Unit,
+    onEditName: (Long, String) -> Unit,
+    onGoToFiles: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val transfer = merged.transfer
     val styling = LocalAppStyling.current
     val status = TransferStatus.from(transfer.status)
     val cornerRadius = styling.cornerRadiusDp.dp
+    
+    var showMenu by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = { /* Could toggle expansion or something later */ },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    showMenu = true
+                }
+            )
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -94,6 +120,35 @@ fun TransferItem(
                         modifier = Modifier.weight(1f),
                     )
                     
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit display name") },
+                            onClick = {
+                                showMenu = false
+                                onEditName(transfer.id, merged.appDisplayName)
+                            }
+                        )
+                        if (status == TransferStatus.COMPLETED && transfer.fileId != null) {
+                            DropdownMenuItem(
+                                text = { Text("Go to files") },
+                                onClick = {
+                                    showMenu = false
+                                    onGoToFiles(transfer.fileId)
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Remove from list", color = MaterialTheme.colorScheme.error) },
+                            onClick = {
+                                showMenu = false
+                                onRemove(transfer.id)
+                            }
+                        )
+                    }
+
                     if (merged.magnetLink != null) {
                         androidx.compose.material3.IconButton(
                             onClick = { 

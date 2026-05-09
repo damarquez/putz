@@ -147,6 +147,43 @@ class PutioApiClient @Inject constructor(
         }
     }
 
+    @Serializable
+    private data class FileResponse(
+        val file: PutioFile? = null,
+        val status: String = "",
+        @SerialName("error_type") val errorType: String? = null,
+        val error: String? = null,
+    )
+
+    fun getFile(token: String, fileId: Long): NetworkResult<PutioFile> {
+        return try {
+            val request = Request.Builder()
+                .url("$BASE_URL/files/$fileId")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<FileResponse>(body) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<FileResponse>(body)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                val file = parsed.file ?: return NetworkResult.Error("Missing file info")
+                NetworkResult.Success(file)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
     fun addTransfer(
         token: String,
         magnetOrUrl: String,

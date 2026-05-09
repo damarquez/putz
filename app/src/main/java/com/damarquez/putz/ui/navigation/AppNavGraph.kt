@@ -147,6 +147,10 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
                         type = NavType.StringType
                         defaultValue = ROOT_FOLDER_NAME
                     },
+                    navArgument(Screen.Files.ARG_HIGHLIGHT_ID) {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    },
                 ),
             ) {
                 FilesScreen(
@@ -165,7 +169,15 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
             }
 
             composable(Screen.Transfers.route) {
-                TransfersScreen(viewModel = hiltViewModel())
+                TransfersScreen(
+                    viewModel = hiltViewModel(),
+                    onNavigateToFiles = { parentId, folderName, highlightId ->
+                        // First, pop back to the Files root to clear any stale deep stack
+                        navController.popBackStack(Screen.Files.route, inclusive = false)
+                        // Then navigate to the target folder with the highlight ID
+                        navController.navigate(Screen.Files.createRoute(parentId, folderName, highlightId))
+                    }
+                )
             }
 
             composable(Screen.Settings.route) {
