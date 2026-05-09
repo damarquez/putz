@@ -21,7 +21,12 @@ data class CalibreTransferEntity(
     /** True if the underlying put.io files were temporarily uploaded from local storage 
      *  and should be deleted upon successful transfer. */
     val isTempUpload: Boolean = false,
+
+    /** The original local SAF URI of the file, if it was uploaded from local storage. 
+     *  Used to detach the file from Putz when the transfer is removed. */
+    val sourceLocalUri: String? = null,
     ) {
+
     fun parsedFileIds(): List<Long> = 
 
         if (allPutioFileIds.isNotEmpty())

@@ -31,6 +31,7 @@ sealed class FilesUiState {
         val isRefreshing: Boolean = false,
         val searchResults: List<PutioFile>? = null,
         val isSearching: Boolean = false,
+        val isScanning: Boolean = false,
     ) : FilesUiState()
     data class Error(val message: String) : FilesUiState()
 }
@@ -89,11 +90,22 @@ class FilesViewModel @Inject constructor(
                 return@launch
             }
 
-            if (isLocalFolder) {
-                // Browsing inside a local folder
+            if (isLocalFolder && localUri != null) {
+                // Browsing inside a local folder - STREAMED
                 _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
-                val files = localUri?.let { localFilesRepository.listLocalFolder(it) } ?: emptyList()
-                _uiState.value = FilesUiState.Success(files = files, parent = null)
+                localFilesRepository.listLocalFolder(localUri).collect { files ->
+                    _uiState.value = FilesUiState.Success(
+                        files = files,
+                        parent = null,
+                        isRefreshing = false,
+                        isScanning = true
+                    )
+                }
+                // Once collect finishes, scanning is done
+                val current = _uiState.value
+                if (current is FilesUiState.Success) {
+                    _uiState.value = current.copy(isScanning = false)
+                }
                 return@launch
             }
 
@@ -214,7 +226,8 @@ class FilesViewModel @Inject constructor(
                 googleAccount = googleAccount,
                 downloadUrl = downloadUrl,
                 archiveMode = archiveMode,
-                isTempUpload = isTempUpload
+                isTempUpload = isTempUpload,
+                sourceLocalUri = file.localUri,
             )
             _snackbarMessage.value = "Transfer requested for $title"
         }

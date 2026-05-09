@@ -7,13 +7,15 @@ import androidx.room.RoomDatabase
     entities = [
         AppTransferEntity::class, 
         CalibreTransferEntity::class,
-        LocalAttachmentEntity::class
+        LocalAttachmentEntity::class,
+        HiddenLocalFileEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {
     abstract fun appTransferDao(): AppTransferDao
     abstract fun calibreTransferDao(): CalibreTransferDao
     abstract fun localAttachmentDao(): LocalAttachmentDao
+    abstract fun hiddenLocalFileDao(): HiddenLocalFileDao
 }

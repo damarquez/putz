@@ -24,6 +24,7 @@ import javax.inject.Inject
 class CalibreTransfersViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val calibreRepository: CalibreRepository,
+    private val localFilesRepository: com.damarquez.putz.data.repository.LocalFilesRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
@@ -103,6 +104,18 @@ class CalibreTransfersViewModel @Inject constructor(
     fun removeTransfer(fileId: Long) {
         viewModelScope.launch {
             calibreRepository.removeTransfer(fileId)
+        }
+    }
+
+    fun deleteOrDetach(transfer: CalibreTransferEntity) {
+        viewModelScope.launch {
+            if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
+                localFilesRepository.detachOrHide(transfer.sourceLocalUri)
+            } else {
+                val token = settingsRepository.authTokenFlow.first()
+                calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
+            }
+            calibreRepository.removeTransfer(transfer.putioFileId)
         }
     }
 

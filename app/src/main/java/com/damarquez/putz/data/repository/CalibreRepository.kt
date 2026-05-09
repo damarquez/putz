@@ -93,6 +93,7 @@ class CalibreRepository @Inject constructor(
         downloadUrl: String,
         archiveMode: String? = null,
         isTempUpload: Boolean = false,
+        sourceLocalUri: String? = null,
     ) {
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -104,6 +105,7 @@ class CalibreRepository @Inject constructor(
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = putioFileId.toString(),
             isTempUpload = isTempUpload,
+            sourceLocalUri = sourceLocalUri,
         )
         calibreTransferDao.insertTransfer(transfer)
 

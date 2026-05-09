@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
@@ -466,51 +467,61 @@ fun FilesScreen(
                         .fillMaxSize()
                         .padding(paddingValues),
                 ) {
-                    if (files.isEmpty()) {
-                        if (isSearchMode && searchQuery.isNotEmpty() && !state.isSearching) {
-                            NoResultsView(
-                                query = searchQuery,
-                                modifier = Modifier.fillMaxSize()
+                    Column {
+                        if (state.isScanning) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(2.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
-                        } else if (!isSearchMode) {
-                            EmptyFolderView(
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            // Loading search results
                         }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            state = listState
-                        ) {
-                            items(
-                                items = files,
-                                key = { it.id },
-                            ) { file ->
-                                FileItem(
-                                    file = file,
-                                    onClick = {
-                                        if (isSelectionMode) {
-                                            selectedFiles = if (file in selectedFiles)
-                                                selectedFiles - file else selectedFiles + file
-                                        } else if (file.isFolder) {
-                                            onNavigateToFolder(file.id, file.name, file.localUri)
-                                        }
-                                    },
-                                    onLongClick = { selectedFiles = selectedFiles + file },
 
-                                    onSendToCalibre = { selectedFileForCalibre = it },
-                                    onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
-                                    onDelete = { fileToDelete = file },
-                                    isSelected = file in selectedFiles,
-                                    isSelectionMode = isSelectionMode,
-                                    isHighlighted = file.id == currentHighlightId,
+                        if (files.isEmpty()) {
+                            if (isSearchMode && searchQuery.isNotEmpty() && !state.isSearching) {
+                                NoResultsView(
+                                    query = searchQuery,
+                                    modifier = Modifier.fillMaxSize()
                                 )
+                            } else if (!isSearchMode && !state.isScanning) {
+                                EmptyFolderView(
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                // Loading or Scanning
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                state = listState
+                            ) {
+                                items(
+                                    items = files,
+                                    key = { it.id },
+                                ) { file ->
+                                    FileItem(
+                                        file = file,
+                                        onClick = {
+                                            if (isSelectionMode) {
+                                                selectedFiles = if (file in selectedFiles)
+                                                    selectedFiles - file else selectedFiles + file
+                                            } else if (file.isFolder) {
+                                                onNavigateToFolder(file.id, file.name, file.localUri)
+                                            }
+                                        },
+                                        onLongClick = { selectedFiles = selectedFiles + file },
+                                        onSendToCalibre = { selectedFileForCalibre = it },
+                                        onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
+                                        onDelete = { fileToDelete = file },
+                                        isSelected = file in selectedFiles,
+                                        isSelectionMode = isSelectionMode,
+                                        isHighlighted = file.id == currentHighlightId,
+                                    )
+                                }
                             }
                         }
                     }
                 }
+
             }
         }
     }

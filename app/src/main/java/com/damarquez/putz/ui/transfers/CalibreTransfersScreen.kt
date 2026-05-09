@@ -67,6 +67,8 @@ fun CalibreTransfersScreen(
 
     transferToDelete?.let { transfer ->
         val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
+        val isLocal = transfer.isTempUpload
+        
         AlertDialog(
             onDismissRequest = { transferToDelete = null },
             title = { Text("Remove transfer?") },
@@ -77,7 +79,7 @@ fun CalibreTransfersScreen(
                             checked = alsoDeleteFromPutio,
                             onCheckedChange = { alsoDeleteFromPutio = it },
                         )
-                        Text("Also delete file from put.io")
+                        Text(if (isLocal) "Also detach file from Putz" else "Also delete file from put.io")
                     }
                 } else {
                     Text("Remove this transfer from the list?")
@@ -86,7 +88,7 @@ fun CalibreTransfersScreen(
             confirmButton = {
                 Button(onClick = {
                     if (isCompleted && alsoDeleteFromPutio) {
-                        viewModel.deleteFromPutio(transfer.putioFileId)
+                        viewModel.deleteOrDetach(transfer)
                     } else {
                         viewModel.removeTransfer(transfer.putioFileId)
                     }
