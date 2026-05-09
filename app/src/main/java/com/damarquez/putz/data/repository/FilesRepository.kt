@@ -27,6 +27,15 @@ class FilesRepository @Inject constructor(
             }
         }
 
+    suspend fun searchFiles(
+        token: String,
+        query: String,
+        parentId: Long = 0L,
+    ): NetworkResult<List<PutioFile>> =
+        withContext(Dispatchers.IO) {
+            apiClient.searchFiles(token, query, parentId)
+        }
+
     suspend fun getAccountInfo(token: String): NetworkResult<AccountInfo> =
         withContext(Dispatchers.IO) {
             apiClient.getAccountInfo(token)

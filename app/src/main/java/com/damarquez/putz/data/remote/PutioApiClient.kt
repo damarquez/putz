@@ -8,6 +8,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -84,6 +85,40 @@ class PutioApiClient @Inject constructor(
                     return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
                 }
                 NetworkResult.Success(Pair(parsed.files, parsed.parent))
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun searchFiles(token: String, query: String, parentId: Long = 0L): NetworkResult<List<PutioFile>> {
+        return try {
+            // Put.io search uses a query string. To restrict to a folder, we append parent_id:X to the query.
+            val fullQuery = if (parentId != 0L) "$query parent_id:$parentId" else query
+            val url = "$BASE_URL/files/search".toHttpUrl().newBuilder()
+                .addQueryParameter("query", fullQuery)
+                .build()
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<FilesListResponse>(body) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<FilesListResponse>(body)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(parsed.files)
             }
         } catch (e: Exception) {
             NetworkResult.Error(e.message ?: "Unknown error")

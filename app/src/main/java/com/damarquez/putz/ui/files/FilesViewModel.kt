@@ -13,6 +13,8 @@ import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +29,8 @@ sealed class FilesUiState {
         val files: List<PutioFile>,
         val parent: PutioFile?,
         val isRefreshing: Boolean = false,
+        val searchResults: List<PutioFile>? = null,
+        val isSearching: Boolean = false,
     ) : FilesUiState()
     data class Error(val message: String) : FilesUiState()
 }
@@ -53,12 +57,24 @@ class FilesViewModel @Inject constructor(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+    private val _isSearchMode = MutableStateFlow(false)
+    val isSearchMode: StateFlow<Boolean> = _isSearchMode.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private var searchJob: Job? = null
+
     init {
         loadFiles()
         if (parentId == 0L) loadAccountInfo()
     }
 
     fun loadFiles(isRefresh: Boolean = false) {
+        if (_isSearchMode.value) {
+            search(_searchQuery.value)
+            return
+        }
         viewModelScope.launch {
             if (!isRefresh) {
                 val cached = filesRepository.getCached(parentId)
@@ -174,6 +190,63 @@ class FilesViewModel @Inject constructor(
                 }
                 is NetworkResult.Error -> {
                     _snackbarMessage.value = "Delete failed: ${result.message}"
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun toggleSearch() {
+        _isSearchMode.value = !_isSearchMode.value
+        if (!_isSearchMode.value) {
+            _searchQuery.value = ""
+            val current = _uiState.value
+            if (current is FilesUiState.Success) {
+                _uiState.value = current.copy(searchResults = null, isSearching = false)
+            }
+        }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        search(query)
+    }
+
+    fun search(query: String) {
+        searchJob?.cancel()
+        if (query.isBlank()) {
+            val current = _uiState.value
+            if (current is FilesUiState.Success) {
+                _uiState.value = current.copy(searchResults = null, isSearching = false)
+            }
+            return
+        }
+
+        searchJob = viewModelScope.launch {
+            delay(300) // Debounce
+            val current = _uiState.value
+            if (current is FilesUiState.Success) {
+                _uiState.value = current.copy(isSearching = true)
+            }
+
+            val token = settingsRepository.authTokenFlow.first()
+            when (val result = filesRepository.searchFiles(token, query, parentId)) {
+                is NetworkResult.Success -> {
+                    val currentSuccess = _uiState.value as? FilesUiState.Success
+                    if (currentSuccess != null) {
+                        _uiState.value = currentSuccess.copy(
+                            searchResults = result.data.sortedBy { it.name.lowercase() },
+                            isSearching = false
+                        )
+                    }
+                }
+                is NetworkResult.Error -> {
+                    // Handle error, maybe show snackbar
+                    val currentSuccess = _uiState.value as? FilesUiState.Success
+                    if (currentSuccess != null) {
+                        _uiState.value = currentSuccess.copy(isSearching = false)
+                    }
+                    _snackbarMessage.value = "Search failed: ${result.message}"
                 }
                 NetworkResult.Loading -> Unit
             }

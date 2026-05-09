@@ -64,6 +64,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
@@ -76,6 +84,9 @@ fun FilesScreen(
     val uiState by viewModel.uiState.collectAsState()
     val accountInfo by viewModel.accountInfo.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
+    val isSearchMode by viewModel.isSearchMode.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -86,23 +97,22 @@ fun FilesScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var currentHighlightId by remember { mutableStateOf(viewModel.highlightFileId) }
+    
+    val searchFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(uiState) {
-        if (uiState is FilesUiState.Success && currentHighlightId != -1L) {
-            val files = (uiState as FilesUiState.Success).files
-            val index = files.indexOfFirst { it.id == currentHighlightId }
-            if (index != -1) {
-                scope.launch {
-                    delay(300) // Let layout settle
-                    listState.animateScrollToItem(index)
-                    delay(2000) // Show highlight for 2s
-                    currentHighlightId = -1L
-                }
-            }
+    LaunchedEffect(isSearchMode) {
+        if (isSearchMode) {
+            searchFocusRequester.requestFocus()
         }
     }
 
-    BackHandler(enabled = isSelectionMode) { selectedIds = emptySet() }
+    BackHandler(enabled = isSelectionMode || isSearchMode) {
+        if (isSelectionMode) {
+            selectedIds = emptySet()
+        } else if (isSearchMode) {
+            viewModel.toggleSearch()
+        }
+    }
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
@@ -230,7 +240,24 @@ fun FilesScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    if (isSelectionMode) {
+                    if (isSearchMode) {
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.onSearchQueryChanged(it) },
+                            placeholder = { Text("Search in $folderName") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(searchFocusRequester),
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                        )
+                    } else if (isSelectionMode) {
                         Text(
                             text = "${selectedIds.size} selected",
                             style = MaterialTheme.typography.titleLarge,
@@ -256,6 +283,9 @@ fun FilesScreen(
                 },
                 navigationIcon = {
                     when {
+                        isSearchMode -> IconButton(onClick = { viewModel.toggleSearch() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
+                        }
                         isSelectionMode -> IconButton(onClick = { selectedIds = emptySet() }) {
                             Icon(Icons.Default.Close, contentDescription = "Cancel selection")
                         }
@@ -269,7 +299,16 @@ fun FilesScreen(
                         IconButton(onClick = { showBatchDeleteConfirm = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete selected")
                         }
+                    } else if (isSearchMode) {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            }
+                        }
                     } else {
+                        IconButton(onClick = { viewModel.toggleSearch() }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
                         IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
@@ -360,24 +399,39 @@ fun FilesScreen(
             }
 
             is FilesUiState.Success -> {
+                val files = if (isSearchMode) {
+                    state.searchResults ?: emptyList()
+                } else {
+                    state.files
+                }
+
                 PullToRefreshBox(
-                    isRefreshing = state.isRefreshing,
+                    isRefreshing = state.isRefreshing || state.isSearching,
                     onRefresh = { viewModel.loadFiles(isRefresh = true) },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues),
                 ) {
-                    if (state.files.isEmpty()) {
-                        EmptyFolderView(
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                    if (files.isEmpty()) {
+                        if (isSearchMode && searchQuery.isNotEmpty() && !state.isSearching) {
+                            NoResultsView(
+                                query = searchQuery,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else if (!isSearchMode) {
+                            EmptyFolderView(
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            // Loading search results
+                        }
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             state = listState
                         ) {
                             items(
-                                items = state.files,
+                                items = files,
                                 key = { it.id },
                             ) { file ->
                                 FileItem(
@@ -403,6 +457,27 @@ fun FilesScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NoResultsView(query: String, modifier: Modifier = Modifier) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(64.dp),
+            )
+            Text(
+                text = "No results for \"$query\"",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 12.dp),
+            )
         }
     }
 }
