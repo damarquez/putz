@@ -25,6 +25,9 @@ data class CalibreTransferEntity(
     /** The original local SAF URI of the file, if it was uploaded from local storage. 
      *  Used to detach the file from Putz when the transfer is removed. */
     val sourceLocalUri: String? = null,
+
+    /** JSON representation of List<CalibreBatchItem> for assembled books. */
+    val batchData: String? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 
@@ -40,5 +43,6 @@ enum class CalibreTransferStatus {
     REQUESTED,
     PROCESSING,
     COMPLETED,
-    FAILED
+    FAILED,
+    ASSEMBLED
 }

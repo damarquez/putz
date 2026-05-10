@@ -64,9 +64,11 @@ fun FileItem(
     onLongClick: () -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
+    onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
     onDelete: () -> Unit,
     isSelected: Boolean,
     isSelectionMode: Boolean,
+    hasPendingAssemblies: Boolean = false,
     isHighlighted: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -188,6 +190,15 @@ fun FileItem(
                                     onSendToCalibre(file)
                                 },
                             )
+                            if (hasPendingAssemblies) {
+                                DropdownMenuItem(
+                                    text = { Text("Assemble into book") },
+                                    onClick = {
+                                        showMenu = false
+                                        onAssembleToCalibre(file, false)
+                                    },
+                                )
+                            }
                         }
                         if (isMultiTrackAudio) {
                             DropdownMenuItem(
@@ -197,6 +208,15 @@ fun FileItem(
                                     onSendAsAudiobookPack(file)
                                 },
                             )
+                            if (hasPendingAssemblies) {
+                                DropdownMenuItem(
+                                    text = { Text("Assemble into M4B") },
+                                    onClick = {
+                                        showMenu = false
+                                        onAssembleToCalibre(file, true)
+                                    },
+                                )
+                            }
                         }
                         if (isEbook || isMultiTrackAudio) {
                             HorizontalDivider()

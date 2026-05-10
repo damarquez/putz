@@ -4,9 +4,13 @@ import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.damarquez.putz.data.local.CalibreTransferEntity
+import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.data.model.AccountInfo
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.data.repository.AudiobookFile
+import com.damarquez.putz.data.repository.CalibreBatchItem
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.settings.SettingsRepository
@@ -16,9 +20,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -56,6 +63,12 @@ class FilesViewModel @Inject constructor(
 
     private val _accountInfo = MutableStateFlow<AccountInfo?>(null)
     val accountInfo: StateFlow<AccountInfo?> = _accountInfo.asStateFlow()
+
+    val pendingAssemblies: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
+        .map { transfers -> 
+            transfers.filter { it.status == CalibreTransferStatus.ASSEMBLED }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
@@ -167,6 +180,42 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    private suspend fun uploadLocalFileIfNecessary(file: PutioFile, putioToken: String): Long? {
+        if (!file.isLocal || file.localUri == null) return file.id
+
+        _snackbarMessage.value = "Uploading \"${file.name}\" to put.io..."
+        
+        // 1. Find or create .putz_attachments
+        val rootFiles = filesRepository.listFiles(putioToken, 0).dataOrNull()?.first ?: emptyList()
+        var tempFolderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
+        
+        if (tempFolderId == null) {
+            val createResult = filesRepository.createFolder(putioToken, 0, ".putz_attachments")
+            if (createResult is NetworkResult.Success) {
+                tempFolderId = createResult.data.id
+            } else {
+                _snackbarMessage.value = "Failed to create temp folder: ${(createResult as NetworkResult.Error).message}"
+                return null
+            }
+        }
+
+        // 2. Upload the file
+        val uploadResult = filesRepository.uploadFile(
+            putioToken, 
+            tempFolderId!!, 
+            file.name, 
+            android.net.Uri.parse(file.localUri), 
+            context.contentResolver
+        )
+
+        return if (uploadResult is NetworkResult.Success) {
+            uploadResult.data.id
+        } else {
+            _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
+            null
+        }
+    }
+
     fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -176,46 +225,8 @@ class FilesViewModel @Inject constructor(
             }
 
             val putioToken = settingsRepository.authTokenFlow.first()
-            
-            var targetFileId = file.id
-            var isTempUpload = false
-
-            if (file.isLocal && file.localUri != null) {
-                // Phase 3: Handle local file upload
-                _snackbarMessage.value = "Uploading \"${file.name}\" to put.io..."
-                
-                // 1. Find or create .putz_attachments
-                val rootFiles = filesRepository.listFiles(putioToken, 0).dataOrNull()?.first ?: emptyList()
-                var tempFolderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
-                
-                if (tempFolderId == null) {
-                    val createResult = filesRepository.createFolder(putioToken, 0, ".putz_attachments")
-                    if (createResult is NetworkResult.Success) {
-                        tempFolderId = createResult.data.id
-                    } else {
-                        _snackbarMessage.value = "Failed to create temp folder: ${(createResult as NetworkResult.Error).message}"
-                        return@launch
-                    }
-                }
-
-                // 2. Upload the file
-                val uploadResult = filesRepository.uploadFile(
-                    putioToken, 
-                    tempFolderId!!, 
-                    file.name, 
-                    android.net.Uri.parse(file.localUri), 
-                    context.contentResolver
-                )
-
-                if (uploadResult is NetworkResult.Success) {
-                    targetFileId = uploadResult.data.id
-                    isTempUpload = true
-                } else {
-                    _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
-                    return@launch
-                }
-            }
-
+            val targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
+            val isTempUpload = file.isLocal
             val downloadUrl = filesRepository.getDownloadUrl(putioToken, targetFileId)
 
             calibreRepository.addTransfer(
@@ -231,6 +242,31 @@ class FilesViewModel @Inject constructor(
                 assembleBook = assembleBook,
             )
             _snackbarMessage.value = if (assembleBook) "Book assembled in Calibre list" else "Transfer requested for $title"
+        }
+    }
+
+    fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null) {
+        viewModelScope.launch {
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
+            val downloadUrl = filesRepository.getDownloadUrl(putioToken, targetFileId)
+
+            val newItem = CalibreBatchItem(
+                type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
+                putio_file_id = targetFileId,
+                fileName = file.name,
+                download_url = downloadUrl,
+                archiveMode = archiveMode
+            )
+
+            calibreRepository.appendToAssembly(
+                assemblyFileId = assemblyFileId,
+                title = title,
+                author = author,
+                newItem = newItem,
+                newFileIds = listOf(targetFileId)
+            )
+            _snackbarMessage.value = "File added to assembly: $title"
         }
     }
 
@@ -257,6 +293,34 @@ class FilesViewModel @Inject constructor(
                 assembleBook = assembleBook,
             )
             _snackbarMessage.value = if (assembleBook) "Audiobook assembled in Calibre list" else "Audiobook transfer requested for $title"
+        }
+    }
+
+    fun appendAudiobookPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String) {
+        viewModelScope.launch {
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val filesWithUrls = files.map { file ->
+                file to filesRepository.getDownloadUrl(putioToken, file.id)
+            }
+
+            val audioFiles = filesWithUrls.map { (file, url) ->
+                AudiobookFile(file.id, file.name, url)
+            }
+            val newItem = CalibreBatchItem(
+                type = "PACK",
+                putio_file_id = files.first().id,
+                fileName = "${files.size} MP3 files",
+                files = audioFiles
+            )
+
+            calibreRepository.appendToAssembly(
+                assemblyFileId = assemblyFileId,
+                title = title,
+                author = author,
+                newItem = newItem,
+                newFileIds = files.map { it.id }
+            )
+            _snackbarMessage.value = "Audiobook pack added to assembly: $title"
         }
     }
 

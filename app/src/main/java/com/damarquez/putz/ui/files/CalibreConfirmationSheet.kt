@@ -51,12 +51,13 @@ fun CalibreConfirmationSheet(
     onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean) -> Unit,
     checkExists: suspend (String, String) -> Boolean,
     isArchive: Boolean = false,
+    forceAssemble: Boolean = false,
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
     var existsInLibrary by remember { mutableStateOf(false) }
     var archiveMode by remember { mutableStateOf("default") }
-    var assembleBook by remember { mutableStateOf(false) }
+    var assembleBook by remember { mutableStateOf(forceAssemble) }
 
     LaunchedEffect(title, author) {
         if (title.isNotBlank() && author.isNotBlank()) {
@@ -179,26 +180,28 @@ fun CalibreConfirmationSheet(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Assemble book",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        text = "Add to list but don't send immediately",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            if (!forceAssemble) {
+                Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Assemble book",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = "Add to list but don't send immediately",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = assembleBook,
+                        onCheckedChange = { assembleBook = it }
                     )
                 }
-                androidx.compose.material3.Switch(
-                    checked = assembleBook,
-                    onCheckedChange = { assembleBook = it }
-                )
             }
 
             if (isArchive) {

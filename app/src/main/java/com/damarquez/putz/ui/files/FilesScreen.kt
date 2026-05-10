@@ -159,6 +159,75 @@ fun FilesScreen(
     val audiobookPackSheetState = rememberModalBottomSheetState()
     val audiobookConfirmSheetState = rememberModalBottomSheetState()
 
+    // Assembly flow
+    val pendingAssemblies by viewModel.pendingAssemblies.collectAsState()
+    var selectedFileForAssembly by remember { mutableStateOf<Pair<PutioFile, Boolean>?>(null) } // File, isPack
+    var targetAssemblyForFile by remember { mutableStateOf<com.damarquez.putz.data.local.CalibreTransferEntity?>(null) }
+    var selectedPackFilesForAssembly by remember { mutableStateOf<List<PutioFile>?>(null) }
+
+    if (selectedFileForAssembly != null && targetAssemblyForFile == null) {
+        val isPack = selectedFileForAssembly!!.second
+        if (!isPack || selectedPackFilesForAssembly != null) {
+            AlertDialog(
+                onDismissRequest = { 
+                    selectedFileForAssembly = null
+                    selectedPackFilesForAssembly = null
+                },
+                title = { Text("Pick Assembly") },
+                text = {
+                    Column {
+                        pendingAssemblies.forEach { assembly ->
+                            DropdownMenuItem(
+                                text = { 
+                                    Column {
+                                        Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
+                                        Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = { targetAssemblyForFile = assembly }
+                            )
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { 
+                        selectedFileForAssembly = null 
+                        selectedPackFilesForAssembly = null
+                    }) { Text("Cancel") }
+                }
+            )
+        }
+    }
+
+    if (targetAssemblyForFile != null) {
+        val (file, isPack) = selectedFileForAssembly!!
+        CalibreConfirmationSheet(
+            displayName = if (isPack) "${selectedPackFilesForAssembly?.size} MP3 files" else file.name,
+            initialTitle = targetAssemblyForFile!!.title,
+            initialAuthor = targetAssemblyForFile!!.author,
+            sheetState = calibreSheetState,
+            onDismiss = { 
+                targetAssemblyForFile = null
+                selectedFileForAssembly = null
+                selectedPackFilesForAssembly = null
+            },
+            onConfirm = { title, author, archiveMode, _ ->
+                if (isPack) {
+                    viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author)
+                } else {
+                    viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode)
+                }
+                targetAssemblyForFile = null
+                selectedFileForAssembly = null
+                selectedPackFilesForAssembly = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            isArchive = !isPack && MetadataUtils.isArchive(file.name),
+            forceAssemble = true
+        )
+    }
+
     val isRoot = viewModel.parentId == 0L
     val folderName = viewModel.folderName
 
@@ -182,7 +251,7 @@ fun FilesScreen(
         )
     }
 
-    if (audiobookPackTriggerFile != null && selectedPackFiles == null) {
+    if (audiobookPackTriggerFile != null && selectedPackFiles == null && selectedPackFilesForAssembly == null) {
         val mp3Files = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isMultiTrackAudio(it.name) }
@@ -191,9 +260,16 @@ fun FilesScreen(
         AudiobookPackSheet(
             mp3Files = mp3Files,
             sheetState = audiobookPackSheetState,
-            onDismiss = { audiobookPackTriggerFile = null },
+            onDismiss = { 
+                audiobookPackTriggerFile = null 
+                selectedFileForAssembly = null
+            },
             onConfirm = { files ->
-                selectedPackFiles = files
+                if (selectedFileForAssembly?.second == true) {
+                    selectedPackFilesForAssembly = files
+                } else {
+                    selectedPackFiles = files
+                }
                 audiobookPackTriggerFile = null
             },
         )
@@ -511,10 +587,17 @@ fun FilesScreen(
                                         onLongClick = { selectedFiles = selectedFiles + file },
                                         onSendToCalibre = { selectedFileForCalibre = it },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
+                                        onAssembleToCalibre = { target, isPack ->
+                                            selectedFileForAssembly = target to isPack
+                                            if (isPack) {
+                                                audiobookPackTriggerFile = target
+                                            }
+                                        },
                                         onDelete = { fileToDelete = file },
                                         isSelected = file in selectedFiles,
                                         isSelectionMode = isSelectionMode,
                                         isHighlighted = file.id == currentHighlightId,
+                                        hasPendingAssemblies = pendingAssemblies.isNotEmpty(),
                                     )
                                 }
                             }

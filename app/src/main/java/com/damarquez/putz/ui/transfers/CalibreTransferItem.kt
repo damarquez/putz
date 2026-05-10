@@ -136,8 +136,8 @@ fun CalibreTransferItem(
                 }
             }
 
-            val isAssembled = transfer.status == CalibreTransferStatus.PENDING && transfer.gdriveRequestId == null
-            StatusBadge(status = transfer.status, isAssembled = isAssembled)
+            val isAssembled = transfer.status == CalibreTransferStatus.ASSEMBLED
+            StatusBadge(status = transfer.status)
 
             if (isAssembled) {
                 IconButton(onClick = onRetry) {
@@ -181,13 +181,10 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, isAssembled: Boolean = false) {
+private fun StatusBadge(status: CalibreTransferStatus) {
     val (icon, color, label) = when (status) {
-        CalibreTransferStatus.PENDING -> if (isAssembled) {
-            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.secondary, "Assembled")
-        } else {
-            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.outline, "Pending")
-        }
+        CalibreTransferStatus.ASSEMBLED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.secondary, "Assembled")
+        CalibreTransferStatus.PENDING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.outline, "Pending")
         CalibreTransferStatus.REQUESTED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.primary, "Requested")
         CalibreTransferStatus.PROCESSING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, "Processing")
         CalibreTransferStatus.COMPLETED -> Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, "Completed")
