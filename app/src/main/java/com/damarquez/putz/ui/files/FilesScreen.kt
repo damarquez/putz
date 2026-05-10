@@ -212,17 +212,16 @@ fun FilesScreen(
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
             },
-            onConfirm = { title, author, archiveMode, _ ->
+            onConfirm = { title, author, archiveMode, _, isAltVersion ->
                 if (isPack) {
-                    viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author)
+                    viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
                 } else {
-                    viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode)
+                    viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode, isAltVersion)
                 }
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
-            },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            },            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             isArchive = !isPack && MetadataUtils.isArchive(file.name),
             forceAssemble = true
         )
@@ -242,8 +241,8 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCalibre = null },
-            onConfirm = { title, author, archiveMode, assembleBook ->
-                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook)
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion)
                 selectedFileForCalibre = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -286,8 +285,8 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = audiobookConfirmSheetState,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook ->
-                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook)
+            onConfirm = { title, author, _, assembleBook, isAltVersion ->
+                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion)
                 selectedPackFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -593,6 +592,7 @@ fun FilesScreen(
                                                 audiobookPackTriggerFile = target
                                             }
                                         },
+                                        onDownload = { viewModel.downloadFile(it) },
                                         onDelete = { fileToDelete = file },
                                         isSelected = file in selectedFiles,
                                         isSelectionMode = isSelectionMode,

@@ -419,4 +419,37 @@ class PutioApiClient @Inject constructor(
             NetworkResult.Error(e.message ?: "Unknown error")
         }
     }
+
+    fun renameFile(token: String, fileId: Long, newName: String): NetworkResult<Unit> {
+        return try {
+            val body = FormBody.Builder()
+                .add("file_id", fileId.toString())
+                .add("name", newName)
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/files/rename")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<BaseResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<BaseResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
 }

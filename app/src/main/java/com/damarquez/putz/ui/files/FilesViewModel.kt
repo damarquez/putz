@@ -171,6 +171,24 @@ class FilesViewModel @Inject constructor(
         )
     }
 
+    fun downloadFile(file: PutioFile) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val url = filesRepository.getDownloadUrl(token, file.id)
+            
+            val downloadManager = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
+                .setTitle(file.name)
+                .setDescription("Downloading from put.io")
+                .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, file.name)
+                .addRequestHeader("Authorization", "Bearer $token")
+
+            downloadManager.enqueue(request)
+            _snackbarMessage.value = "Download started: ${file.name}"
+        }
+    }
+
     fun attachLocal(uri: android.net.Uri, name: String, isFolder: Boolean) {
         viewModelScope.launch {
             localFilesRepository.attach(uri, name, isFolder)
@@ -216,7 +234,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -225,13 +243,29 @@ class FilesViewModel @Inject constructor(
             }
 
             val putioToken = settingsRepository.authTokenFlow.first()
-            val targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
+            var targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
+            var targetFileName = file.name
+
+            if (isAltVersion) {
+                val ext = targetFileName.substringAfterLast('.', "")
+                if (ext.isNotEmpty()) {
+                    val newName = targetFileName.substringBeforeLast('.') + "." + ext + "_bkp"
+                    val renameResult = filesRepository.renameFile(putioToken, targetFileId, newName)
+                    if (renameResult is NetworkResult.Success) {
+                        targetFileName = newName
+                    } else {
+                        _snackbarMessage.value = "Failed to rename: ${(renameResult as NetworkResult.Error).message}"
+                        return@launch
+                    }
+                }
+            }
+
             val isTempUpload = file.isLocal
             val downloadUrl = filesRepository.getDownloadUrl(putioToken, targetFileId)
 
             calibreRepository.addTransfer(
                 putioFileId = targetFileId,
-                fileName = file.name,
+                fileName = targetFileName,
                 title = title,
                 author = author,
                 googleAccount = googleAccount,
@@ -245,16 +279,32 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null) {
+    fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             val putioToken = settingsRepository.authTokenFlow.first()
-            val targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
+            var targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
+            var targetFileName = file.name
+
+            if (isAltVersion) {
+                val ext = targetFileName.substringAfterLast('.', "")
+                if (ext.isNotEmpty()) {
+                    val newName = targetFileName.substringBeforeLast('.') + "." + ext + "_bkp"
+                    val renameResult = filesRepository.renameFile(putioToken, targetFileId, newName)
+                    if (renameResult is NetworkResult.Success) {
+                        targetFileName = newName
+                    } else {
+                        _snackbarMessage.value = "Failed to rename: ${(renameResult as NetworkResult.Error).message}"
+                        return@launch
+                    }
+                }
+            }
+
             val downloadUrl = filesRepository.getDownloadUrl(putioToken, targetFileId)
 
             val newItem = CalibreBatchItem(
                 type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
                 putio_file_id = targetFileId,
-                fileName = file.name,
+                fileName = targetFileName,
                 download_url = downloadUrl,
                 archiveMode = archiveMode
             )
@@ -272,7 +322,7 @@ class FilesViewModel @Inject constructor(
 
     private fun <T> NetworkResult<T>.dataOrNull(): T? = (this as? NetworkResult.Success)?.data
 
-    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false) {
+    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -285,18 +335,24 @@ class FilesViewModel @Inject constructor(
                 file to filesRepository.getDownloadUrl(putioToken, file.id)
             }
 
+            val packLabel = if (isAltVersion) "${files.size} MP3 files (m4b_bkp)" else "${files.size} MP3 files"
+            val initialItemName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
+
             calibreRepository.addAudiobookPackTransfer(
                 files = filesWithUrls,
                 title = title,
                 author = author,
                 googleAccount = googleAccount,
                 assembleBook = assembleBook,
+                // We'll pass the custom filename to addAudiobookPackTransfer if I update it, 
+                // but let's just update the internal item name for the daemon.
+                customFileName = initialItemName 
             )
             _snackbarMessage.value = if (assembleBook) "Audiobook assembled in Calibre list" else "Audiobook transfer requested for $title"
         }
     }
 
-    fun appendAudiobookPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String) {
+    fun appendAudiobookPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             val putioToken = settingsRepository.authTokenFlow.first()
             val filesWithUrls = files.map { file ->
@@ -306,10 +362,11 @@ class FilesViewModel @Inject constructor(
             val audioFiles = filesWithUrls.map { (file, url) ->
                 AudiobookFile(file.id, file.name, url)
             }
+            val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
             val newItem = CalibreBatchItem(
                 type = "PACK",
                 putio_file_id = files.first().id,
-                fileName = "${files.size} MP3 files",
+                fileName = fileName,
                 files = audioFiles
             )
 

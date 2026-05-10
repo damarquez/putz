@@ -153,20 +153,22 @@ class CalibreRepository @Inject constructor(
         author: String,
         googleAccount: String,
         assembleBook: Boolean = false,
+        customFileName: String? = null,
     ) {
         val primaryFileId = files.first().first.id
         val audioFiles = files.map { (file, url) ->
             AudiobookFile(file.id, file.name, url)
         }
+        val fileName = customFileName ?: "${files.size} MP3 files"
         val initialItem = CalibreBatchItem(
             type = "PACK",
             putio_file_id = primaryFileId,
-            fileName = "${files.size} MP3 files",
+            fileName = fileName,
             files = audioFiles
         )
         val transfer = CalibreTransferEntity(
             putioFileId = primaryFileId,
-            fileName = "${files.size} MP3 files",
+            fileName = fileName,
             title = title,
             author = author,
             status = if (assembleBook) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,

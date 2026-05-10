@@ -48,7 +48,7 @@ fun CalibreConfirmationSheet(
     initialAuthor: String,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean) -> Unit,
+    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean) -> Unit,
     checkExists: suspend (String, String) -> Boolean,
     isArchive: Boolean = false,
     forceAssemble: Boolean = false,
@@ -58,6 +58,7 @@ fun CalibreConfirmationSheet(
     var existsInLibrary by remember { mutableStateOf(false) }
     var archiveMode by remember { mutableStateOf("default") }
     var assembleBook by remember { mutableStateOf(forceAssemble) }
+    var isAltVersion by remember { mutableStateOf(false) }
 
     LaunchedEffect(title, author) {
         if (title.isNotBlank() && author.isNotBlank()) {
@@ -160,7 +161,7 @@ fun CalibreConfirmationSheet(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook)
+                        onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook, isAltVersion)
                     }),
                 )
                 if (author.count { it == ',' } == 1) {
@@ -182,6 +183,28 @@ fun CalibreConfirmationSheet(
 
             if (!forceAssemble) {
                 Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Alternative version",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = "Rename extension to '_bkp'",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = isAltVersion,
+                        onCheckedChange = { isAltVersion = it }
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -229,7 +252,7 @@ fun CalibreConfirmationSheet(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook) },
+                onClick = { onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook, isAltVersion) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = title.isNotBlank() && author.isNotBlank(),
             ) {

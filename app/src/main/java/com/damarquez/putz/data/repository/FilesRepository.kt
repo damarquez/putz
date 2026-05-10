@@ -60,6 +60,11 @@ class FilesRepository @Inject constructor(
             apiClient.createFolder(token, parentId, name)
         }
 
+    suspend fun renameFile(token: String, fileId: Long, newName: String): NetworkResult<Unit> =
+        withContext(Dispatchers.IO) {
+            apiClient.renameFile(token, fileId, newName)
+        }
+
     suspend fun uploadFile(
         token: String,
         parentId: Long,

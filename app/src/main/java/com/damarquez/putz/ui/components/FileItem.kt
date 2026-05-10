@@ -65,6 +65,7 @@ fun FileItem(
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
+    onDownload: (PutioFile) -> Unit,
     onDelete: () -> Unit,
     isSelected: Boolean,
     isSelectionMode: Boolean,
@@ -182,6 +183,14 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Download") },
+                            onClick = {
+                                showMenu = false
+                                onDownload(file)
+                            },
+                        )
+                        HorizontalDivider()
                         if (isEbook) {
                             DropdownMenuItem(
                                 text = { Text("Send to Calibre") },
