@@ -66,6 +66,7 @@ fun FileItem(
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
     onDownload: (PutioFile) -> Unit,
+    onCopyLink: (PutioFile) -> Unit,
     onDelete: () -> Unit,
     isSelected: Boolean,
     isSelectionMode: Boolean,
@@ -188,6 +189,13 @@ fun FileItem(
                             onClick = {
                                 showMenu = false
                                 onDownload(file)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Copy download link") },
+                            onClick = {
+                                showMenu = false
+                                onCopyLink(file)
                             },
                         )
                         HorizontalDivider()

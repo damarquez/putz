@@ -593,6 +593,7 @@ fun FilesScreen(
                                             }
                                         },
                                         onDownload = { viewModel.downloadFile(it) },
+                                        onCopyLink = { viewModel.copyDownloadLink(it) },
                                         onDelete = { fileToDelete = file },
                                         isSelected = file in selectedFiles,
                                         isSelectionMode = isSelectionMode,

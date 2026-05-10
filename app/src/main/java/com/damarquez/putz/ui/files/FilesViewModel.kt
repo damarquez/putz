@@ -189,6 +189,18 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun copyDownloadLink(file: PutioFile) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val url = filesRepository.getDownloadUrl(token, file.id)
+            
+            val clipboardManager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("Download Link", url)
+            clipboardManager.setPrimaryClip(clip)
+            _snackbarMessage.value = "Link copied to clipboard"
+        }
+    }
+
     fun attachLocal(uri: android.net.Uri, name: String, isFolder: Boolean) {
         viewModelScope.launch {
             localFilesRepository.attach(uri, name, isFolder)
