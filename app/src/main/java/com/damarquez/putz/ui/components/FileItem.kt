@@ -53,6 +53,9 @@ import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.ui.unit.sp
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileItem(
@@ -74,6 +77,11 @@ fun FileItem(
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.name)
     val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
+
+    val formatLabel = file.name
+        .substringAfterLast('.', "")
+        .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
+        ?.uppercase()
 
     val backgroundColor = when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -97,22 +105,37 @@ fun FileItem(
                 Spacer(modifier = Modifier.width(4.dp))
             }
 
-            Box {
-                FileTypeIcon(
-                    fileType = fileType,
-                    isFolder = file.isFolder,
-                    cornerRadius = cornerRadius.value.toInt(),
-                )
-                if (file.isLocal) {
-                    Icon(
-                        imageVector = Icons.Default.Smartphone,
-                        contentDescription = "Local file",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .size(14.dp)
-                            .align(Alignment.BottomEnd)
-                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
-                            .padding(1.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.width(44.dp)
+            ) {
+                Box {
+                    FileTypeIcon(
+                        fileType = fileType,
+                        fileName = file.name,
+                        isFolder = file.isFolder,
+                        cornerRadius = cornerRadius.value.toInt(),
+                    )
+                    if (file.isLocal) {
+                        Icon(
+                            imageVector = Icons.Default.Smartphone,
+                            contentDescription = "Local file",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
+                                .padding(1.dp)
+                        )
+                    }
+                }
+                if (isEbook && formatLabel != null) {
+                    Text(
+                        text = formatLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
                     )
                 }
             }
@@ -220,12 +243,15 @@ fun FileItem(
 @Composable
 private fun FileTypeIcon(
     fileType: PutioFileType,
+    fileName: String,
     isFolder: Boolean,
     cornerRadius: Int,
 ) {
     val styling = LocalAppStyling.current
+    val isEbook = MetadataUtils.isEbook(fileName)
     val icon: ImageVector = when {
         isFolder -> Icons.Default.Folder
+        isEbook -> Icons.Default.Book
         fileType == PutioFileType.VIDEO -> Icons.Default.VideoFile
         fileType == PutioFileType.AUDIO -> Icons.Default.AudioFile
         fileType == PutioFileType.IMAGE -> Icons.Default.Image

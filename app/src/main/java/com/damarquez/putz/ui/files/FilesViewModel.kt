@@ -167,7 +167,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -228,14 +228,15 @@ class FilesViewModel @Inject constructor(
                 archiveMode = archiveMode,
                 isTempUpload = isTempUpload,
                 sourceLocalUri = file.localUri,
+                assembleBook = assembleBook,
             )
-            _snackbarMessage.value = "Transfer requested for $title"
+            _snackbarMessage.value = if (assembleBook) "Book assembled in Calibre list" else "Transfer requested for $title"
         }
     }
 
     private fun <T> NetworkResult<T>.dataOrNull(): T? = (this as? NetworkResult.Success)?.data
 
-    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String) {
+    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -253,8 +254,9 @@ class FilesViewModel @Inject constructor(
                 title = title,
                 author = author,
                 googleAccount = googleAccount,
+                assembleBook = assembleBook,
             )
-            _snackbarMessage.value = "Audiobook transfer requested for $title"
+            _snackbarMessage.value = if (assembleBook) "Audiobook assembled in Calibre list" else "Audiobook transfer requested for $title"
         }
     }
 

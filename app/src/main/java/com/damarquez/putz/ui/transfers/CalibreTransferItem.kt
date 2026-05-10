@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
@@ -135,9 +136,18 @@ fun CalibreTransferItem(
                 }
             }
 
-            StatusBadge(status = transfer.status)
+            val isAssembled = transfer.status == CalibreTransferStatus.PENDING && transfer.gdriveRequestId == null
+            StatusBadge(status = transfer.status, isAssembled = isAssembled)
 
-            if (transfer.status == CalibreTransferStatus.PENDING ||
+            if (isAssembled) {
+                IconButton(onClick = onRetry) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Start transfer",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else if (transfer.status == CalibreTransferStatus.PENDING ||
                 transfer.status == CalibreTransferStatus.REQUESTED ||
                 transfer.status == CalibreTransferStatus.PROCESSING) {
                 IconButton(onClick = onProbe) {
@@ -171,9 +181,13 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus) {
+private fun StatusBadge(status: CalibreTransferStatus, isAssembled: Boolean = false) {
     val (icon, color, label) = when (status) {
-        CalibreTransferStatus.PENDING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.outline, "Pending")
+        CalibreTransferStatus.PENDING -> if (isAssembled) {
+            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.secondary, "Assembled")
+        } else {
+            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.outline, "Pending")
+        }
         CalibreTransferStatus.REQUESTED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.primary, "Requested")
         CalibreTransferStatus.PROCESSING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, "Processing")
         CalibreTransferStatus.COMPLETED -> Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, "Completed")

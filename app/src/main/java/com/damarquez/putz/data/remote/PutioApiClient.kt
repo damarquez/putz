@@ -96,11 +96,14 @@ class PutioApiClient @Inject constructor(
 
     fun searchFiles(token: String, query: String, parentId: Long = 0L): NetworkResult<List<PutioFile>> {
         return try {
-            // Put.io search uses a query string. To restrict to a folder, we append parent_id:X to the query.
-            val fullQuery = if (parentId != 0L) "$query parent_id:$parentId" else query
-            val url = "$BASE_URL/files/search".toHttpUrl().newBuilder()
-                .addQueryParameter("query", fullQuery)
-                .build()
+            val urlBuilder = "$BASE_URL/files/search".toHttpUrl().newBuilder()
+                .addQueryParameter("query", query)
+            
+            if (parentId != 0L) {
+                urlBuilder.addQueryParameter("parent_id", parentId.toString())
+            }
+
+            val url = urlBuilder.build()
 
             val request = Request.Builder()
                 .url(url)

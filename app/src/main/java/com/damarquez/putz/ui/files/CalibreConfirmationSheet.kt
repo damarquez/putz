@@ -48,7 +48,7 @@ fun CalibreConfirmationSheet(
     initialAuthor: String,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String, archiveMode: String?) -> Unit,
+    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean) -> Unit,
     checkExists: suspend (String, String) -> Boolean,
     isArchive: Boolean = false,
 ) {
@@ -56,6 +56,7 @@ fun CalibreConfirmationSheet(
     var author by remember { mutableStateOf(initialAuthor) }
     var existsInLibrary by remember { mutableStateOf(false) }
     var archiveMode by remember { mutableStateOf("default") }
+    var assembleBook by remember { mutableStateOf(false) }
 
     LaunchedEffect(title, author) {
         if (title.isNotBlank() && author.isNotBlank()) {
@@ -158,7 +159,7 @@ fun CalibreConfirmationSheet(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null)
+                        onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook)
                     }),
                 )
                 if (author.count { it == ',' } == 1) {
@@ -176,6 +177,28 @@ fun CalibreConfirmationSheet(
                         )
                     }
                 }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Assemble book",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = "Add to list but don't send immediately",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = assembleBook,
+                    onCheckedChange = { assembleBook = it }
+                )
             }
 
             if (isArchive) {
@@ -203,11 +226,11 @@ fun CalibreConfirmationSheet(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null) },
+                onClick = { onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = title.isNotBlank() && author.isNotBlank(),
             ) {
-                Text("Confirm & Send")
+                Text(if (assembleBook) "Assemble Book" else "Confirm & Send")
             }
 
             TextButton(

@@ -67,13 +67,16 @@ fun CalibreTransfersScreen(
 
     transferToDelete?.let { transfer ->
         val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
+        val isDuplicate = transfer.status == CalibreTransferStatus.FAILED && 
+                         transfer.errorMessage?.contains("already has format", ignoreCase = true) == true
+        val canCleanup = isCompleted || isDuplicate
         val isLocal = transfer.isTempUpload
         
         AlertDialog(
             onDismissRequest = { transferToDelete = null },
             title = { Text("Remove transfer?") },
             text = {
-                if (isCompleted) {
+                if (canCleanup) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
                             checked = alsoDeleteFromPutio,
@@ -87,7 +90,7 @@ fun CalibreTransfersScreen(
             },
             confirmButton = {
                 Button(onClick = {
-                    if (isCompleted && alsoDeleteFromPutio) {
+                    if (canCleanup && alsoDeleteFromPutio) {
                         viewModel.deleteOrDetach(transfer)
                     } else {
                         viewModel.removeTransfer(transfer.putioFileId)
@@ -183,7 +186,7 @@ fun CalibreTransfersScreen(
                         CalibreTransferItem(
                             transfer = transfer,
                             onDelete = {
-                                alsoDeleteFromPutio = false
+                                alsoDeleteFromPutio = true
                                 transferToDelete = transfer
                             },
                             onProbe = {

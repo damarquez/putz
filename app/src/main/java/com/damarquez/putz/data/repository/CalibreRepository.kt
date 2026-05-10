@@ -9,11 +9,14 @@ import com.damarquez.putz.data.remote.GDriveManager
 import com.damarquez.putz.data.remote.PutioApiClient
 import com.damarquez.putz.security.SecureStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -21,6 +24,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
 
 @Serializable
 data class CalibreRequest(
@@ -94,6 +98,7 @@ class CalibreRepository @Inject constructor(
         archiveMode: String? = null,
         isTempUpload: Boolean = false,
         sourceLocalUri: String? = null,
+        assembleBook: Boolean = false,
     ) {
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -108,6 +113,8 @@ class CalibreRepository @Inject constructor(
             sourceLocalUri = sourceLocalUri,
         )
         calibreTransferDao.insertTransfer(transfer)
+
+        if (assembleBook) return
 
         // Immediately try to upload request
         val request = CalibreRequest("ADD_BOOK", putioFileId, title, author, fileName, downloadUrl, archiveMode)
@@ -134,6 +141,7 @@ class CalibreRepository @Inject constructor(
         title: String,
         author: String,
         googleAccount: String,
+        assembleBook: Boolean = false,
     ) {
         val primaryFileId = files.first().first.id
         val transfer = CalibreTransferEntity(
@@ -147,6 +155,8 @@ class CalibreRepository @Inject constructor(
             allPutioFileIds = files.joinToString(",") { (file, _) -> file.id.toString() },
         )
         calibreTransferDao.insertTransfer(transfer)
+
+        if (assembleBook) return
 
         val audioFiles = files.map { (file, url) ->
             AudiobookFile(file.id, file.name, url)
@@ -200,9 +210,10 @@ class CalibreRepository @Inject constructor(
                                 else -> transfer.status
                             }
                             
-                            // Always update lastUpdatedAt if we got a valid response for this transfer
-                            // This prevents probes from triggering while the daemon is actively sending updates
-                            if (newStatus.ordinal > transfer.status.ordinal) {
+                            val isNewerStatus = newStatus.ordinal > transfer.status.ordinal
+                            val isSameStatusFailure = newStatus == CalibreTransferStatus.FAILED && transfer.status == CalibreTransferStatus.FAILED
+                            
+                            if (isNewerStatus || isSameStatusFailure) {
                                 calibreTransferDao.updateTransfer(transfer.copy(
                                     status = newStatus,
                                     errorMessage = response.error,
@@ -214,6 +225,21 @@ class CalibreRepository @Inject constructor(
                                     val token = secureStorage.authTokenFlow.value
                                     if (token.isNotBlank()) {
                                         deleteFileFromPutio(token, transfer.putioFileId)
+                                    }
+                                }
+
+                                // Auto-retry logic: if a response says the book wasn't found (daemon missed it), 
+                                // automatically trigger a retry. Staggered to avoid simultaneous GDrive uploads.
+                                if (newStatus == CalibreTransferStatus.FAILED && response.error?.contains("not found", ignoreCase = true) == true) {
+                                    if (transfer.retryCount < 3) {
+                                        val token = secureStorage.authTokenFlow.value
+                                        if (token.isNotBlank()) {
+                                            CoroutineScope(Dispatchers.IO).launch {
+                                                val delayMs = Random.nextLong(2000, 60000)
+                                                delay(delayMs)
+                                                retryTransfer(transfer.putioFileId, googleAccount, token)
+                                            }
+                                        }
                                     }
                                 }
                             } else {
@@ -343,7 +369,7 @@ class CalibreRepository @Inject constructor(
             json.encodeToString(request)
         }
 
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_retry_${transfer.putioFileId}.json", jsonStr)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_${transfer.putioFileId}.json", jsonStr)
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.REQUESTED,
