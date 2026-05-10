@@ -157,11 +157,12 @@ fun CalibreConfirmationSheet(
                     value = author,
                     onValueChange = { author = it },
                     label = { Text("Author") },
+                    placeholder = { Text("Unknown") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook, isAltVersion)
+                        onConfirm(title.trim(), author.trim().ifBlank { "Unknown" }, if (isArchive) archiveMode else null, assembleBook, isAltVersion)
                     }),
                 )
                 if (author.count { it == ',' } == 1) {
@@ -252,9 +253,9 @@ fun CalibreConfirmationSheet(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { onConfirm(title.trim(), author.trim(), if (isArchive) archiveMode else null, assembleBook, isAltVersion) },
+                onClick = { onConfirm(title.trim(), author.trim().ifBlank { "Unknown" }, if (isArchive) archiveMode else null, assembleBook, isAltVersion) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = title.isNotBlank() && author.isNotBlank(),
+                enabled = title.isNotBlank(),
             ) {
                 Text(if (assembleBook) "Assemble Book" else "Confirm & Send")
             }
