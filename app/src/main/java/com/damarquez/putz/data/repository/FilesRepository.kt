@@ -6,6 +6,7 @@ import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.remote.PutioApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -74,5 +75,26 @@ class FilesRepository @Inject constructor(
     ): NetworkResult<PutioFile> =
         withContext(Dispatchers.IO) {
             apiClient.uploadFile(token, parentId, name, uri, contentResolver)
+        }
+
+    suspend fun downloadToFile(url: String, targetFile: File): NetworkResult<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val request = okhttp3.Request.Builder().url(url).build()
+                apiClient.okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext NetworkResult.Error("HTTP ${response.code}")
+                    val body = response.body ?: return@withContext NetworkResult.Error("Empty body")
+                    
+                    targetFile.parentFile?.mkdirs()
+                    body.byteStream().use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    NetworkResult.Success(Unit)
+                }
+            } catch (e: Exception) {
+                NetworkResult.Error(e.message ?: "Download failed")
+            }
         }
 }

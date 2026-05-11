@@ -1,6 +1,10 @@
 package com.damarquez.putz.ui.files
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,9 +23,12 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -39,6 +46,7 @@ sealed class FilesUiState {
         val searchResults: List<PutioFile>? = null,
         val isSearching: Boolean = false,
         val isScanning: Boolean = false,
+        val isPreviewLoading: Boolean = false,
     ) : FilesUiState()
     data class Error(val message: String) : FilesUiState()
 }
@@ -61,6 +69,9 @@ class FilesViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
 
+    private val _previewIntent = MutableSharedFlow<Intent>()
+    val previewIntent: SharedFlow<Intent> = _previewIntent.asSharedFlow()
+
     private val _accountInfo = MutableStateFlow<AccountInfo?>(null)
     val accountInfo: StateFlow<AccountInfo?> = _accountInfo.asStateFlow()
 
@@ -82,8 +93,68 @@ class FilesViewModel @Inject constructor(
     private var searchJob: Job? = null
 
     init {
+        clearPreviewsCache()
         loadFiles()
         if (parentId == 0L) loadAccountInfo()
+    }
+
+    private fun clearPreviewsCache() {
+        viewModelScope.launch {
+            try {
+                val previewsDir = File(context.cacheDir, "previews")
+                if (previewsDir.exists()) {
+                    previewsDir.listFiles()?.forEach { it.delete() }
+                }
+            } catch (e: Exception) {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    fun previewFile(file: PutioFile) {
+        viewModelScope.launch {
+            // 1. Show loading
+            val current = _uiState.value
+            if (current is FilesUiState.Success) {
+                _uiState.value = current.copy(isPreviewLoading = true)
+            }
+
+            try {
+                val token = settingsRepository.authTokenFlow.first()
+                val url = filesRepository.getDownloadUrl(token, file.id)
+                val targetFile = File(File(context.cacheDir, "previews"), file.name)
+                
+                // 2. Download to cache if doesn't exist
+                if (!targetFile.exists()) {
+                    val result = filesRepository.downloadToFile(url, targetFile)
+                    if (result is NetworkResult.Error) {
+                        _snackbarMessage.value = "Preview failed: ${result.message}"
+                        return@launch
+                    }
+                }
+
+                // 3. Prepare intent
+                val uri = FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
+                val extension = MimeTypeMap.getFileExtensionFromUrl(file.name)
+                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mimeType)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                
+                _previewIntent.emit(intent)
+            } catch (e: Exception) {
+                _snackbarMessage.value = "Preview error: ${e.message}"
+            } finally {
+                // Hide loading
+                val finalState = _uiState.value
+                if (finalState is FilesUiState.Success) {
+                    _uiState.value = finalState.copy(isPreviewLoading = false)
+                }
+            }
+        }
     }
 
     fun loadFiles(isRefresh: Boolean = false) {

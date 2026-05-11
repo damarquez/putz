@@ -1,5 +1,6 @@
 package com.damarquez.putz.ui.files
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,8 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +65,7 @@ fun CalibreConfirmationSheet(
     var archiveMode by remember { mutableStateOf("default") }
     var assembleBook by remember { mutableStateOf(forceAssemble) }
     var isAltVersion by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     LaunchedEffect(title, author) {
         if (title.isNotBlank() && author.isNotBlank()) {
@@ -94,7 +101,27 @@ fun CalibreConfirmationSheet(
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .clickable {
+                            try {
+                                val intent = Intent("com.damarquez.calibreanywhere.SEARCH_TITLE").apply {
+                                    setPackage("com.damarquez.calibreanywhere")
+                                    putExtra("com.damarquez.calibreanywhere.extra.SEARCH_QUERY", title)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val deepLink = "calibreanywhere://search?q=${Uri.encode(title)}"
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e2: Exception) {
+                                    // If both fail, we could show a toast, but at least we don't crash
+                                }
+                            }
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -106,7 +133,10 @@ fun CalibreConfirmationSheet(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "This book might already exist in Calibre!",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            textDecoration = TextDecoration.Underline
+                        ),
                         color = MaterialTheme.colorScheme.error
                     )
                 }

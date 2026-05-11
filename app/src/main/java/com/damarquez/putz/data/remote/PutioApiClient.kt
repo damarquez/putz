@@ -58,7 +58,7 @@ private data class AccountInfoResponse(
 
 @Singleton
 class PutioApiClient @Inject constructor(
-    private val okHttpClient: OkHttpClient,
+    internal val okHttpClient: OkHttpClient,
     private val json: Json,
 ) {
     companion object {

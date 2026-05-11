@@ -62,6 +62,7 @@ fun FileItem(
     file: PutioFile,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPreview: (PutioFile) -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
@@ -184,6 +185,16 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
+                        if (!file.isFolder) {
+                            DropdownMenuItem(
+                                text = { Text("Preview") },
+                                onClick = {
+                                    showMenu = false
+                                    onPreview(file)
+                                },
+                            )
+                            HorizontalDivider()
+                        }
                         DropdownMenuItem(
                             text = { Text("Download") },
                             onClick = {

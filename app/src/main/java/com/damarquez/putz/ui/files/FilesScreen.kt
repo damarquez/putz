@@ -149,6 +149,27 @@ fun FilesScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.previewIntent.collect { intent ->
+            context.startActivity(intent)
+        }
+    }
+
+    if (uiState is FilesUiState.Success && (uiState as FilesUiState.Success).isPreviewLoading) {
+        AlertDialog(
+            onDismissRequest = { /* Cannot dismiss while loading preview */ },
+            confirmButton = {},
+            title = { Text("Preparing preview") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Downloading temporary file...")
+                }
+            }
+        )
+    }
+
     // Single-file Calibre send
     var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
     val calibreSheetState = rememberModalBottomSheetState()
@@ -584,6 +605,7 @@ fun FilesScreen(
                                             }
                                         },
                                         onLongClick = { selectedFiles = selectedFiles + file },
+                                        onPreview = { viewModel.previewFile(it) },
                                         onSendToCalibre = { selectedFileForCalibre = it },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                         onAssembleToCalibre = { target, isPack ->
