@@ -307,6 +307,11 @@ class CalibreRepository @Inject constructor(
         }
     }
 
+    private fun normalize(text: String): String {
+        val normalized = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
+        return normalized.replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "").lowercase()
+    }
+
     suspend fun checkExists(dbFile: File, title: String, author: String): Boolean = withContext(Dispatchers.IO) {
         if (!dbFile.exists()) return@withContext false
         try {
@@ -315,17 +320,33 @@ class CalibreRepository @Inject constructor(
                 null,
                 android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             ).use { db ->
+                // First, try direct search with accents
                 val query = """
-                    SELECT count(*) FROM books 
+                    SELECT books.title, authors.name FROM books 
                     JOIN books_authors_link ON books.id = books_authors_link.book 
                     JOIN authors ON authors.id = books_authors_link.author 
-                    WHERE books.title LIKE ? AND authors.name LIKE ?
                 """.trimIndent()
-                db.rawQuery(query, arrayOf("%$title%", "%$author%")).use { cursor ->
+                
+                db.rawQuery(query, null).use { cursor ->
+                    val normTitle = normalize(title)
+                    val normAuthor = normalize(author)
+
                     if (cursor.moveToFirst()) {
-                        cursor.getInt(0) > 0
-                    } else false
+                        do {
+                            val dbTitle = cursor.getString(0)
+                            val dbAuthor = cursor.getString(1)
+                            
+                            val normDbTitle = normalize(dbTitle)
+                            val normDbAuthor = normalize(dbAuthor)
+                            
+                            // Check if normalized search terms are contained within normalized DB values
+                            if (normDbTitle.contains(normTitle) && (author.isBlank() || normDbAuthor.contains(normAuthor))) {
+                                return@withContext true
+                            }
+                        } while (cursor.moveToNext())
+                    }
                 }
+                false
             }
         } catch (e: Exception) {
             e.printStackTrace()
