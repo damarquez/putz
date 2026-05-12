@@ -63,6 +63,7 @@ fun FileItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onPreview: (PutioFile) -> Unit,
+    onReplaceCover: (PutioFile) -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
@@ -80,6 +81,7 @@ fun FileItem(
     val fileType = PutioFileType.from(file.fileType)
     val isEbook = MetadataUtils.isEbook(file.name)
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.name)
+    val isImage = fileType == PutioFileType.IMAGE
     val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
@@ -227,6 +229,15 @@ fun FileItem(
                                     },
                                 )
                             }
+                        }
+                        if (isImage) {
+                            DropdownMenuItem(
+                                text = { Text("Replace book cover") },
+                                onClick = {
+                                    showMenu = false
+                                    onReplaceCover(file)
+                                },
+                            )
                         }
                         if (isMultiTrackAudio) {
                             DropdownMenuItem(

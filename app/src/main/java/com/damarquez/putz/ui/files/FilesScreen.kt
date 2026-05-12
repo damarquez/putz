@@ -172,6 +172,7 @@ fun FilesScreen(
 
     // Single-file Calibre send
     var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedFileForCover by remember { mutableStateOf<PutioFile?>(null) }
     val calibreSheetState = rememberModalBottomSheetState()
 
     // Audiobook pack flow
@@ -233,7 +234,7 @@ fun FilesScreen(
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
             },
-            onConfirm = { title, author, archiveMode, _, isAltVersion ->
+            onConfirm = { title, author, archiveMode, _, isAltVersion, _ ->
                 if (isPack) {
                     viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
                 } else {
@@ -262,12 +263,34 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCalibre = null },
-            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion ->
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _ ->
                 viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion)
                 selectedFileForCalibre = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             isArchive = MetadataUtils.isArchive(singleFile.name),
+        )
+    }
+
+    if (selectedFileForCover != null) {
+        val imageFile = selectedFileForCover!!
+        val (initialTitle, initialAuthor) = remember(imageFile) {
+            MetadataUtils.extractMetadata(imageFile.name)
+        }
+        CalibreConfirmationSheet(
+            displayName = imageFile.name,
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            sheetState = calibreSheetState,
+            onDismiss = { selectedFileForCover = null },
+            onConfirm = { title, author, _, _, _, matchedId ->
+                if (matchedId != null) {
+                    viewModel.replaceCover(imageFile, title, author, matchedId)
+                }
+                selectedFileForCover = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            isReplaceCover = true
         )
     }
 
@@ -306,7 +329,7 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = audiobookConfirmSheetState,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _ ->
                 viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion)
                 selectedPackFiles = null
             },
@@ -606,6 +629,7 @@ fun FilesScreen(
                                         },
                                         onLongClick = { selectedFiles = selectedFiles + file },
                                         onPreview = { viewModel.previewFile(it) },
+                                        onReplaceCover = { selectedFileForCover = it },
                                         onSendToCalibre = { selectedFileForCalibre = it },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                         onAssembleToCalibre = { target, isPack ->

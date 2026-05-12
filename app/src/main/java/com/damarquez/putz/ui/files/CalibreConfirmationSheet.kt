@@ -54,14 +54,15 @@ fun CalibreConfirmationSheet(
     initialAuthor: String,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean) -> Unit,
-    checkExists: suspend (String, String) -> Boolean,
+    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?) -> Unit,
+    checkExists: suspend (String, String) -> Long?,
     isArchive: Boolean = false,
     forceAssemble: Boolean = false,
+    isReplaceCover: Boolean = false,
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
-    var existsInLibrary by remember { mutableStateOf(false) }
+    var matchedBookId by remember { mutableStateOf<Long?>(null) }
     var archiveMode by remember { mutableStateOf("default") }
     var assembleBook by remember { mutableStateOf(forceAssemble) }
     var isAltVersion by remember { mutableStateOf(false) }
@@ -69,7 +70,9 @@ fun CalibreConfirmationSheet(
 
     LaunchedEffect(title, author) {
         if (title.isNotBlank() && author.isNotBlank()) {
-            existsInLibrary = checkExists(title, author)
+            matchedBookId = checkExists(title, author)
+        } else {
+            matchedBookId = null
         }
     }
 
@@ -85,7 +88,7 @@ fun CalibreConfirmationSheet(
                 .imePadding(),
         ) {
             Text(
-                text = "Send to Calibre",
+                text = if (isReplaceCover) "Replace Book Cover" else "Send to Calibre",
                 style = MaterialTheme.typography.titleLarge,
             )
             
@@ -97,7 +100,7 @@ fun CalibreConfirmationSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            if (existsInLibrary) {
+            if (matchedBookId != null) {
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier
@@ -118,12 +121,30 @@ fun CalibreConfirmationSheet(
                                     }
                                     context.startActivity(intent)
                                 } catch (e2: Exception) {
-                                    // If both fail, we could show a toast, but at least we don't crash
                                 }
                             }
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Icon(
+                        imageVector = if (isReplaceCover) Icons.Default.FileOpen else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (isReplaceCover) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (isReplaceCover) "Matched book ID: #$matchedBookId" else "This book might already exist in Calibre! (ID: #$matchedBookId)",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        color = if (isReplaceCover) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+            } else if (isReplaceCover) {
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
@@ -132,11 +153,8 @@ fun CalibreConfirmationSheet(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "This book might already exist in Calibre!",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            textDecoration = TextDecoration.Underline
-                        ),
+                        text = "Book not found in library!",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -192,7 +210,9 @@ fun CalibreConfirmationSheet(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        onConfirm(title.trim(), author.trim().ifBlank { "Unknown" }, if (isArchive) archiveMode else null, assembleBook, isAltVersion)
+                        if (!isReplaceCover || matchedBookId != null) {
+                            onConfirm(title.trim(), author.trim().ifBlank { "Unknown" }, if (isArchive) archiveMode else null, assembleBook, isAltVersion, matchedBookId)
+                        }
                     }),
                 )
                 if (author.count { it == ',' } == 1) {
@@ -212,7 +232,7 @@ fun CalibreConfirmationSheet(
                 }
             }
 
-            if (!forceAssemble) {
+            if (!forceAssemble && !isReplaceCover) {
                 Spacer(Modifier.height(20.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -258,7 +278,7 @@ fun CalibreConfirmationSheet(
                 }
             }
 
-            if (isArchive) {
+            if (isArchive && !isReplaceCover) {
                 Spacer(Modifier.height(20.dp))
                 Text(
                     text = "Archive mode",
@@ -283,11 +303,17 @@ fun CalibreConfirmationSheet(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { onConfirm(title.trim(), author.trim().ifBlank { "Unknown" }, if (isArchive) archiveMode else null, assembleBook, isAltVersion) },
+                onClick = { onConfirm(title.trim(), author.trim().ifBlank { "Unknown" }, if (isArchive) archiveMode else null, assembleBook, isAltVersion, matchedBookId) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = title.isNotBlank(),
+                enabled = title.isNotBlank() && (!isReplaceCover || matchedBookId != null),
             ) {
-                Text(if (assembleBook) "Assemble Book" else "Confirm & Send")
+                Text(
+                    when {
+                        isReplaceCover -> "Replace Cover"
+                        assembleBook -> "Assemble Book"
+                        else -> "Confirm & Send"
+                    }
+                )
             }
 
             TextButton(

@@ -43,6 +43,7 @@ data class CalibreBatchRequest(
     val author: String,
     val items: List<CalibreBatchItem>,
     val is_probe: Boolean? = null,
+    val calibre_book_id: Long? = null, // For REPLACE_COVER
 )
 
 @Serializable
@@ -312,8 +313,8 @@ class CalibreRepository @Inject constructor(
         return normalized.replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "").lowercase()
     }
 
-    suspend fun checkExists(dbFile: File, title: String, author: String): Boolean = withContext(Dispatchers.IO) {
-        if (!dbFile.exists()) return@withContext false
+    suspend fun checkExists(dbFile: File, title: String, author: String): Long? = withContext(Dispatchers.IO) {
+        if (!dbFile.exists()) return@withContext null
         try {
             android.database.sqlite.SQLiteDatabase.openDatabase(
                 dbFile.absolutePath,
@@ -322,7 +323,7 @@ class CalibreRepository @Inject constructor(
             ).use { db ->
                 // First, try direct search with accents
                 val query = """
-                    SELECT books.title, authors.name FROM books 
+                    SELECT books.id, books.title, authors.name FROM books 
                     JOIN books_authors_link ON books.id = books_authors_link.book 
                     JOIN authors ON authors.id = books_authors_link.author 
                 """.trimIndent()
@@ -333,25 +334,68 @@ class CalibreRepository @Inject constructor(
 
                     if (cursor.moveToFirst()) {
                         do {
-                            val dbTitle = cursor.getString(0)
-                            val dbAuthor = cursor.getString(1)
+                            val id = cursor.getLong(0)
+                            val dbTitle = cursor.getString(1)
+                            val dbAuthor = cursor.getString(2)
                             
                             val normDbTitle = normalize(dbTitle)
                             val normDbAuthor = normalize(dbAuthor)
                             
                             // Check if normalized search terms are contained within normalized DB values
                             if (normDbTitle.contains(normTitle) && (author.isBlank() || normDbAuthor.contains(normAuthor))) {
-                                return@withContext true
+                                return@withContext id
                             }
                         } while (cursor.moveToNext())
                     }
                 }
-                false
+                null
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            false
+            null
         }
+    }
+
+    suspend fun sendReplaceCoverRequest(
+        putioFileId: Long,
+        fileName: String,
+        title: String,
+        author: String,
+        calibreBookId: Long,
+        googleAccount: String,
+        downloadUrl: String,
+    ) {
+        val item = CalibreBatchItem(
+            type = "SINGLE",
+            putio_file_id = putioFileId,
+            fileName = fileName,
+            download_url = downloadUrl,
+        )
+        val request = CalibreBatchRequest(
+            action = "REPLACE_COVER",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = listOf(item),
+            calibre_book_id = calibreBookId
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_cover_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = fileName,
+            title = "Cover for $title",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = json.encodeToString(listOf(item))
+        )
+        calibreTransferDao.insertTransfer(transfer)
     }
 
     suspend fun sendProbeRequest(fileId: Long, googleAccount: String): Boolean {

@@ -468,9 +468,28 @@ class FilesViewModel @Inject constructor(
         _snackbarMessage.value = null
     }
 
-    suspend fun checkBookExists(title: String, author: String): Boolean {
+    suspend fun checkBookExists(title: String, author: String): Long? {
         val dbFile = File(context.filesDir, "metadata.db")
         return calibreRepository.checkExists(dbFile, title, author)
+    }
+
+    fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long) {
+        viewModelScope.launch {
+            val account = accountInfo.value?.mail ?: return@launch
+            val token = settingsRepository.authTokenFlow.first()
+            val downloadUrl = filesRepository.getDownloadUrl(token, file.id)
+
+            calibreRepository.sendReplaceCoverRequest(
+                putioFileId = file.id,
+                fileName = file.name,
+                title = title,
+                author = author,
+                calibreBookId = calibreBookId,
+                googleAccount = account,
+                downloadUrl = downloadUrl
+            )
+            _snackbarMessage.value = "Cover replacement request sent"
+        }
     }
 
     private fun loadAccountInfo() {
