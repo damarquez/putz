@@ -24,7 +24,7 @@ class GDriveManager @Inject constructor(
     private val jsonFactory = GsonFactory.getDefaultInstance()
     private val scopes = listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE_METADATA_READONLY)
 
-    private fun getDriveService(accountName: String): Drive {
+    internal fun getDriveService(accountName: String): Drive {
         val credential = GoogleAccountCredential.usingOAuth2(context, scopes)
         credential.selectedAccountName = accountName
         return Drive.Builder(transport, jsonFactory, credential)
@@ -52,7 +52,7 @@ class GDriveManager @Inject constructor(
         service.files().create(metadata).setFields("id").execute().id
     }
 
-    private suspend fun getLibraryFolderId(service: Drive): String? {
+    internal suspend fun getLibraryFolderId(service: Drive): String? {
         val libResult = service.files().list()
             .setQ("name = 'metadata.db' and trashed = false")
             .setFields("files(parents)")
@@ -86,6 +86,22 @@ class GDriveManager @Inject constructor(
             uploaded.id
         } catch (e: Exception) {
             Log.e("GDriveManager", "Upload failed", e)
+            null
+        }
+    }
+
+    suspend fun getFileMetadata(accountName: String, fileName: String): Pair<String, Long>? = withContext(Dispatchers.IO) {
+        try {
+            val service = getDriveService(accountName)
+            val result = service.files().list()
+                .setQ("name = '$fileName' and trashed = false")
+                .setFields("files(id, modifiedTime)")
+                .execute()
+            
+            val file = result.files.firstOrNull() ?: return@withContext null
+            val modifiedTime = file.modifiedTime?.value ?: 0L
+            file.id to modifiedTime
+        } catch (e: Exception) {
             null
         }
     }

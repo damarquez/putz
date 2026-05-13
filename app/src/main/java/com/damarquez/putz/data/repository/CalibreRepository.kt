@@ -44,6 +44,7 @@ data class CalibreBatchRequest(
     val items: List<CalibreBatchItem>,
     val is_probe: Boolean? = null,
     val calibre_book_id: Long? = null, // For REPLACE_COVER
+    val calibre_book_uuid: String? = null, // For targeting existing book
 )
 
 @Serializable
@@ -69,6 +70,7 @@ class CalibreRepository @Inject constructor(
     private val gDriveManager: GDriveManager,
     private val putioApiClient: PutioApiClient,
     private val secureStorage: SecureStorage,
+    private val settingsRepository: com.damarquez.putz.settings.SettingsRepository,
 ) {
     private val _daemonStatus = MutableStateFlow<String?>(null)
     val daemonStatus = _daemonStatus.asStateFlow()
@@ -98,6 +100,7 @@ class CalibreRepository @Inject constructor(
         isTempUpload: Boolean = false,
         sourceLocalUri: String? = null,
         assembleBook: Boolean = false,
+        calibreBookUuid: String? = null,
     ) {
         val initialItem = CalibreBatchItem(
             type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
@@ -117,7 +120,8 @@ class CalibreRepository @Inject constructor(
             allPutioFileIds = putioFileId.toString(),
             isTempUpload = isTempUpload,
             sourceLocalUri = sourceLocalUri,
-            batchData = json.encodeToString(listOf(initialItem))
+            batchData = json.encodeToString(listOf(initialItem)),
+            calibreBookUuid = calibreBookUuid
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -128,7 +132,8 @@ class CalibreRepository @Inject constructor(
             putio_file_id = putioFileId,
             title = title,
             author = author,
-            items = listOf(initialItem)
+            items = listOf(initialItem),
+            calibre_book_uuid = calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$putioFileId.json", jsonStr)
@@ -155,6 +160,7 @@ class CalibreRepository @Inject constructor(
         googleAccount: String,
         assembleBook: Boolean = false,
         customFileName: String? = null,
+        calibreBookUuid: String? = null,
     ) {
         val primaryFileId = files.first().first.id
         val audioFiles = files.map { (file, url) ->
@@ -176,7 +182,8 @@ class CalibreRepository @Inject constructor(
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = files.joinToString(",") { (file, _) -> file.id.toString() },
-            batchData = json.encodeToString(listOf(initialItem))
+            batchData = json.encodeToString(listOf(initialItem)),
+            calibreBookUuid = calibreBookUuid
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -187,6 +194,7 @@ class CalibreRepository @Inject constructor(
             title = title,
             author = author,
             items = listOf(initialItem),
+            calibre_book_uuid = calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
@@ -237,8 +245,60 @@ class CalibreRepository @Inject constructor(
     }
 
     suspend fun syncMetadataDb(googleAccount: String, destination: File): Boolean {
-        return gDriveManager.downloadMetadataDb(googleAccount, destination)
+        val success = gDriveManager.downloadMetadataDb(googleAccount, destination)
+        if (success) {
+            // Update the baseline timestamp after a manual or automatic sync
+            gDriveManager.getFileMetadata(googleAccount, "assets.db")?.let { metadata ->
+                val timestamp = metadata.second
+                settingsRepository.saveLastSyncTimestamp(timestamp)
+                settingsRepository.saveLibraryHasUpdates(false)
+            }
+        }
+        return success
     }
+
+    suspend fun pollLibraryUpdates(googleAccount: String) {
+        val metadata = gDriveManager.getFileMetadata(googleAccount, "assets.db") ?: return
+        val remoteTimestamp = metadata.second
+        val localTimestamp = settingsRepository.lastSyncTimestampFlow.first()
+        
+        if (localTimestamp == 0L) {
+            // First time: set baseline
+            settingsRepository.saveLastSyncTimestamp(remoteTimestamp)
+        } else if (remoteTimestamp > localTimestamp) {
+            settingsRepository.saveLibraryHasUpdates(true)
+        }
+    }
+
+    suspend fun pollHeartbeat(googleAccount: String) {
+        // Find heartbeat.json in .calibre_integration
+        val service = gDriveManager.getDriveService(googleAccount)
+        val libFolderId = gDriveManager.getLibraryFolderId(service) ?: return
+        val rootId = gDriveManager.findFolder(service, ".calibre_integration", libFolderId) ?: return
+        
+        val result = service.files().list()
+            .setQ("name = 'heartbeat.json' and '$rootId' in parents and trashed = false")
+            .setFields("files(id)")
+            .execute()
+        
+        val fileId = result.files?.firstOrNull()?.id ?: return
+        val content = gDriveManager.downloadFileContent(googleAccount, fileId) ?: return
+        
+        try {
+            val heartbeat = json.decodeFromString<Heartbeat>(content)
+            val status = heartbeat.status.uppercase()
+            _daemonStatus.value = status
+            settingsRepository.saveDaemonStatus(status)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    @Serializable
+    private data class Heartbeat(
+        val status: String,
+        val last_active: Long
+    )
 
     suspend fun pollResponses(googleAccount: String) {
         val responses = gDriveManager.listResponses(googleAccount)
@@ -308,6 +368,34 @@ class CalibreRepository @Inject constructor(
         }
     }
 
+    suspend fun checkExistsByUuid(dbFile: File, uuid: String): Triple<Long, String, String>? = withContext(Dispatchers.IO) {
+        if (!dbFile.exists()) return@withContext null
+        try {
+            android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbFile.absolutePath,
+                null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                val query = """
+                    SELECT books.id, books.title, authors.name FROM books 
+                    JOIN books_authors_link ON books.id = books_authors_link.book 
+                    JOIN authors ON authors.id = books_authors_link.author 
+                    WHERE books.uuid = ?
+                """.trimIndent()
+                
+                db.rawQuery(query, arrayOf(uuid)).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        return@withContext Triple(cursor.getLong(0), cursor.getString(1), cursor.getString(2))
+                    }
+                }
+                null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     private fun normalize(text: String): String {
         val normalized = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
         return normalized.replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "").lowercase()
@@ -364,6 +452,7 @@ class CalibreRepository @Inject constructor(
         calibreBookId: Long,
         googleAccount: String,
         downloadUrl: String,
+        calibreBookUuid: String? = null,
     ) {
         val item = CalibreBatchItem(
             type = "SINGLE",
@@ -377,7 +466,8 @@ class CalibreRepository @Inject constructor(
             title = title,
             author = author,
             items = listOf(item),
-            calibre_book_id = calibreBookId
+            calibre_book_id = calibreBookId,
+            calibre_book_uuid = calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_cover_$putioFileId.json", jsonStr)
@@ -393,7 +483,8 @@ class CalibreRepository @Inject constructor(
             allPutioFileIds = putioFileId.toString(),
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            batchData = json.encodeToString(listOf(item))
+            batchData = json.encodeToString(listOf(item)),
+            calibreBookUuid = calibreBookUuid
         )
         calibreTransferDao.insertTransfer(transfer)
     }
@@ -494,7 +585,8 @@ class CalibreRepository @Inject constructor(
             putio_file_id = transfer.putioFileId,
             title = transfer.title,
             author = transfer.author,
-            items = items
+            items = items,
+            calibre_book_uuid = transfer.calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
 

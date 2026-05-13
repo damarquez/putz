@@ -3,6 +3,8 @@ package com.damarquez.putz.settings
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 
@@ -13,4 +15,7 @@ object AppSettingsKeys {
     val APP_CATEGORY = stringPreferencesKey("app_category")
     val APP_MODE = stringPreferencesKey("app_mode")
     val GOOGLE_WEB_CLIENT_ID = stringPreferencesKey("google_web_client_id")
+    val LIBRARY_HAS_UPDATES = booleanPreferencesKey("library_has_updates")
+    val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
+    val DAEMON_STATUS = stringPreferencesKey("daemon_status")
 }

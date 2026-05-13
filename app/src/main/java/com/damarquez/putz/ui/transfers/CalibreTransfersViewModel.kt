@@ -4,7 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.local.CalibreTransferEntity
+import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreRepository
+import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -24,6 +27,7 @@ import javax.inject.Inject
 class CalibreTransfersViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val calibreRepository: CalibreRepository,
+    private val filesRepository: FilesRepository,
     private val localFilesRepository: com.damarquez.putz.data.repository.LocalFilesRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
@@ -37,8 +41,79 @@ class CalibreTransfersViewModel @Inject constructor(
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing = _isSyncing.asStateFlow()
 
+    private val _snackbarMessage = MutableStateFlow<String?>(null)
+    val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
     init {
         startPolling()
+    }
+
+    fun onSnackbarShown() {
+        _snackbarMessage.value = null
+    }
+
+    suspend fun checkBookExists(title: String, author: String): Long? {
+        val dbFile = File(context.filesDir, "metadata.db")
+        return calibreRepository.checkExists(dbFile, title, author)
+    }
+
+    suspend fun checkBookExistsByUuid(uuid: String): Triple<Long, String, String>? {
+        val dbFile = File(context.filesDir, "metadata.db")
+        return calibreRepository.checkExistsByUuid(dbFile, uuid)
+    }
+
+    fun replaceCoverFromClipboard(uri: android.net.Uri, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            val token = settingsRepository.authTokenFlow.first()
+            if (account.isBlank() || token.isBlank()) return@launch
+
+            _snackbarMessage.value = "Uploading clipboard image..."
+
+            // 1. Find or create .putz_attachments
+            val listResult = filesRepository.listFiles(token, 0)
+            val rootFiles = listResult.dataOrNull()?.first ?: emptyList<PutioFile>()
+            var tempFolderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
+
+            if (tempFolderId == null) {
+                val createResult = filesRepository.createFolder(token, 0, ".putz_attachments")
+                if (createResult is NetworkResult.Success) {
+                    tempFolderId = createResult.data.id
+                } else {
+                    _snackbarMessage.value = "Failed to create temp folder: ${(createResult as NetworkResult.Error).message}"
+                    return@launch
+                }
+            }
+
+            // 2. Upload the file
+            val fileName = "clipboard_cover_${System.currentTimeMillis()}.jpg"
+            val uploadResult = filesRepository.uploadFile(
+                token,
+                tempFolderId!!,
+                fileName,
+                uri,
+                context.contentResolver
+            )
+
+            if (uploadResult is NetworkResult.Success) {
+                val uploadedFile = uploadResult.data
+                val downloadUrl = filesRepository.getDownloadUrl(token, uploadedFile.id)
+
+                calibreRepository.sendReplaceCoverRequest(
+                    putioFileId = uploadedFile.id,
+                    fileName = uploadedFile.name,
+                    title = title,
+                    author = author,
+                    calibreBookId = calibreBookId,
+                    googleAccount = account,
+                    downloadUrl = downloadUrl,
+                    calibreBookUuid = calibreBookUuid
+                )
+                _snackbarMessage.value = "Cover replacement request sent"
+            } else {
+                _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
+            }
+        }
     }
 
     private fun startPolling() {

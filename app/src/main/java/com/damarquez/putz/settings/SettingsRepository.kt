@@ -46,6 +46,18 @@ class SettingsRepository @Inject constructor(
         prefs[AppSettingsKeys.GOOGLE_WEB_CLIENT_ID] ?: ""
     }
 
+    val libraryHasUpdatesFlow: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.LIBRARY_HAS_UPDATES] ?: false
+    }
+
+    val lastSyncTimestampFlow: Flow<Long> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.LAST_SYNC_TIMESTAMP] ?: 0L
+    }
+
+    val daemonStatusFlow: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.DAEMON_STATUS]
+    }
+
     fun saveAuthToken(token: String) = secureStorage.saveAuthToken(token)
 
     fun clearAuth() = secureStorage.clearAuthToken()
@@ -73,6 +85,21 @@ class SettingsRepository @Inject constructor(
         dataStore.edit { prefs ->
             if (clientId.isBlank()) prefs.remove(AppSettingsKeys.GOOGLE_WEB_CLIENT_ID)
             else prefs[AppSettingsKeys.GOOGLE_WEB_CLIENT_ID] = clientId.trim()
+        }
+    }
+
+    suspend fun saveLibraryHasUpdates(hasUpdates: Boolean) {
+        dataStore.edit { prefs -> prefs[AppSettingsKeys.LIBRARY_HAS_UPDATES] = hasUpdates }
+    }
+
+    suspend fun saveLastSyncTimestamp(timestamp: Long) {
+        dataStore.edit { prefs -> prefs[AppSettingsKeys.LAST_SYNC_TIMESTAMP] = timestamp }
+    }
+
+    suspend fun saveDaemonStatus(status: String?) {
+        dataStore.edit { prefs ->
+            if (status == null) prefs.remove(AppSettingsKeys.DAEMON_STATUS)
+            else prefs[AppSettingsKeys.DAEMON_STATUS] = status
         }
     }
 }

@@ -317,7 +317,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -357,6 +357,7 @@ class FilesViewModel @Inject constructor(
                 isTempUpload = isTempUpload,
                 sourceLocalUri = file.localUri,
                 assembleBook = assembleBook,
+                calibreBookUuid = calibreBookUuid
             )
             _snackbarMessage.value = if (assembleBook) "Book assembled in Calibre list" else "Transfer requested for $title"
         }
@@ -403,9 +404,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    private fun <T> NetworkResult<T>.dataOrNull(): T? = (this as? NetworkResult.Success)?.data
-
-    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false) {
+    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -427,9 +426,8 @@ class FilesViewModel @Inject constructor(
                 author = author,
                 googleAccount = googleAccount,
                 assembleBook = assembleBook,
-                // We'll pass the custom filename to addAudiobookPackTransfer if I update it, 
-                // but let's just update the internal item name for the daemon.
-                customFileName = initialItemName 
+                customFileName = initialItemName,
+                calibreBookUuid = calibreBookUuid
             )
             _snackbarMessage.value = if (assembleBook) "Audiobook assembled in Calibre list" else "Audiobook transfer requested for $title"
         }
@@ -473,7 +471,12 @@ class FilesViewModel @Inject constructor(
         return calibreRepository.checkExists(dbFile, title, author)
     }
 
-    fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long) {
+    suspend fun checkBookExistsByUuid(uuid: String): Triple<Long, String, String>? {
+        val dbFile = File(context.filesDir, "metadata.db")
+        return calibreRepository.checkExistsByUuid(dbFile, uuid)
+    }
+
+    fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val account = accountInfo.value?.mail ?: return@launch
             val token = settingsRepository.authTokenFlow.first()
@@ -486,7 +489,8 @@ class FilesViewModel @Inject constructor(
                 author = author,
                 calibreBookId = calibreBookId,
                 googleAccount = account,
-                downloadUrl = downloadUrl
+                downloadUrl = downloadUrl,
+                calibreBookUuid = calibreBookUuid
             )
             _snackbarMessage.value = "Cover replacement request sent"
         }

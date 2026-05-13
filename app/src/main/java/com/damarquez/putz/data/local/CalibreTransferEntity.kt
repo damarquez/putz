@@ -28,6 +28,9 @@ data class CalibreTransferEntity(
 
     /** JSON representation of List<CalibreBatchItem> for assembled books. */
     val batchData: String? = null,
+
+    /** The Calibre UUID of the book, if targeted directly. */
+    val calibreBookUuid: String? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 

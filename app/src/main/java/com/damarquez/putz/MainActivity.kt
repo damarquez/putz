@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.oauth.OAuthManager
 import com.damarquez.putz.oauth.PendingMagnetRepository
 import com.damarquez.putz.settings.SettingsRepository
@@ -24,6 +25,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var oAuthManager: OAuthManager
     @Inject lateinit var pendingMagnetRepository: PendingMagnetRepository
+    @Inject lateinit var pendingCoverRepository: PendingCoverRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,7 +38,10 @@ class MainActivity : ComponentActivity() {
                 .collectAsState(initial = AppMode.SYSTEM)
 
             PutzTheme(category = appCategory, mode = appMode) {
-                AppNavGraph(settingsRepository = settingsRepository)
+                AppNavGraph(
+                    settingsRepository = settingsRepository,
+                    pendingCoverRepository = pendingCoverRepository
+                )
             }
         }
     }
@@ -49,7 +54,11 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         val uri = intent?.data ?: return
         when {
-            uri.scheme == "putz" -> oAuthManager.handleRedirect(uri)
+            uri.scheme == "putz" && uri.host == "oauth" -> oAuthManager.handleRedirect(uri)
+            uri.scheme == "putz" && uri.host == "replace_cover" -> {
+                val uuid = uri.getQueryParameter("uuid")
+                if (uuid != null) pendingCoverRepository.set(uuid)
+            }
             MagnetParser.isMagnetLink(uri.toString()) -> pendingMagnetRepository.set(uri.toString())
         }
     }

@@ -32,12 +32,35 @@ import com.damarquez.putz.ui.settings.SettingsScreen
 import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
 
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import com.damarquez.putz.ui.GlobalSyncViewModel
+
+import androidx.compose.runtime.LaunchedEffect
+import com.damarquez.putz.data.repository.PendingCoverRepository
+
 private const val ROOT_FOLDER_NAME = "Your Files"
 
 @Composable
-fun AppNavGraph(settingsRepository: SettingsRepository) {
+fun AppNavGraph(
+    settingsRepository: SettingsRepository,
+    pendingCoverRepository: PendingCoverRepository
+) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
+    
+    val syncViewModel: GlobalSyncViewModel = hiltViewModel()
+    val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
+
+    val pendingCoverUuid by pendingCoverRepository.uuidFlow.collectAsState()
+
+    LaunchedEffect(pendingCoverUuid) {
+        if (pendingCoverUuid != null) {
+            navController.navigate(Screen.CalibreTransfers.route) {
+                launchSingleTop = true
+            }
+        }
+    }
 
     val startDestination = if (authToken.isBlank()) Screen.Auth.route
     else Screen.Files.createRoute(0L, ROOT_FOLDER_NAME)
@@ -111,7 +134,17 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
                                 }
                             }
                         },
-                        icon = { Icon(Icons.Default.Book, contentDescription = "Calibre") },
+                        icon = {
+                            BadgedBox(
+                                badge = {
+                                    if (libraryHasUpdates) {
+                                        Badge()
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.Book, contentDescription = "Calibre")
+                            }
+                        },
                         label = { Text("Calibre") },
                     )
                 }
@@ -196,7 +229,8 @@ fun AppNavGraph(settingsRepository: SettingsRepository) {
             composable(Screen.CalibreTransfers.route) {
                 CalibreTransfersScreen(
                     onNavigateUp = { navController.navigateUp() },
-                    viewModel = hiltViewModel()
+                    viewModel = hiltViewModel(),
+                    pendingCoverRepository = pendingCoverRepository
                 )
             }
         }

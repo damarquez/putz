@@ -34,6 +34,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="magnet" />
             </intent-filter>
+            <!-- Replace cover deep link: putz://replace_cover?uuid=UUID -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="replace_cover" />
+            </intent-filter>
         </activity>
 
         <provider

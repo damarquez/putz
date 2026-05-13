@@ -84,6 +84,12 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.filled.CreateNewFolder
 
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import com.damarquez.putz.ui.GlobalSyncViewModel
+import com.damarquez.putz.ui.files.FilesUiState
+import androidx.hilt.navigation.compose.hiltViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
@@ -93,6 +99,9 @@ fun FilesScreen(
     onSignOut: () -> Unit,
     viewModel: FilesViewModel,
 ) {
+    val syncViewModel: GlobalSyncViewModel = hiltViewModel()
+    val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
+
     val uiState by viewModel.uiState.collectAsState()
     val accountInfo by viewModel.accountInfo.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
@@ -234,7 +243,7 @@ fun FilesScreen(
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
             },
-            onConfirm = { title, author, archiveMode, _, isAltVersion, _ ->
+            onConfirm = { title, author, archiveMode, _, isAltVersion, _, _ ->
                 if (isPack) {
                     viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
                 } else {
@@ -243,7 +252,9 @@ fun FilesScreen(
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
-            },            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            },            
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isArchive = !isPack && MetadataUtils.isArchive(file.name),
             forceAssemble = true
         )
@@ -263,11 +274,12 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCalibre = null },
-            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _ ->
-                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion)
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid)
                 selectedFileForCalibre = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isArchive = MetadataUtils.isArchive(singleFile.name),
         )
     }
@@ -283,13 +295,14 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCover = null },
-            onConfirm = { title, author, _, _, _, matchedId ->
-                if (matchedId != null) {
-                    viewModel.replaceCover(imageFile, title, author, matchedId)
+            onConfirm = { title, author, _, _, _, matchedId, uuid ->
+                if (matchedId != null || uuid != null) {
+                    viewModel.replaceCover(imageFile, title, author, matchedId ?: 0L, uuid)
                 }
                 selectedFileForCover = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isReplaceCover = true
         )
     }
@@ -329,11 +342,12 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = audiobookConfirmSheetState,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _ ->
-                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid ->
+                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid)
                 selectedPackFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
         )
     }
 
@@ -470,7 +484,15 @@ fun FilesScreen(
                         }
                         Box {
                             IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More")
+                                BadgedBox(
+                                    badge = {
+                                        if (libraryHasUpdates) {
+                                            Badge()
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "More")
+                                }
                             }
                             DropdownMenu(
                                 expanded = showMenu,
