@@ -52,12 +52,12 @@ fun AppNavGraph(
     val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
-    val pendingCoverUuid by pendingCoverRepository.uuidFlow.collectAsState()
-
-    LaunchedEffect(pendingCoverUuid) {
-        if (pendingCoverUuid != null) {
-            navController.navigate(Screen.CalibreTransfers.route) {
-                launchSingleTop = true
+    LaunchedEffect(Unit) {
+        pendingCoverRepository.uuidFlow.collect { uuid ->
+            if (uuid != null) {
+                navController.navigate(Screen.CalibreTransfers.route) {
+                    launchSingleTop = true
+                }
             }
         }
     }

@@ -86,11 +86,10 @@ fun CalibreTransfersScreen(
     
     var clipboardImageUri by remember { mutableStateOf<Uri?>(null) }
     var prefilledUuid by remember { mutableStateOf<String?>(null) }
+    var lastProcessedUuid by remember { mutableStateOf<String?>(null) }
     val calibreSheetState = rememberModalBottomSheetState()
 
-    val pendingCoverUuid by pendingCoverRepository.uuidFlow.collectAsState()
-
-    val cacheClipboardImage: (Uri) -> Unit = { uri: Uri ->
+    val cacheClipboardImage: (Uri, String?) -> Unit = { uri: Uri, uuid: String? ->
         scope.launch {
             val cachedFile = withContext(Dispatchers.IO) {
                 try {
@@ -110,34 +109,36 @@ fun CalibreTransfersScreen(
             }
             if (cachedFile != null) {
                 clipboardImageUri = FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", cachedFile)
+                prefilledUuid = uuid
             } else {
                 snackbarHostState.showSnackbar("Failed to cache clipboard image")
             }
         }
     }
 
-    LaunchedEffect(pendingCoverUuid) {
-        pendingCoverUuid?.let { uuid: String ->
-            val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val primaryClip = clipboardManager.primaryClip
-            if (primaryClip != null && primaryClip.itemCount > 0) {
-                val item = primaryClip.getItemAt(0)
-                val uri = item.uri
-                if (uri != null) {
-                    val type = context.contentResolver.getType(uri)
-                    if (type?.startsWith("image/") == true) {
-                        prefilledUuid = uuid
-                        cacheClipboardImage(uri)
+    LaunchedEffect(Unit) {
+        pendingCoverRepository.uuidFlow.collect { uuid ->
+            if (uuid != null && uuid != lastProcessedUuid) {
+                lastProcessedUuid = uuid
+                val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val primaryClip = clipboardManager.primaryClip
+                if (primaryClip != null && primaryClip.itemCount > 0) {
+                    val item = primaryClip.getItemAt(0)
+                    val uri = item.uri
+                    if (uri != null) {
+                        val type = context.contentResolver.getType(uri)
+                        if (type?.startsWith("image/") == true) {
+                            cacheClipboardImage(uri, uuid)
+                        } else {
+                            snackbarHostState.showSnackbar("Clipboard does not contain an image")
+                        }
                     } else {
-                        snackbarHostState.showSnackbar("Clipboard does not contain an image")
+                        snackbarHostState.showSnackbar("Clipboard is empty or not an image")
                     }
                 } else {
-                    snackbarHostState.showSnackbar("Clipboard is empty or not an image")
+                    snackbarHostState.showSnackbar("Clipboard is empty")
                 }
-            } else {
-                snackbarHostState.showSnackbar("Clipboard is empty")
             }
-            pendingCoverRepository.clear()
         }
     }
 
@@ -288,7 +289,7 @@ fun CalibreTransfersScreen(
                                 if (uri != null) {
                                     val type = context.contentResolver.getType(uri)
                                     if (type?.startsWith("image/") == true) {
-                                        cacheClipboardImage(uri)
+                                        cacheClipboardImage(uri, null)
                                     }
                                 }
                             }

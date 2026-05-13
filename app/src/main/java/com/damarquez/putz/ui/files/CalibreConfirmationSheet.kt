@@ -65,6 +65,13 @@ fun CalibreConfirmationSheet(
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
     var uuid by remember { mutableStateOf(initialUuid) }
+
+    LaunchedEffect(initialUuid) {
+        if (initialUuid.isNotBlank()) {
+            uuid = initialUuid
+        }
+    }
+
     var matchedBookId by remember { mutableStateOf<Long?>(null) }
     var matchedBookTitle by remember { mutableStateOf<String?>(null) }
     var matchedBookAuthor by remember { mutableStateOf<String?>(null) }
