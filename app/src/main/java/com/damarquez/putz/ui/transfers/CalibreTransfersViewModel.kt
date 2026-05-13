@@ -35,7 +35,7 @@ class CalibreTransfersViewModel @Inject constructor(
     val transfers: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val daemonStatus: StateFlow<String?> = calibreRepository.daemonStatus
+    val daemonStatus: StateFlow<String?> = settingsRepository.daemonStatusFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private val _isSyncing = MutableStateFlow(false)
@@ -145,6 +145,8 @@ class CalibreTransfersViewModel @Inject constructor(
                 val account = settingsRepository.googleTokenFlow.first()
                 if (account.isNotBlank()) {
                     calibreRepository.pollResponses(account)
+                    calibreRepository.pollLibraryUpdates(account)
+                    calibreRepository.pollHeartbeat(account)
 
                     // Also check for stuck transfers (older than 5 mins)
                     val currentTransfers = calibreRepository.getTransfers().first()
@@ -189,9 +191,16 @@ class CalibreTransfersViewModel @Inject constructor(
             if (account.isNotBlank()) {
                 _isSyncing.value = true
                 try {
+                    _snackbarMessage.value = "Refreshing Calibre metadata..."
                     calibreRepository.sendGlobalStatusProbe(account)
                     val dbFile = File(context.filesDir, "metadata.db")
-                    calibreRepository.syncMetadataDb(account, dbFile)
+                    val success = calibreRepository.syncMetadataDb(account, dbFile)
+                    calibreRepository.pollHeartbeat(account)
+                    _snackbarMessage.value = if (success) {
+                        "Calibre metadata refreshed"
+                    } else {
+                        "Could not refresh Calibre metadata"
+                    }
                 } finally {
                     _isSyncing.value = false
                 }

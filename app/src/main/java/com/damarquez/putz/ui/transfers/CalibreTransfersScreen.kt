@@ -262,10 +262,11 @@ fun CalibreTransfersScreen(
                     Column {
                         Text("Calibre Transfers")
                         daemonStatus?.let { status ->
+                            val isIdle = status.equals("IDLE", ignoreCase = true)
                             Text(
-                                text = "Daemon: $status",
+                                text = "Daemon: ${if (isIdle) "Idle" else "Running"}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (status == "IDLE") 
+                                color = if (isIdle)
                                     MaterialTheme.colorScheme.outline 
                                 else 
                                     com.damarquez.putz.ui.theme.SuccessGreen

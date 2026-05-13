@@ -52,12 +52,12 @@ class GDriveManager @Inject constructor(
         service.files().create(metadata).setFields("id").execute().id
     }
 
-    internal suspend fun getLibraryFolderId(service: Drive): String? {
+    internal suspend fun getLibraryFolderId(service: Drive): String? = withContext(Dispatchers.IO) {
         val libResult = service.files().list()
             .setQ("name = 'metadata.db' and trashed = false")
             .setFields("files(parents)")
             .execute()
-        return libResult.files.firstOrNull()?.parents?.firstOrNull()
+        libResult.files.firstOrNull()?.parents?.firstOrNull()
     }
 
     suspend fun uploadRequest(accountName: String, fileName: String, content: String): String? = withContext(Dispatchers.IO) {
@@ -93,8 +93,9 @@ class GDriveManager @Inject constructor(
     suspend fun getFileMetadata(accountName: String, fileName: String): Pair<String, Long>? = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)
+            val libFolderId = getLibraryFolderId(service) ?: return@withContext null
             val result = service.files().list()
-                .setQ("name = '$fileName' and trashed = false")
+                .setQ("name = '$fileName' and '$libFolderId' in parents and trashed = false")
                 .setFields("files(id, modifiedTime)")
                 .execute()
             
@@ -110,8 +111,12 @@ class GDriveManager @Inject constructor(
         try {
             Log.d("GDriveManager", "Downloading metadata.db for $accountName")
             val service = getDriveService(accountName)
+            val libFolderId = getLibraryFolderId(service) ?: run {
+                Log.e("GDriveManager", "Could not find Calibre library root (metadata.db missing)")
+                return@withContext false
+            }
             val result = service.files().list()
-                .setQ("name = 'metadata.db' and trashed = false")
+                .setQ("name = 'metadata.db' and '$libFolderId' in parents and trashed = false")
                 .setFields("files(id, name)")
                 .execute()
             

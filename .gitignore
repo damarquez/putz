@@ -3,6 +3,7 @@
 
 # Gradle caches and build outputs
 .gradle/
+.kotlin/
 build/
 app/build/
 

@@ -22,6 +22,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -304,40 +306,51 @@ class CalibreRepository @Inject constructor(
         if (localTimestamp == 0L) {
             // First time: set baseline
             settingsRepository.saveLastSyncTimestamp(remoteTimestamp)
-        } else if (remoteTimestamp > localTimestamp) {
+        } else if (remoteTimestamp != localTimestamp) {
             settingsRepository.saveLibraryHasUpdates(true)
         }
     }
 
     suspend fun pollHeartbeat(googleAccount: String) {
-        // Find heartbeat.json in .calibre_integration
-        val service = gDriveManager.getDriveService(googleAccount)
-        val libFolderId = gDriveManager.getLibraryFolderId(service) ?: return
-        val rootId = gDriveManager.findFolder(service, ".calibre_integration", libFolderId) ?: return
-        
-        val result = service.files().list()
-            .setQ("name = 'heartbeat.json' and '$rootId' in parents and trashed = false")
-            .setFields("files(id)")
-            .execute()
-        
-        val fileId = result.files?.firstOrNull()?.id ?: return
+        // The current sidekick writes heartbeat.json at the Calibre Drive root. Older
+        // Putz integration builds used .calibre_integration, so keep that fallback.
+        val fileId = withContext(Dispatchers.IO) {
+            val service = gDriveManager.getDriveService(googleAccount)
+            val libFolderId = gDriveManager.getLibraryFolderId(service) ?: return@withContext null
+
+            val rootHeartbeat = service.files().list()
+                .setQ("name = 'heartbeat.json' and '$libFolderId' in parents and trashed = false")
+                .setFields("files(id)")
+                .execute()
+                .files
+                ?.firstOrNull()
+                ?.id
+
+            rootHeartbeat ?: run {
+                val integrationId = gDriveManager.findFolder(service, ".calibre_integration", libFolderId)
+                    ?: return@withContext null
+                service.files().list()
+                    .setQ("name = 'heartbeat.json' and '$integrationId' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                    .files
+                    ?.firstOrNull()
+                    ?.id
+            }
+        } ?: return
         val content = gDriveManager.downloadFileContent(googleAccount, fileId) ?: return
         
         try {
-            val heartbeat = json.decodeFromString<Heartbeat>(content)
-            val status = heartbeat.status.uppercase()
+            val heartbeat = json.parseToJsonElement(content).jsonObject
+            val status = heartbeat["status"]?.jsonPrimitive?.content
+                ?.uppercase()
+                ?: return
             _daemonStatus.value = status
             settingsRepository.saveDaemonStatus(status)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
-
-    @Serializable
-    private data class Heartbeat(
-        val status: String,
-        val last_active: Long
-    )
 
     suspend fun pollResponses(googleAccount: String) {
         val responses = gDriveManager.listResponses(googleAccount)
@@ -349,6 +362,7 @@ class CalibreRepository @Inject constructor(
                     
                     if (response.action == "GLOBAL_STATUS_PROBE") {
                         _daemonStatus.value = response.daemon_status
+                        settingsRepository.saveDaemonStatus(response.daemon_status)
                     } else if (response.putio_file_id != null) {
                         val transfer = calibreTransferDao.getTransferById(response.putio_file_id)
                         if (transfer != null) {
