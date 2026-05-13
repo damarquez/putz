@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -58,17 +59,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import com.damarquez.putz.data.repository.PendingCommentsRepository
+import com.damarquez.putz.data.repository.PendingCoverRepository
+import com.damarquez.putz.util.MetadataUtils
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.ui.files.CalibreConfirmationSheet
 import com.damarquez.putz.ui.GlobalSyncViewModel
+import kotlinx.coroutines.CoroutineScope
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalibreTransfersScreen(
     onNavigateUp: () -> Unit,
     viewModel: CalibreTransfersViewModel,
-    pendingCoverRepository: com.damarquez.putz.data.repository.PendingCoverRepository,
+    pendingCoverRepository: PendingCoverRepository,
+    pendingCommentsRepository: PendingCommentsRepository,
 ) {
     val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
@@ -85,9 +91,10 @@ fun CalibreTransfersScreen(
     var alsoDeleteFromPutio by remember { mutableStateOf(false) }
     
     var clipboardImageUri by remember { mutableStateOf<Uri?>(null) }
+    var clipboardComments by remember { mutableStateOf<String?>(null) }
     var prefilledUuid by remember { mutableStateOf<String?>(null) }
-    var lastProcessedUuid by remember { mutableStateOf<String?>(null) }
-    val calibreSheetState = rememberModalBottomSheetState()
+    val coverSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val commentsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val cacheClipboardImage: (Uri, String?) -> Unit = { uri: Uri, uuid: String? ->
         scope.launch {
@@ -117,27 +124,20 @@ fun CalibreTransfersScreen(
     }
 
     LaunchedEffect(Unit) {
-        pendingCoverRepository.uuidFlow.collect { uuid ->
-            if (uuid != null && uuid != lastProcessedUuid) {
-                lastProcessedUuid = uuid
-                val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val primaryClip = clipboardManager.primaryClip
-                if (primaryClip != null && primaryClip.itemCount > 0) {
-                    val item = primaryClip.getItemAt(0)
-                    val uri = item.uri
-                    if (uri != null) {
-                        val type = context.contentResolver.getType(uri)
-                        if (type?.startsWith("image/") == true) {
-                            cacheClipboardImage(uri, uuid)
-                        } else {
-                            snackbarHostState.showSnackbar("Clipboard does not contain an image")
-                        }
-                    } else {
-                        snackbarHostState.showSnackbar("Clipboard is empty or not an image")
-                    }
-                } else {
-                    snackbarHostState.showSnackbar("Clipboard is empty")
-                }
+        pendingCoverRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingCoverRepository.clear()
+                cacheClipboardImage(pending.imageUri, pending.uuid)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingCommentsRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingCommentsRepository.clear()
+                clipboardComments = pending.text
+                prefilledUuid = pending.uuid
             }
         }
     }
@@ -165,12 +165,12 @@ fun CalibreTransfersScreen(
             displayName = "Clipboard Image",
             initialTitle = "",
             initialAuthor = "",
-            sheetState = calibreSheetState,
-            onDismiss = { 
+            sheetState = coverSheetState,
+            onDismiss = {
                 clipboardImageUri = null
                 prefilledUuid = null
             },
-            onConfirm = { title, author, _, _, _, matchedId, uuid ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCoverFromClipboard(clipboardImageUri!!, title, author, matchedId ?: 0L, uuid)
                 }
@@ -181,6 +181,33 @@ fun CalibreTransfersScreen(
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isReplaceCover = true,
             initialUuid = prefilledUuid ?: ""
+        )
+    }
+
+    if (clipboardComments != null) {
+        CalibreConfirmationSheet(
+            displayName = "Clipboard Text",
+            initialTitle = "",
+            initialAuthor = "",
+            sheetState = commentsSheetState,
+            onDismiss = {
+                clipboardComments = null
+                prefilledUuid = null
+                pendingCommentsRepository.clear()
+            },
+            onConfirm = { title, author, _, _, _, matchedId, uuid, comments ->
+                if ((matchedId != null || uuid != null) && comments != null) {
+                    viewModel.replaceCommentsFromClipboard(comments, title, author, matchedId ?: 0L, uuid)
+                }
+                clipboardComments = null
+                prefilledUuid = null
+                pendingCommentsRepository.clear()
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            isUpdateComments = true,
+            initialUuid = prefilledUuid ?: "",
+            initialComments = clipboardComments ?: ""
         )
     }
 
@@ -253,6 +280,38 @@ fun CalibreTransfersScreen(
                 },
                 actions = {
                     IconButton(
+                        onClick = {
+                            val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val primaryClip = clipboardManager.primaryClip
+                            if (primaryClip != null && primaryClip.itemCount > 0) {
+                                val item = primaryClip.getItemAt(0)
+                                val uri = item.uri
+                                val text = item.text?.toString()
+                                val htmlText = item.htmlText
+
+                                if (uri != null) {
+                                    val type = context.contentResolver.getType(uri)
+                                    if (type?.startsWith("image/") == true) {
+                                        cacheClipboardImage(uri, null)
+                                    } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
+                                        clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
+                                    } else {
+                                        scope.launch { snackbarHostState.showSnackbar("Clipboard contains a URI but it's not an image or text") }
+                                    }
+                                } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
+                                    clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
+                                } else {
+                                    scope.launch { snackbarHostState.showSnackbar("Clipboard content not supported (need image or text)") }
+                                }
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar("Clipboard is empty") }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
+                    }
+
+                    IconButton(
                         onClick = { viewModel.syncMetadata() },
                         enabled = !isSyncing
                     ) {
@@ -286,11 +345,17 @@ fun CalibreTransfersScreen(
                             if (primaryClip != null && primaryClip.itemCount > 0) {
                                 val item = primaryClip.getItemAt(0)
                                 val uri = item.uri
+                                val text = item.text?.toString()
+                                val htmlText = item.htmlText
                                 if (uri != null) {
                                     val type = context.contentResolver.getType(uri)
                                     if (type?.startsWith("image/") == true) {
                                         cacheClipboardImage(uri, null)
+                                    } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
+                                        clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
                                     }
+                                } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
+                                    clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
                                 }
                             }
                         }
@@ -303,7 +368,7 @@ fun CalibreTransfersScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No Calibre transfers yet\n(Long-press to paste cover from clipboard)",
+                        text = "No Calibre transfers yet\n(Use the paste button or long-press to update from clipboard)",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,

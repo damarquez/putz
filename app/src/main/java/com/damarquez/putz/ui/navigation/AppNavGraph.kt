@@ -37,14 +37,17 @@ import androidx.compose.material3.BadgedBox
 import com.damarquez.putz.ui.GlobalSyncViewModel
 
 import androidx.compose.runtime.LaunchedEffect
+import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
+import kotlinx.coroutines.flow.combine
 
 private const val ROOT_FOLDER_NAME = "Your Files"
 
 @Composable
 fun AppNavGraph(
     settingsRepository: SettingsRepository,
-    pendingCoverRepository: PendingCoverRepository
+    pendingCoverRepository: PendingCoverRepository,
+    pendingCommentsRepository: PendingCommentsRepository
 ) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
@@ -53,10 +56,15 @@ fun AppNavGraph(
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
     LaunchedEffect(Unit) {
-        pendingCoverRepository.uuidFlow.collect { uuid ->
-            if (uuid != null) {
-                navController.navigate(Screen.CalibreTransfers.route) {
-                    launchSingleTop = true
+        combine(pendingCoverRepository.flow, pendingCommentsRepository.flow) { cover, comments ->
+            cover to comments
+        }.collect { (cover, comments) ->
+            if (cover != null || comments != null) {
+                val alreadyOnScreen = navController.currentDestination?.route == Screen.CalibreTransfers.route
+                if (!alreadyOnScreen) {
+                    navController.navigate(Screen.CalibreTransfers.route) {
+                        launchSingleTop = true
+                    }
                 }
             }
         }
@@ -230,7 +238,8 @@ fun AppNavGraph(
                 CalibreTransfersScreen(
                     onNavigateUp = { navController.navigateUp() },
                     viewModel = hiltViewModel(),
-                    pendingCoverRepository = pendingCoverRepository
+                    pendingCoverRepository = pendingCoverRepository,
+                    pendingCommentsRepository = pendingCommentsRepository
                 )
             }
         }

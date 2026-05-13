@@ -54,21 +54,30 @@ fun CalibreConfirmationSheet(
     initialAuthor: String,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?) -> Unit,
+    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?) -> Unit,
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> Triple<Long, String, String>?,
     isArchive: Boolean = false,
     forceAssemble: Boolean = false,
     isReplaceCover: Boolean = false,
+    isUpdateComments: Boolean = false,
     initialUuid: String = "",
+    initialComments: String = "",
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
     var uuid by remember { mutableStateOf(initialUuid) }
+    var comments by remember { mutableStateOf(initialComments) }
 
     LaunchedEffect(initialUuid) {
         if (initialUuid.isNotBlank()) {
             uuid = initialUuid
+        }
+    }
+
+    LaunchedEffect(initialComments) {
+        if (initialComments.isNotBlank()) {
+            comments = initialComments
         }
     }
 
@@ -128,7 +137,11 @@ fun CalibreConfirmationSheet(
                 .imePadding(),
         ) {
             Text(
-                text = if (isReplaceCover) "Replace Book Cover" else "Send to Calibre",
+                text = when {
+                    isReplaceCover -> "Replace Book Cover"
+                    isUpdateComments -> "Update Book Comments"
+                    else -> "Send to Calibre"
+                },
                 style = MaterialTheme.typography.titleLarge,
             )
             
@@ -169,26 +182,26 @@ fun CalibreConfirmationSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = if (isReplaceCover || isUuidMatched) Icons.Default.FileOpen else Icons.Default.Warning,
+                        imageVector = if (isReplaceCover || isUpdateComments || isUuidMatched) Icons.Default.FileOpen else Icons.Default.Warning,
                         contentDescription = null,
-                        tint = if (isReplaceCover || isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        tint = if (isReplaceCover || isUpdateComments || isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = when {
                             isUuidMatched -> "Matched: $matchedBookTitle by $matchedBookAuthor (ID: #$matchedBookId)"
-                            isReplaceCover -> "Matched book ID: #$matchedBookId"
+                            isReplaceCover || isUpdateComments -> "Matched book ID: #$matchedBookId"
                             else -> "This book might already exist in Calibre! (ID: #$matchedBookId)"
                         },
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontWeight = FontWeight.Bold,
                             textDecoration = TextDecoration.Underline
                         ),
-                        color = if (isReplaceCover || isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        color = if (isReplaceCover || isUpdateComments || isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
                 }
-            } else if (isReplaceCover || (uuid.isNotBlank() && !isUuidValidating)) {
+            } else if (isReplaceCover || isUpdateComments || (uuid.isNotBlank() && !isUuidValidating)) {
                 Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -204,6 +217,17 @@ fun CalibreConfirmationSheet(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+            }
+
+            if (isUpdateComments) {
+                Spacer(Modifier.height(24.dp))
+                OutlinedTextField(
+                    value = comments,
+                    onValueChange = { comments = it },
+                    label = { Text("Comments (HTML supported)") },
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    placeholder = { Text("Book description or notes...") },
+                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -275,7 +299,7 @@ fun CalibreConfirmationSheet(
                     enabled = !isUuidMatched,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        val canSend = title.isNotBlank() && (!isReplaceCover || matchedBookId != null) && (uuid.isBlank() || isUuidMatched)
+                        val canSend = (title.isNotBlank() || isUuidMatched) && (!isReplaceCover && !isUpdateComments || matchedBookId != null) && (uuid.isBlank() || isUuidMatched)
                         if (canSend) {
                             onConfirm(
                                 matchedBookTitle ?: title.trim(),
@@ -284,7 +308,8 @@ fun CalibreConfirmationSheet(
                                 assembleBook,
                                 isAltVersion,
                                 matchedBookId,
-                                uuid.trim().ifBlank { null }
+                                uuid.trim().ifBlank { null },
+                                if (isUpdateComments) comments.trim() else null
                             )
                         }
                     }),
@@ -306,7 +331,7 @@ fun CalibreConfirmationSheet(
                 }
             }
 
-            if (!forceAssemble && !isReplaceCover) {
+            if (!forceAssemble && !isReplaceCover && !isUpdateComments) {
                 Spacer(Modifier.height(20.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -352,7 +377,7 @@ fun CalibreConfirmationSheet(
                 }
             }
 
-            if (isArchive && !isReplaceCover) {
+            if (isArchive && !isReplaceCover && !isUpdateComments) {
                 Spacer(Modifier.height(20.dp))
                 Text(
                     text = "Archive mode",
@@ -385,15 +410,17 @@ fun CalibreConfirmationSheet(
                         assembleBook, 
                         isAltVersion, 
                         matchedBookId, 
-                        uuid.trim().ifBlank { null }
+                        uuid.trim().ifBlank { null },
+                        if (isUpdateComments) comments.trim() else null
                     ) 
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = (title.isNotBlank() || isUuidMatched) && (!isReplaceCover || matchedBookId != null) && (uuid.isBlank() || isUuidMatched),
+                enabled = (title.isNotBlank() || isUuidMatched) && (!isReplaceCover && !isUpdateComments || matchedBookId != null) && (uuid.isBlank() || isUuidMatched),
             ) {
                 Text(
                     when {
                         isReplaceCover -> "Replace Cover"
+                        isUpdateComments -> "Update Comments"
                         assembleBook -> "Assemble Book"
                         else -> "Confirm & Send"
                     }

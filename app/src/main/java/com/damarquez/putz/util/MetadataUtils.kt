@@ -50,4 +50,50 @@ object MetadataUtils {
 
         return Pair(nameWithoutExt, "Unknown")
     }
+
+    fun sanitizeHtml(text: String, htmlText: String? = null): String {
+        val source = htmlText ?: text
+        val trimmed = source.trim()
+        if (trimmed.isEmpty()) return ""
+        
+        return try {
+            // Use fromHtml to strip unwanted tags and styles
+            val spanned = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                android.text.Html.fromHtml(trimmed, android.text.Html.FROM_HTML_MODE_LEGACY)
+            } else {
+                @Suppress("DEPRECATION")
+                android.text.Html.fromHtml(trimmed)
+            }
+
+            // Convert back to HTML to get the "clean" version
+            val cleanHtml = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                android.text.Html.toHtml(spanned, android.text.Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE)
+            } else {
+                @Suppress("DEPRECATION")
+                android.text.Html.toHtml(spanned)
+            }
+
+            // Cleanup some of the junk toHtml adds (like <html><body>...</body></html>)
+            var result = cleanHtml
+                .replace("<html>", "")
+                .replace("</html>", "")
+                .replace("<body>", "")
+                .replace("</body>", "")
+                .replace("<p dir=\"ltr\">", "<p>")
+                .replace(" dir=\"ltr\"", "") // Remove any remaining dir attributes
+                .trim()
+            
+            // If the original was plain text and we only have <p>...</p>, let's see if we should keep it.
+            // Actually, Calibre likes <p> tags.
+            
+            result
+        } catch (e: Exception) {
+            // Fallback for non-Android environments or errors
+            if (!trimmed.contains("<") || !trimmed.contains(">")) {
+                trimmed.replace("\n", "<br/>")
+            } else {
+                trimmed
+            }
+        }
+    }
 }

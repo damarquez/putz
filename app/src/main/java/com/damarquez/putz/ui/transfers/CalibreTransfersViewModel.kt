@@ -52,6 +52,29 @@ class CalibreTransfersViewModel @Inject constructor(
         _snackbarMessage.value = null
     }
 
+    fun replaceCommentsFromClipboard(comments: String, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+
+            _snackbarMessage.value = "Sending comments update..."
+
+            try {
+                calibreRepository.sendUpdateCommentsRequest(
+                    title = title,
+                    author = author,
+                    calibreBookId = calibreBookId,
+                    comments = comments,
+                    googleAccount = account,
+                    calibreBookUuid = calibreBookUuid
+                )
+                _snackbarMessage.value = "Comments update request sent"
+            } catch (e: Exception) {
+                _snackbarMessage.value = "Error: ${e.message}"
+            }
+        }
+    }
+
     suspend fun checkBookExists(title: String, author: String): Long? {
         val dbFile = File(context.filesDir, "metadata.db")
         return calibreRepository.checkExists(dbFile, title, author)

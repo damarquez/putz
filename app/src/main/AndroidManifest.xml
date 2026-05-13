@@ -41,6 +41,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="replace_cover" />
             </intent-filter>
+
+            <!-- Update comments deep link: putz://update_comments?uuid=UUID -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="update_comments" />
+            </intent-filter>
         </activity>
 
         <provider

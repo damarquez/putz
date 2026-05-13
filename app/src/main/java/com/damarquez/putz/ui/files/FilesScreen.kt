@@ -243,7 +243,7 @@ fun FilesScreen(
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
             },
-            onConfirm = { title, author, archiveMode, _, isAltVersion, _, _ ->
+            onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _ ->
                 if (isPack) {
                     viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
                 } else {
@@ -274,7 +274,7 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCalibre = null },
-            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid ->
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _ ->
                 viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid)
                 selectedFileForCalibre = null
             },
@@ -295,7 +295,7 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = calibreSheetState,
             onDismiss = { selectedFileForCover = null },
-            onConfirm = { title, author, _, _, _, matchedId, uuid ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCover(imageFile, title, author, matchedId ?: 0L, uuid)
                 }
@@ -342,7 +342,7 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             sheetState = audiobookConfirmSheetState,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _ ->
                 viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid)
                 selectedPackFiles = null
             },

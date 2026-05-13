@@ -45,6 +45,7 @@ data class CalibreBatchRequest(
     val is_probe: Boolean? = null,
     val calibre_book_id: Long? = null, // For REPLACE_COVER
     val calibre_book_uuid: String? = null, // For targeting existing book
+    val comments: String? = null, // For UPDATE_COMMENTS
 )
 
 @Serializable
@@ -81,6 +82,44 @@ class CalibreRepository @Inject constructor(
         encodeDefaults = true
     }
     fun getTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
+
+    suspend fun sendUpdateCommentsRequest(
+        title: String,
+        author: String,
+        calibreBookId: Long,
+        comments: String,
+        googleAccount: String,
+        calibreBookUuid: String? = null,
+    ) {
+        // We use a fake putio_file_id for comments update as it doesn't involve a file
+        val putioFileId = System.currentTimeMillis() 
+        val request = CalibreBatchRequest(
+            action = "UPDATE_COMMENTS",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = emptyList(),
+            calibre_book_id = calibreBookId,
+            calibre_book_uuid = calibreBookUuid,
+            comments = comments
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_comments_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Update comments for $title",
+            title = "Comments for $title",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.COMPLETED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            isTempUpload = true,
+            calibreBookUuid = calibreBookUuid
+        )
+        calibreTransferDao.insertTransfer(transfer)
+    }
 
     suspend fun sendGlobalStatusProbe(googleAccount: String): Boolean {
         val request = mapOf("action" to "GLOBAL_STATUS_PROBE")
