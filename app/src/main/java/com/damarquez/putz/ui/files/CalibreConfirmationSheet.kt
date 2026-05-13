@@ -91,8 +91,10 @@ fun CalibreConfirmationSheet(
     var assembleBook by remember { mutableStateOf(forceAssemble) }
     var isAltVersion by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val titleAuthorLocked = isReplaceCover
+    val requiresUuidMatch = isReplaceCover
 
-    LaunchedEffect(title, author, uuid) {
+    LaunchedEffect(uuid) {
         if (uuid.isNotBlank()) {
             isUuidValidating = true
             val match = checkExistsByUuid(uuid.trim())
@@ -101,9 +103,12 @@ fun CalibreConfirmationSheet(
                 matchedBookTitle = match.second
                 matchedBookAuthor = match.third
                 isUuidMatched = true
-                // Update state so internal validation passes
-                title = match.second
-                author = match.third
+                if (isReplaceCover || title.isBlank()) {
+                    title = match.second
+                }
+                if (isReplaceCover || author.isBlank()) {
+                    author = match.third
+                }
             } else {
                 matchedBookId = null
                 matchedBookTitle = null
@@ -113,15 +118,21 @@ fun CalibreConfirmationSheet(
             isUuidValidating = false
         } else {
             isUuidMatched = false
-            if (title.isNotBlank() && author.isNotBlank()) {
-                matchedBookId = checkExists(title, author)
-                matchedBookTitle = null
-                matchedBookAuthor = null
-            } else {
-                matchedBookId = null
-                matchedBookTitle = null
-                matchedBookAuthor = null
-            }
+            matchedBookId = null
+            matchedBookTitle = null
+            matchedBookAuthor = null
+        }
+    }
+
+    LaunchedEffect(title, author, uuid) {
+        if (uuid.isBlank() && !requiresUuidMatch && title.isNotBlank() && author.isNotBlank()) {
+            matchedBookId = checkExists(title, author)
+            matchedBookTitle = null
+            matchedBookAuthor = null
+        } else if (uuid.isBlank()) {
+            matchedBookId = null
+            matchedBookTitle = null
+            matchedBookAuthor = null
         }
     }
 
@@ -235,7 +246,7 @@ fun CalibreConfirmationSheet(
             OutlinedTextField(
                 value = uuid,
                 onValueChange = { uuid = it },
-                label = { Text("Book UUID (Optional)") },
+                label = { Text(if (isReplaceCover) "Book UUID (Required)" else "Book UUID (Optional)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 placeholder = { Text("Directly target an existing book") },
@@ -245,15 +256,15 @@ fun CalibreConfirmationSheet(
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = if (isUuidMatched) matchedBookTitle ?: "" else title,
+                value = if (isReplaceCover && isUuidMatched) matchedBookTitle ?: "" else title,
                 onValueChange = { title = it },
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                enabled = !isUuidMatched,
+                enabled = !titleAuthorLocked,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 trailingIcon = {
-                    if (!isUuidMatched) {
+                    if (!titleAuthorLocked) {
                         IconButton(
                             onClick = {
                                 title = displayName.substringBeforeLast('.')
@@ -276,7 +287,7 @@ fun CalibreConfirmationSheet(
                 Spacer(Modifier.weight(1f))
                 IconButton(
                     onClick = { val tmp = title; title = author; author = tmp },
-                    enabled = !isUuidMatched
+                    enabled = !titleAuthorLocked
                 ) {
                     Icon(
                         imageVector = Icons.Default.SwapVert,
@@ -290,20 +301,23 @@ fun CalibreConfirmationSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedTextField(
-                    value = if (isUuidMatched) matchedBookAuthor ?: "" else author,
+                    value = if (isReplaceCover && isUuidMatched) matchedBookAuthor ?: "" else author,
                     onValueChange = { author = it },
                     label = { Text("Author") },
                     placeholder = { Text("Unknown") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
-                    enabled = !isUuidMatched,
+                    enabled = !titleAuthorLocked,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = {
-                        val canSend = (title.isNotBlank() || isUuidMatched) && (!isReplaceCover && !isUpdateComments || matchedBookId != null) && (uuid.isBlank() || isUuidMatched)
+                        val canSend = title.isNotBlank() &&
+                            (!isReplaceCover && !isUpdateComments || matchedBookId != null) &&
+                            (uuid.isBlank() || isUuidMatched) &&
+                            (!requiresUuidMatch || isUuidMatched)
                         if (canSend) {
                             onConfirm(
-                                matchedBookTitle ?: title.trim(),
-                                matchedBookAuthor ?: author.trim().ifBlank { "Unknown" },
+                                if (isReplaceCover) matchedBookTitle ?: title.trim() else title.trim(),
+                                if (isReplaceCover) matchedBookAuthor ?: author.trim().ifBlank { "Unknown" } else author.trim().ifBlank { "Unknown" },
                                 if (isArchive) archiveMode else null,
                                 assembleBook,
                                 isAltVersion,
@@ -314,7 +328,7 @@ fun CalibreConfirmationSheet(
                         }
                     }),
                 )
-                if (!isUuidMatched && author.count { it == ',' } == 1) {
+                if (!titleAuthorLocked && author.count { it == ',' } == 1) {
                     Spacer(Modifier.width(4.dp))
                     IconButton(
                         onClick = {
@@ -404,8 +418,8 @@ fun CalibreConfirmationSheet(
             Button(
                 onClick = { 
                     onConfirm(
-                        matchedBookTitle ?: title.trim(), 
-                        matchedBookAuthor ?: author.trim().ifBlank { "Unknown" }, 
+                        if (isReplaceCover) matchedBookTitle ?: title.trim() else title.trim(), 
+                        if (isReplaceCover) matchedBookAuthor ?: author.trim().ifBlank { "Unknown" } else author.trim().ifBlank { "Unknown" }, 
                         if (isArchive) archiveMode else null, 
                         assembleBook, 
                         isAltVersion, 
@@ -415,7 +429,10 @@ fun CalibreConfirmationSheet(
                     ) 
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = (title.isNotBlank() || isUuidMatched) && (!isReplaceCover && !isUpdateComments || matchedBookId != null) && (uuid.isBlank() || isUuidMatched),
+                enabled = title.isNotBlank() &&
+                    (!isReplaceCover && !isUpdateComments || matchedBookId != null) &&
+                    (uuid.isBlank() || isUuidMatched) &&
+                    (!requiresUuidMatch || isUuidMatched),
             ) {
                 Text(
                     when {
