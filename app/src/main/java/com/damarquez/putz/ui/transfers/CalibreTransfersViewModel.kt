@@ -178,9 +178,8 @@ class CalibreTransfersViewModel @Inject constructor(
     fun retryTransfer(fileId: Long) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
-            val token = settingsRepository.authTokenFlow.first()
-            if (account.isNotBlank() && token.isNotBlank()) {
-                calibreRepository.retryTransfer(fileId, account, token)
+            if (account.isNotBlank()) {
+                calibreRepository.retryTransfer(fileId, account)
             }
         }
     }

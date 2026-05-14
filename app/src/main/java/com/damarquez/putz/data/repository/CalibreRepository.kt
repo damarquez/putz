@@ -113,12 +113,15 @@ class CalibreRepository @Inject constructor(
             fileName = "Update comments for $title",
             title = "Comments for $title",
             author = author,
-            status = if (gDriveId != null) CalibreTransferStatus.COMPLETED else CalibreTransferStatus.FAILED,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             isTempUpload = true,
-            calibreBookUuid = calibreBookUuid
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr
         )
         calibreTransferDao.insertTransfer(transfer)
     }
@@ -183,13 +186,15 @@ class CalibreRepository @Inject constructor(
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.REQUESTED,
                 gdriveRequestId = gDriveId,
-                lastUpdatedAt = System.currentTimeMillis()
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr
             ))
         } else {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.FAILED,
                 errorMessage = "Failed to upload to GDrive",
-                lastUpdatedAt = System.currentTimeMillis()
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr
             ))
         }
     }
@@ -245,12 +250,14 @@ class CalibreRepository @Inject constructor(
                 status = CalibreTransferStatus.REQUESTED,
                 gdriveRequestId = gDriveId,
                 lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr
             ))
         } else {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.FAILED,
                 errorMessage = "Failed to upload to GDrive",
                 lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr
             ))
         }
     }
@@ -395,13 +402,10 @@ class CalibreRepository @Inject constructor(
                                 // automatically trigger a retry. Staggered to avoid simultaneous GDrive uploads.
                                 if (newStatus == CalibreTransferStatus.FAILED && response.error?.contains("not found", ignoreCase = true) == true) {
                                     if (transfer.retryCount < 3) {
-                                        val token = secureStorage.authTokenFlow.value
-                                        if (token.isNotBlank()) {
-                                            CoroutineScope(Dispatchers.IO).launch {
-                                                val delayMs = Random.nextLong(2000, 60000)
-                                                delay(delayMs)
-                                                retryTransfer(transfer.putioFileId, googleAccount, token)
-                                            }
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            val delayMs = Random.nextLong(2000, 60000)
+                                            delay(delayMs)
+                                            retryTransfer(transfer.putioFileId, googleAccount)
                                         }
                                     }
                                 }
@@ -537,7 +541,8 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             batchData = json.encodeToString(listOf(item)),
-            calibreBookUuid = calibreBookUuid
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr
         )
         calibreTransferDao.insertTransfer(transfer)
     }
@@ -597,53 +602,11 @@ class CalibreRepository @Inject constructor(
         return false
     }
 
-    suspend fun retryTransfer(fileId: Long, googleAccount: String, putioToken: String): Boolean {
+    suspend fun retryTransfer(fileId: Long, googleAccount: String): Boolean {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return false
-        
-        val items = if (!transfer.batchData.isNullOrBlank()) {
-            json.decodeFromString<List<CalibreBatchItem>>(transfer.batchData).map { item ->
-                // Refresh download URLs for each item
-                when (item.type) {
-                    "SINGLE", "ARCHIVE" -> {
-                        item.copy(download_url = "${PutioApiClient.BASE_URL}/files/${item.putio_file_id}/download?oauth_token=$putioToken")
-                    }
-                    "PACK" -> {
-                        val updatedFiles = item.files?.map { file ->
-                            file.copy(download_url = "${PutioApiClient.BASE_URL}/files/${file.putio_file_id}/download?oauth_token=$putioToken")
-                        }
-                        item.copy(files = updatedFiles)
-                    }
-                    else -> item
-                }
-            }
-        } else {
-            // Fallback for old records without batchData
-            val ids = transfer.parsedFileIds()
-            if (ids.size > 1) {
-                val audioFiles = ids.map { id ->
-                    AudiobookFile(id, "RETRY", "${PutioApiClient.BASE_URL}/files/$id/download?oauth_token=$putioToken")
-                }
-                listOf(CalibreBatchItem("PACK", transfer.putioFileId, transfer.fileName, files = audioFiles))
-            } else {
-                listOf(CalibreBatchItem(
-                    if (MetadataUtils.isArchive(transfer.fileName)) "ARCHIVE" else "SINGLE",
-                    transfer.putioFileId,
-                    transfer.fileName,
-                    "${PutioApiClient.BASE_URL}/files/${transfer.putioFileId}/download?oauth_token=$putioToken"
-                ))
-            }
-        }
+        val payload = transfer.lastRequestPayload ?: return false
 
-        val request = CalibreBatchRequest(
-            putio_file_id = transfer.putioFileId,
-            title = transfer.title,
-            author = transfer.author,
-            items = items,
-            calibre_book_uuid = transfer.calibreBookUuid
-        )
-        val jsonStr = json.encodeToString(request)
-
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_${transfer.putioFileId}.json", jsonStr)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_${transfer.putioFileId}.json", payload)
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.REQUESTED,

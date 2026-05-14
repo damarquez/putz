@@ -31,6 +31,9 @@ data class CalibreTransferEntity(
 
     /** The Calibre UUID of the book, if targeted directly. */
     val calibreBookUuid: String? = null,
+
+    /** The exact JSON payload last uploaded to GDrive for this transfer. Used verbatim on retry. */
+    val lastRequestPayload: String? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 

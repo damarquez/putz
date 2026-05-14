@@ -10,7 +10,7 @@ import androidx.room.RoomDatabase
         LocalAttachmentEntity::class,
         HiddenLocalFileEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {
