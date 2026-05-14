@@ -144,9 +144,13 @@ class CalibreTransfersViewModel @Inject constructor(
             while (isActive) {
                 val account = settingsRepository.googleTokenFlow.first()
                 if (account.isNotBlank()) {
-                    calibreRepository.pollResponses(account)
-                    calibreRepository.pollLibraryUpdates(account)
-                    calibreRepository.pollHeartbeat(account)
+                    try {
+                        calibreRepository.pollResponses(account)
+                        calibreRepository.pollLibraryUpdates(account)
+                        calibreRepository.pollHeartbeat(account)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
 
                     // Also check for stuck transfers (older than 5 mins)
                     val currentTransfers = calibreRepository.getTransfers().first()

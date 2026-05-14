@@ -82,10 +82,13 @@ object MetadataUtils {
                 .replace("<p dir=\"ltr\">", "<p>")
                 .replace(" dir=\"ltr\"", "") // Remove any remaining dir attributes
                 .trim()
-            
-            // If the original was plain text and we only have <p>...</p>, let's see if we should keep it.
-            // Actually, Calibre likes <p> tags.
-            
+
+            // Html.toHtml() encodes non-ASCII characters as numeric entities (e.g. ü → &#252;).
+            // Decode them back to their Unicode characters so the text stays readable.
+            result = result.replace(Regex("&#(\\d+);")) { mr ->
+                mr.groupValues[1].toIntOrNull()?.toChar()?.toString() ?: mr.value
+            }
+
             result
         } catch (e: Exception) {
             // Fallback for non-Android environments or errors

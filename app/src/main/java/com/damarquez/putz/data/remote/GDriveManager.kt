@@ -53,11 +53,16 @@ class GDriveManager @Inject constructor(
     }
 
     internal suspend fun getLibraryFolderId(service: Drive): String? = withContext(Dispatchers.IO) {
-        val libResult = service.files().list()
-            .setQ("name = 'metadata.db' and trashed = false")
-            .setFields("files(parents)")
-            .execute()
-        libResult.files.firstOrNull()?.parents?.firstOrNull()
+        try {
+            val libResult = service.files().list()
+                .setQ("name = 'metadata.db' and trashed = false")
+                .setFields("files(parents)")
+                .execute()
+            libResult.files.firstOrNull()?.parents?.firstOrNull()
+        } catch (e: Exception) {
+            Log.e("GDriveManager", "Could not resolve Calibre library root", e)
+            null
+        }
     }
 
     suspend fun uploadRequest(accountName: String, fileName: String, content: String): String? = withContext(Dispatchers.IO) {

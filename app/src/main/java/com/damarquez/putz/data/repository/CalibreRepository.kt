@@ -321,29 +321,34 @@ class CalibreRepository @Inject constructor(
     suspend fun pollHeartbeat(googleAccount: String) {
         // The current sidekick writes heartbeat.json at the Calibre Drive root. Older
         // Putz integration builds used .calibre_integration, so keep that fallback.
-        val fileId = withContext(Dispatchers.IO) {
-            val service = gDriveManager.getDriveService(googleAccount)
-            val libFolderId = gDriveManager.getLibraryFolderId(service) ?: return@withContext null
+        val fileId = try {
+            withContext(Dispatchers.IO) {
+                val service = gDriveManager.getDriveService(googleAccount)
+                val libFolderId = gDriveManager.getLibraryFolderId(service) ?: return@withContext null
 
-            val rootHeartbeat = service.files().list()
-                .setQ("name = 'heartbeat.json' and '$libFolderId' in parents and trashed = false")
-                .setFields("files(id)")
-                .execute()
-                .files
-                ?.firstOrNull()
-                ?.id
+                val rootHeartbeat = service.files().list()
+                    .setQ("name = 'heartbeat.json' and '$libFolderId' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                    .files
+                    ?.firstOrNull()
+                    ?.id
 
-            rootHeartbeat ?: run {
-                val integrationId = gDriveManager.findFolder(service, ".calibre_integration", libFolderId)
-                    ?: return@withContext null
-                service.files().list()
+                rootHeartbeat ?: run {
+                    val integrationId = gDriveManager.findFolder(service, ".calibre_integration", libFolderId)
+                        ?: return@withContext null
+                    service.files().list()
                     .setQ("name = 'heartbeat.json' and '$integrationId' in parents and trashed = false")
                     .setFields("files(id)")
                     .execute()
                     .files
                     ?.firstOrNull()
                     ?.id
+                }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         } ?: return
         val content = gDriveManager.downloadFileContent(googleAccount, fileId) ?: return
         
