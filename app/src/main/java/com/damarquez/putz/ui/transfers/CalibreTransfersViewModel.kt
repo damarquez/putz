@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.settings.SettingsRepository
@@ -52,12 +53,12 @@ class CalibreTransfersViewModel @Inject constructor(
         _snackbarMessage.value = null
     }
 
-    fun replaceCommentsFromClipboard(comments: String, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
+    fun replaceCommentsFromClipboard(comments: String?, tags: String?, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
 
-            _snackbarMessage.value = "Sending comments update..."
+            _snackbarMessage.value = "Sending metadata update..."
 
             try {
                 calibreRepository.sendUpdateCommentsRequest(
@@ -65,10 +66,11 @@ class CalibreTransfersViewModel @Inject constructor(
                     author = author,
                     calibreBookId = calibreBookId,
                     comments = comments,
+                    tags = tags,
                     googleAccount = account,
                     calibreBookUuid = calibreBookUuid
                 )
-                _snackbarMessage.value = "Comments update request sent"
+                _snackbarMessage.value = "Metadata update request sent"
             } catch (e: Exception) {
                 _snackbarMessage.value = "Error: ${e.message}"
             }
@@ -80,7 +82,7 @@ class CalibreTransfersViewModel @Inject constructor(
         return calibreRepository.checkExists(dbFile, title, author)
     }
 
-    suspend fun checkBookExistsByUuid(uuid: String): Triple<Long, String, String>? {
+    suspend fun checkBookExistsByUuid(uuid: String): CalibreBookMatch? {
         val dbFile = File(context.filesDir, "metadata.db")
         return calibreRepository.checkExistsByUuid(dbFile, uuid)
     }

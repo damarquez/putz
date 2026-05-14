@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import android.net.Uri
+import com.damarquez.putz.data.repository.CalibreBookMatch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,20 +55,24 @@ fun CalibreConfirmationSheet(
     initialAuthor: String,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?) -> Unit,
+    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?) -> Unit,
     checkExists: suspend (String, String) -> Long?,
-    checkExistsByUuid: suspend (String) -> Triple<Long, String, String>?,
+    checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     isArchive: Boolean = false,
     forceAssemble: Boolean = false,
     isReplaceCover: Boolean = false,
     isUpdateComments: Boolean = false,
     initialUuid: String = "",
     initialComments: String = "",
+    initialTags: String = "",
+    autoAddTags: String? = null,
+    includeComments: Boolean = true,
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
     var uuid by remember { mutableStateOf(initialUuid) }
     var comments by remember { mutableStateOf(initialComments) }
+    var tags by remember { mutableStateOf(initialTags) }
 
     LaunchedEffect(initialUuid) {
         if (initialUuid.isNotBlank()) {
@@ -78,6 +83,12 @@ fun CalibreConfirmationSheet(
     LaunchedEffect(initialComments) {
         if (initialComments.isNotBlank()) {
             comments = initialComments
+        }
+    }
+
+    LaunchedEffect(initialTags) {
+        if (initialTags.isNotBlank()) {
+            tags = initialTags
         }
     }
 
@@ -94,20 +105,23 @@ fun CalibreConfirmationSheet(
     val titleAuthorLocked = isReplaceCover
     val requiresUuidMatch = isReplaceCover
 
-    LaunchedEffect(uuid) {
+    LaunchedEffect(uuid, autoAddTags) {
         if (uuid.isNotBlank()) {
             isUuidValidating = true
             val match = checkExistsByUuid(uuid.trim())
             if (match != null) {
-                matchedBookId = match.first
-                matchedBookTitle = match.second
-                matchedBookAuthor = match.third
+                matchedBookId = match.id
+                matchedBookTitle = match.title
+                matchedBookAuthor = match.author
                 isUuidMatched = true
                 if (isReplaceCover || title.isBlank()) {
-                    title = match.second
+                    title = match.title
                 }
                 if (isReplaceCover || author.isBlank()) {
-                    author = match.third
+                    author = match.author
+                }
+                if (tags.isBlank() || !autoAddTags.isNullOrBlank()) {
+                    tags = mergeTags(match.tags, autoAddTags)
                 }
             } else {
                 matchedBookId = null
@@ -150,7 +164,8 @@ fun CalibreConfirmationSheet(
             Text(
                 text = when {
                     isReplaceCover -> "Replace Book Cover"
-                    isUpdateComments -> "Update Book Comments"
+                    isUpdateComments && includeComments -> "Update Book Comments"
+                    isUpdateComments -> "Update Book Tags"
                     else -> "Send to Calibre"
                 },
                 style = MaterialTheme.typography.titleLarge,
@@ -230,7 +245,7 @@ fun CalibreConfirmationSheet(
                 }
             }
 
-            if (isUpdateComments) {
+            if (isUpdateComments && includeComments) {
                 Spacer(Modifier.height(24.dp))
                 OutlinedTextField(
                     value = comments,
@@ -238,6 +253,19 @@ fun CalibreConfirmationSheet(
                     label = { Text("Comments (HTML supported)") },
                     modifier = Modifier.fillMaxWidth().height(120.dp),
                     placeholder = { Text("Book description or notes...") },
+                )
+            }
+
+            if (isUpdateComments) {
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Programming, Python, Reference") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 )
             }
 
@@ -323,7 +351,8 @@ fun CalibreConfirmationSheet(
                                 isAltVersion,
                                 matchedBookId,
                                 uuid.trim().ifBlank { null },
-                                if (isUpdateComments) comments.trim() else null
+                                if (isUpdateComments && includeComments) comments.trim() else null,
+                                if (isUpdateComments) tags.trim().ifBlank { null } else null,
                             )
                         }
                     }),
@@ -425,7 +454,8 @@ fun CalibreConfirmationSheet(
                         isAltVersion, 
                         matchedBookId, 
                         uuid.trim().ifBlank { null },
-                        if (isUpdateComments) comments.trim() else null
+                        if (isUpdateComments && includeComments) comments.trim() else null,
+                        if (isUpdateComments) tags.trim().ifBlank { null } else null,
                     ) 
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -437,7 +467,8 @@ fun CalibreConfirmationSheet(
                 Text(
                     when {
                         isReplaceCover -> "Replace Cover"
-                        isUpdateComments -> "Update Comments"
+                        isUpdateComments && includeComments -> "Update Comments"
+                        isUpdateComments -> "Update Tags"
                         assembleBook -> "Assemble Book"
                         else -> "Confirm & Send"
                     }
@@ -452,4 +483,18 @@ fun CalibreConfirmationSheet(
             }
         }
     }
+}
+
+private fun mergeTags(existingTags: String, autoAddTags: String?): String {
+    val combinedTags = listOf(existingTags, autoAddTags.orEmpty())
+        .filter { it.isNotBlank() }
+        .joinToString(", ")
+
+    return combinedTags
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinctBy { it.lowercase() }
+        .sortedWith { first, second -> first.compareTo(second, ignoreCase = true) }
+        .joinToString(", ")
 }

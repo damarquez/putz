@@ -25,6 +25,7 @@ import javax.inject.Inject
 private sealed class PendingClipboardAction {
     data class Cover(val uuid: String) : PendingClipboardAction()
     data class Comments(val uuid: String) : PendingClipboardAction()
+    data class Tags(val uuid: String, val autoAddTags: String?) : PendingClipboardAction()
 }
 
 @AndroidEntryPoint
@@ -87,6 +88,11 @@ class MainActivity : ComponentActivity() {
                 val uuid = uri.getQueryParameter("uuid")
                 if (uuid != null) pendingClipboardAction = PendingClipboardAction.Comments(uuid)
             }
+            uri.scheme == "putz" && uri.host == "add_tags" -> {
+                val uuid = uri.getQueryParameter("uuid")
+                val autoAddTags = uri.getQueryParameter("auto_add") ?: uri.getQueryParameter("tags")
+                if (uuid != null) pendingClipboardAction = PendingClipboardAction.Tags(uuid, autoAddTags)
+            }
             MagnetParser.isMagnetLink(uri.toString()) -> pendingMagnetRepository.set(uri.toString())
         }
     }
@@ -95,9 +101,9 @@ class MainActivity : ComponentActivity() {
         val action = pendingClipboardAction ?: return
         pendingClipboardAction = null
         try {
-            val clip = getSystemService(ClipboardManager::class.java)?.primaryClip
             when (action) {
                 is PendingClipboardAction.Cover -> {
+                    val clip = getSystemService(ClipboardManager::class.java)?.primaryClip
                     val imageUri = clip?.getItemAt(0)?.uri
                     val mimeType = imageUri?.let { contentResolver.getType(it) }
                     if (imageUri != null && mimeType?.startsWith("image/") == true) {
@@ -105,6 +111,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 is PendingClipboardAction.Comments -> {
+                    val clip = getSystemService(ClipboardManager::class.java)?.primaryClip
                     val item = clip?.getItemAt(0)
                     val text = item?.text?.toString()
                     val htmlText = item?.htmlText
@@ -112,6 +119,7 @@ class MainActivity : ComponentActivity() {
                         pendingCommentsRepository.set(action.uuid, MetadataUtils.sanitizeHtml(text ?: "", htmlText))
                     }
                 }
+                is PendingClipboardAction.Tags -> pendingCommentsRepository.setTagsOnly(action.uuid, action.autoAddTags)
             }
         } catch (e: Exception) {
             // Clipboard access can fail on some devices/Android versions; silently ignore.

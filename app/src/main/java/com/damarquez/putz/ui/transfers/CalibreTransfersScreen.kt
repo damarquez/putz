@@ -92,6 +92,8 @@ fun CalibreTransfersScreen(
     
     var clipboardImageUri by remember { mutableStateOf<Uri?>(null) }
     var clipboardComments by remember { mutableStateOf<String?>(null) }
+    var includeClipboardComments by remember { mutableStateOf(true) }
+    var autoAddTags by remember { mutableStateOf<String?>(null) }
     var prefilledUuid by remember { mutableStateOf<String?>(null) }
     val coverSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val commentsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -136,7 +138,9 @@ fun CalibreTransfersScreen(
         pendingCommentsRepository.flow.collect { pending ->
             if (pending != null) {
                 pendingCommentsRepository.clear()
-                clipboardComments = pending.text
+                clipboardComments = pending.text ?: ""
+                includeClipboardComments = pending.includeComments
+                autoAddTags = pending.autoAddTags
                 prefilledUuid = pending.uuid
             }
         }
@@ -170,7 +174,7 @@ fun CalibreTransfersScreen(
                 clipboardImageUri = null
                 prefilledUuid = null
             },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, _ ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCoverFromClipboard(clipboardImageUri!!, title, author, matchedId ?: 0L, uuid)
                 }
@@ -192,14 +196,18 @@ fun CalibreTransfersScreen(
             sheetState = commentsSheetState,
             onDismiss = {
                 clipboardComments = null
+                includeClipboardComments = true
+                autoAddTags = null
                 prefilledUuid = null
                 pendingCommentsRepository.clear()
             },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, comments ->
-                if ((matchedId != null || uuid != null) && comments != null) {
-                    viewModel.replaceCommentsFromClipboard(comments, title, author, matchedId ?: 0L, uuid)
+            onConfirm = { title, author, _, _, _, matchedId, uuid, comments, tags ->
+                if (matchedId != null || uuid != null) {
+                    viewModel.replaceCommentsFromClipboard(comments, tags, title, author, matchedId ?: 0L, uuid)
                 }
                 clipboardComments = null
+                includeClipboardComments = true
+                autoAddTags = null
                 prefilledUuid = null
                 pendingCommentsRepository.clear()
             },
@@ -207,7 +215,9 @@ fun CalibreTransfersScreen(
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isUpdateComments = true,
             initialUuid = prefilledUuid ?: "",
-            initialComments = clipboardComments ?: ""
+            initialComments = clipboardComments ?: "",
+            autoAddTags = autoAddTags,
+            includeComments = includeClipboardComments
         )
     }
 

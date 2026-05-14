@@ -48,6 +48,7 @@ data class CalibreBatchRequest(
     val calibre_book_id: Long? = null, // For REPLACE_COVER
     val calibre_book_uuid: String? = null, // For targeting existing book
     val comments: String? = null, // For UPDATE_COMMENTS
+    val tags: String? = null, // For UPDATE_COMMENTS
 )
 
 @Serializable
@@ -64,6 +65,13 @@ data class CalibreResponse(
     val status: String,
     val error: String? = null,
     val daemon_status: String? = null, // "IDLE" or "WORKING"
+)
+
+data class CalibreBookMatch(
+    val id: Long,
+    val title: String,
+    val author: String,
+    val tags: String = "",
 )
 
 @Singleton
@@ -89,7 +97,8 @@ class CalibreRepository @Inject constructor(
         title: String,
         author: String,
         calibreBookId: Long,
-        comments: String,
+        comments: String?,
+        tags: String?,
         googleAccount: String,
         calibreBookUuid: String? = null,
     ) {
@@ -103,7 +112,8 @@ class CalibreRepository @Inject constructor(
             items = emptyList(),
             calibre_book_id = calibreBookId,
             calibre_book_uuid = calibreBookUuid,
-            comments = comments
+            comments = comments,
+            tags = tags,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_comments_$putioFileId.json", jsonStr)
@@ -430,7 +440,7 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    suspend fun checkExistsByUuid(dbFile: File, uuid: String): Triple<Long, String, String>? = withContext(Dispatchers.IO) {
+    suspend fun checkExistsByUuid(dbFile: File, uuid: String): CalibreBookMatch? = withContext(Dispatchers.IO) {
         if (!dbFile.exists()) return@withContext null
         try {
             android.database.sqlite.SQLiteDatabase.openDatabase(
@@ -447,7 +457,13 @@ class CalibreRepository @Inject constructor(
                 
                 db.rawQuery(query, arrayOf(uuid)).use { cursor ->
                     if (cursor.moveToFirst()) {
-                        return@withContext Triple(cursor.getLong(0), cursor.getString(1), cursor.getString(2))
+                        val bookId = cursor.getLong(0)
+                        return@withContext CalibreBookMatch(
+                            id = bookId,
+                            title = cursor.getString(1),
+                            author = cursor.getString(2),
+                            tags = getBookTags(db, bookId),
+                        )
                     }
                 }
                 null
@@ -455,6 +471,22 @@ class CalibreRepository @Inject constructor(
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    private fun getBookTags(db: android.database.sqlite.SQLiteDatabase, bookId: Long): String {
+        val query = """
+            SELECT tags.name FROM tags
+            JOIN books_tags_link ON tags.id = books_tags_link.tag
+            WHERE books_tags_link.book = ?
+            ORDER BY tags.name COLLATE NOCASE
+        """.trimIndent()
+        return db.rawQuery(query, arrayOf(bookId.toString())).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.getString(0))
+                }
+            }.joinToString(", ")
         }
     }
 

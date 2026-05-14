@@ -6,7 +6,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class PendingComments(val uuid: String, val text: String)
+data class PendingComments(
+    val uuid: String,
+    val text: String?,
+    val includeComments: Boolean = true,
+    val autoAddTags: String? = null,
+)
 
 @Singleton
 class PendingCommentsRepository @Inject constructor() {
@@ -15,6 +20,10 @@ class PendingCommentsRepository @Inject constructor() {
 
     fun set(uuid: String, text: String) {
         _flow.value = PendingComments(uuid, text)
+    }
+
+    fun setTagsOnly(uuid: String, autoAddTags: String? = null) {
+        _flow.value = PendingComments(uuid, null, includeComments = false, autoAddTags = autoAddTags)
     }
 
     fun clear() {

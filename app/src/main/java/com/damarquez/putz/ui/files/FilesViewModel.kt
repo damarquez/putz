@@ -15,6 +15,7 @@ import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.AudiobookFile
 import com.damarquez.putz.data.repository.CalibreBatchItem
+import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.settings.SettingsRepository
@@ -471,7 +472,7 @@ class FilesViewModel @Inject constructor(
         return calibreRepository.checkExists(dbFile, title, author)
     }
 
-    suspend fun checkBookExistsByUuid(uuid: String): Triple<Long, String, String>? {
+    suspend fun checkBookExistsByUuid(uuid: String): CalibreBookMatch? {
         val dbFile = File(context.filesDir, "metadata.db")
         return calibreRepository.checkExistsByUuid(dbFile, uuid)
     }

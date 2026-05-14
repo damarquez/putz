@@ -49,6 +49,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="update_comments" />
             </intent-filter>
+
+            <!-- Add/edit tags deep link: putz://add_tags?uuid=UUID -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="add_tags" />
+            </intent-filter>
         </activity>
 
         <provider
