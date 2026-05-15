@@ -36,7 +36,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,7 +65,6 @@ import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.ui.files.CalibreConfirmationSheet
 import com.damarquez.putz.ui.GlobalSyncViewModel
-import kotlinx.coroutines.CoroutineScope
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,8 +93,6 @@ fun CalibreTransfersScreen(
     var includeClipboardComments by remember { mutableStateOf(true) }
     var autoAddTags by remember { mutableStateOf<String?>(null) }
     var prefilledUuid by remember { mutableStateOf<String?>(null) }
-    val coverSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val commentsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val cacheClipboardImage: (Uri, String?) -> Unit = { uri: Uri, uuid: String? ->
         scope.launch {
@@ -169,7 +165,6 @@ fun CalibreTransfersScreen(
             displayName = "Clipboard Image",
             initialTitle = "",
             initialAuthor = "",
-            sheetState = coverSheetState,
             onDismiss = {
                 clipboardImageUri = null
                 prefilledUuid = null
@@ -193,7 +188,6 @@ fun CalibreTransfersScreen(
             displayName = "Clipboard Text",
             initialTitle = "",
             initialAuthor = "",
-            sheetState = commentsSheetState,
             onDismiss = {
                 clipboardComments = null
                 includeClipboardComments = true

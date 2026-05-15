@@ -182,13 +182,10 @@ fun FilesScreen(
     // Single-file Calibre send
     var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFileForCover by remember { mutableStateOf<PutioFile?>(null) }
-    val calibreSheetState = rememberModalBottomSheetState()
-
     // Audiobook pack flow
     var audiobookPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedPackFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
     val audiobookPackSheetState = rememberModalBottomSheetState()
-    val audiobookConfirmSheetState = rememberModalBottomSheetState()
 
     // Assembly flow
     val pendingAssemblies by viewModel.pendingAssemblies.collectAsState()
@@ -237,7 +234,6 @@ fun FilesScreen(
             displayName = if (isPack) "${selectedPackFilesForAssembly?.size} audio files" else file.name,
             initialTitle = targetAssemblyForFile!!.title,
             initialAuthor = targetAssemblyForFile!!.author,
-            sheetState = calibreSheetState,
             onDismiss = { 
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
@@ -272,7 +268,6 @@ fun FilesScreen(
             displayName = singleFile.name,
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
-            sheetState = calibreSheetState,
             onDismiss = { selectedFileForCalibre = null },
             onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, _ ->
                 viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid)
@@ -293,7 +288,6 @@ fun FilesScreen(
             displayName = imageFile.name,
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
-            sheetState = calibreSheetState,
             onDismiss = { selectedFileForCover = null },
             onConfirm = { title, author, _, _, _, matchedId, uuid, _, _ ->
                 if (matchedId != null || uuid != null) {
@@ -340,7 +334,6 @@ fun FilesScreen(
             displayName = "${packFiles.size} audio files",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
-            sheetState = audiobookConfirmSheetState,
             onDismiss = { selectedPackFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, _ ->
                 viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid)
