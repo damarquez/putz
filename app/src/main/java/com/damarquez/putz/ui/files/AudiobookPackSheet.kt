@@ -31,13 +31,13 @@ import com.damarquez.putz.data.model.PutioFile
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudiobookPackSheet(
-    mp3Files: List<PutioFile>,
+    audioFiles: List<PutioFile>,
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
 ) {
-    var checkedIds by remember(mp3Files) { mutableStateOf(mp3Files.map { it.id }.toSet()) }
-    val selectedFiles = mp3Files.filter { it.id in checkedIds }
+    var checkedIds by remember(audioFiles) { mutableStateOf(audioFiles.map { it.id }.toSet()) }
+    val selectedFiles = audioFiles.filter { it.id in checkedIds }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -66,7 +66,7 @@ fun AudiobookPackSheet(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "${selectedFiles.size} of ${mp3Files.size} files selected",
+                text = "${selectedFiles.size} of ${audioFiles.size} files selected",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -76,7 +76,7 @@ fun AudiobookPackSheet(
             LazyColumn(modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)) {
-                items(mp3Files, key = { it.id }) { file ->
+                items(audioFiles, key = { it.id }) { file ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,

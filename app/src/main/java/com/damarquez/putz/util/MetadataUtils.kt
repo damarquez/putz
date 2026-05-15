@@ -4,7 +4,7 @@ object MetadataUtils {
     private val EBOOK_EXTENSIONS = setOf("epub", "mobi", "pdf", "azw3", "fb2", "cbz", "cbr", "rar", "zip", "prc")
     private val ARCHIVE_EXTENSIONS = setOf("rar", "zip")
     private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a")
-    private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a")
+    private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b")
 
     fun isArchive(fileName: String): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase()
@@ -16,7 +16,7 @@ object MetadataUtils {
         return ext in EBOOK_EXTENSIONS || ext in AUDIO_EXTENSIONS
     }
 
-    /** True for formats that can be combined into an M4B pack (mp3, m4a). */
+    /** True for formats that can be combined into an M4B pack. */
     fun isMultiTrackAudio(fileName: String): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase()
         return ext in MULTI_TRACK_AUDIO_EXTENSIONS

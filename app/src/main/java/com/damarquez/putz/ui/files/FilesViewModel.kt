@@ -418,7 +418,7 @@ class FilesViewModel @Inject constructor(
                 file to filesRepository.getDownloadUrl(putioToken, file.id)
             }
 
-            val packLabel = if (isAltVersion) "${files.size} MP3 files (m4b_bkp)" else "${files.size} MP3 files"
+            val packLabel = if (isAltVersion) "${files.size} audio files (m4b_bkp)" else "${files.size} audio files"
             val initialItemName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
 
             calibreRepository.addAudiobookPackTransfer(

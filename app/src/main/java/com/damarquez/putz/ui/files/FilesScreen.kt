@@ -234,7 +234,7 @@ fun FilesScreen(
     if (targetAssemblyForFile != null) {
         val (file, isPack) = selectedFileForAssembly!!
         CalibreConfirmationSheet(
-            displayName = if (isPack) "${selectedPackFilesForAssembly?.size} MP3 files" else file.name,
+            displayName = if (isPack) "${selectedPackFilesForAssembly?.size} audio files" else file.name,
             initialTitle = targetAssemblyForFile!!.title,
             initialAuthor = targetAssemblyForFile!!.author,
             sheetState = calibreSheetState,
@@ -308,13 +308,13 @@ fun FilesScreen(
     }
 
     if (audiobookPackTriggerFile != null && selectedPackFiles == null && selectedPackFilesForAssembly == null) {
-        val mp3Files = remember(uiState) {
+        val audioFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isMultiTrackAudio(it.name) }
                 ?: emptyList()
         }
         AudiobookPackSheet(
-            mp3Files = mp3Files,
+            audioFiles = audioFiles,
             sheetState = audiobookPackSheetState,
             onDismiss = { 
                 audiobookPackTriggerFile = null 
@@ -337,7 +337,7 @@ fun FilesScreen(
             MetadataUtils.extractMetadata(packFiles.first().name)
         }
         CalibreConfirmationSheet(
-            displayName = "${packFiles.size} MP3 files",
+            displayName = "${packFiles.size} audio files",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             sheetState = audiobookConfirmSheetState,
