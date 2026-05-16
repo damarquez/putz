@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.local.CalibreTransferEntity
+import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreBookMatch
@@ -154,15 +155,20 @@ class CalibreTransfersViewModel @Inject constructor(
                         e.printStackTrace()
                     }
 
-                    // Also check for stuck transfers (older than 5 mins)
+                    // Also check for stuck transfers (older than 5 mins) or failed GDrive uploads
                     val currentTransfers = calibreRepository.getTransfers().first()
                     val now = System.currentTimeMillis()
                     currentTransfers.forEach { transfer ->
-                        val isStuck = transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.PENDING ||
-                                     transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.REQUESTED ||
-                                     transfer.status == com.damarquez.putz.data.local.CalibreTransferStatus.PROCESSING
+                        val isStuck = transfer.status == CalibreTransferStatus.PENDING ||
+                                     transfer.status == CalibreTransferStatus.REQUESTED ||
+                                     transfer.status == CalibreTransferStatus.PROCESSING
                         
-                        if (isStuck && now - transfer.lastUpdatedAt > 5 * 60 * 1000) {
+                        val isFailedUpload = transfer.status == CalibreTransferStatus.FAILED &&
+                                             transfer.errorMessage?.contains("upload to GDrive", ignoreCase = true) == true
+
+                        if (isFailedUpload && transfer.retryCount < 3 && now - transfer.lastUpdatedAt > 30 * 1000) {
+                            calibreRepository.retryTransfer(transfer.putioFileId, account)
+                        } else if (isStuck && now - transfer.lastUpdatedAt > 5 * 60 * 1000) {
                             calibreRepository.sendProbeRequest(transfer.putioFileId, account)
                         }
                     }
