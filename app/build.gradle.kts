@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -53,6 +55,32 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/INDEX.LIST"
             excludes += "META-INF/DEPENDENCIES"
+        }
+    }
+
+    val localProps = Properties().apply {
+        val f = rootProject.file("local.properties")
+        if (f.exists()) load(f.inputStream())
+    }
+    val apkOutputName = (project.findProperty("apk.outputName") as? String) ?: "app.apk"
+    val apkOutputDir = localProps.getProperty("apk.outputDir")
+
+    applicationVariants.all {
+        val variant = this
+        variant.outputs
+            .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
+            .forEach { output ->
+                output.outputFileName = apkOutputName
+            }
+        if (apkOutputDir != null) {
+            variant.assembleProvider.get().doLast {
+                val apkDir = variant.outputs.first().outputFile.parentFile
+                copy {
+                    from(apkDir)
+                    into(file(apkOutputDir))
+                    include(apkOutputName)
+                }
+            }
         }
     }
 }
