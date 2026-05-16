@@ -72,6 +72,7 @@ fun FileItem(
     onDelete: () -> Unit,
     isSelected: Boolean,
     isSelectionMode: Boolean,
+    isGoogleSignedIn: Boolean = false,
     hasPendingAssemblies: Boolean = false,
     isHighlighted: Boolean = false,
     modifier: Modifier = Modifier,
@@ -215,6 +216,7 @@ fun FileItem(
                         if (isEbook) {
                             DropdownMenuItem(
                                 text = { Text("Send to Calibre") },
+                                enabled = isGoogleSignedIn,
                                 onClick = {
                                     showMenu = false
                                     onSendToCalibre(file)
@@ -223,6 +225,7 @@ fun FileItem(
                             if (hasPendingAssemblies) {
                                 DropdownMenuItem(
                                     text = { Text("Assemble into book") },
+                                    enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onAssembleToCalibre(file, false)
@@ -233,6 +236,7 @@ fun FileItem(
                         if (isImage) {
                             DropdownMenuItem(
                                 text = { Text("Replace book cover") },
+                                enabled = isGoogleSignedIn,
                                 onClick = {
                                     showMenu = false
                                     onReplaceCover(file)
@@ -242,6 +246,7 @@ fun FileItem(
                         if (isMultiTrackAudio) {
                             DropdownMenuItem(
                                 text = { Text("Send to Calibre as M4B") },
+                                enabled = isGoogleSignedIn,
                                 onClick = {
                                     showMenu = false
                                     onSendAsAudiobookPack(file)
@@ -250,6 +255,7 @@ fun FileItem(
                             if (hasPendingAssemblies) {
                                 DropdownMenuItem(
                                     text = { Text("Assemble into M4B") },
+                                    enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onAssembleToCalibre(file, true)

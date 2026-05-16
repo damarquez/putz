@@ -44,8 +44,23 @@ class LocalFilesRepository @Inject constructor(
 
     fun listLocalFolder(uriString: String): Flow<List<PutioFile>> = flow {
         val rootUri = Uri.parse(uriString)
-        val documentId = DocumentsContract.getTreeDocumentId(rootUri)
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, documentId)
+        
+        val treeId = try { DocumentsContract.getTreeDocumentId(rootUri) } catch (e: Exception) { null }
+        if (treeId == null) {
+            android.util.Log.e("LocalFilesRepository", "Not a tree URI: $uriString")
+            emit(emptyList())
+            return@flow
+        }
+
+        val treeUri = DocumentsContract.buildTreeDocumentUri(rootUri.authority, treeId)
+        val parentDocId = if (DocumentsContract.isDocumentUri(context, rootUri)) {
+            DocumentsContract.getDocumentId(rootUri)
+        } else {
+            treeId
+        }
+
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+        android.util.Log.d("LocalFilesRepository", "Listing children. Tree: $treeId, Parent: $parentDocId")
         
         val hiddenUris = hiddenDao.getAllUris().toSet()
         val results = mutableListOf<PutioFile>()
@@ -72,7 +87,7 @@ class LocalFilesRepository @Inject constructor(
                 val mime = cursor.getString(mimeIdx)
                 val size = cursor.getLong(sizeIdx)
                 
-                val docUri = DocumentsContract.buildDocumentUriUsingTree(rootUri, docId)
+                val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
                 if (docUri.toString() in hiddenUris) continue
 
                 val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR

@@ -81,6 +81,8 @@ fun CalibreTransfersScreen(
     val scope = rememberCoroutineScope()
     val transfers by viewModel.transfers.collectAsState()
     val daemonStatus by viewModel.daemonStatus.collectAsState()
+    val googleAccount by syncViewModel.googleAccount.collectAsState()
+    val isGoogleSignedIn = googleAccount.isNotBlank()
     val isSyncing by viewModel.isSyncing.collectAsState(initial = false)
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -311,14 +313,15 @@ fun CalibreTransfersScreen(
                             } else {
                                 scope.launch { snackbarHostState.showSnackbar("Clipboard is empty") }
                             }
-                        }
+                        },
+                        enabled = isGoogleSignedIn
                     ) {
                         Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
                     }
 
                     IconButton(
                         onClick = { viewModel.syncMetadata() },
-                        enabled = !isSyncing
+                        enabled = !isSyncing && isGoogleSignedIn
                     ) {
                         BadgedBox(
                             badge = {

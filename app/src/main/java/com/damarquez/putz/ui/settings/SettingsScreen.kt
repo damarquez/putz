@@ -1,48 +1,51 @@
 package com.damarquez.putz.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.ui.theme.AppCategory
 import com.damarquez.putz.ui.theme.AppMode
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.Alignment
-
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import com.google.api.services.drive.DriveScopes
-
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,12 +60,37 @@ fun SettingsScreen(
     val googleWebClientId by viewModel.googleWebClientId.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showGoogleSignOutConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.onSnackbarShown()
         }
+    }
+
+    if (showGoogleSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showGoogleSignOutConfirm = false },
+            title = { Text("Sign out of Google") },
+            text = { Text("Calibre integration features will be disabled until you sign in again. Are you sure?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showGoogleSignOutConfirm = false
+                        viewModel.setGoogleAccount("")
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Sign out")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGoogleSignOutConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     val gso = remember(googleWebClientId) {
@@ -75,16 +103,16 @@ fun SettingsScreen(
         }
         builder.build()
     }
-    
+
     val googleSignInLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
+        contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        runCatching {
+        try {
             val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
             account?.email?.let { viewModel.setGoogleAccount(it) }
-        }.onFailure { e ->
-            viewModel.showErrorMessage("Sign-in failed: ${e.message}")
+        } catch (e: Exception) {
+            viewModel.showErrorMessage("Google Sign-In failed: ${e.message}")
         }
     }
 
@@ -96,7 +124,7 @@ fun SettingsScreen(
                     IconButton(onClick = onNavigateUp) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
+                }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -106,48 +134,47 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
         ) {
-            SettingsSectionHeader("Display Mode")
-
-            AppMode.entries.forEach { mode ->
-                RadioRow(
-                    label = mode.name.lowercase().replaceFirstChar { it.uppercase() },
-                    selected = appMode == mode,
-                    onClick = { viewModel.setAppMode(mode) },
-                )
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            SettingsSectionHeader("Display Category")
-
+            SettingsSectionHeader("Appearance Type")
             RadioRow(
                 label = "Normal",
-                description = "Standard Material3 theme",
+                description = "Standard colors and animations",
                 selected = appCategory == AppCategory.NORMAL,
-                onClick = { viewModel.setAppCategory(AppCategory.NORMAL) },
+                onClick = { viewModel.setAppCategory(AppCategory.NORMAL) }
             )
             RadioRow(
                 label = "E-Ink",
-                description = "High contrast, no animations (for e-paper displays)",
+                description = "High contrast, no animations",
                 selected = appCategory == AppCategory.EINK,
-                onClick = { viewModel.setAppCategory(AppCategory.EINK) },
+                onClick = { viewModel.setAppCategory(AppCategory.EINK) }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            SettingsSectionHeader("Calibre Integration")
+            SettingsSectionHeader("Theme Mode")
+            RadioRow(
+                label = "Light",
+                selected = appMode == AppMode.LIGHT,
+                onClick = { viewModel.setAppMode(AppMode.LIGHT) }
+            )
+            RadioRow(
+                label = "Dark",
+                selected = appMode == AppMode.DARK,
+                onClick = { viewModel.setAppMode(AppMode.DARK) }
+            )
+            RadioRow(
+                label = "System",
+                selected = appMode == AppMode.SYSTEM,
+                onClick = { viewModel.setAppMode(AppMode.SYSTEM) }
+            )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onNavigateToCalibreTransfers)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "View Calibre Transfers", style = MaterialTheme.typography.bodyLarge)
-            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            ButtonRow(
+                label = "Manage Calibre Transfers",
+                onClick = onNavigateToCalibreTransfers
+            )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
@@ -182,7 +209,7 @@ fun SettingsScreen(
                 )
                 ButtonRow(
                     label = "Sign out",
-                    onClick = { viewModel.setGoogleAccount("") },
+                    onClick = { showGoogleSignOutConfirm = true },
                     isError = true
                 )
             }

@@ -23,6 +23,9 @@ class GlobalSyncViewModel @Inject constructor(
     val libraryHasUpdates: StateFlow<Boolean> = settingsRepository.libraryHasUpdatesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val googleAccount: StateFlow<String> = settingsRepository.googleTokenFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
     init {
         startPolling()
     }

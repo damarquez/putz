@@ -76,6 +76,9 @@ class FilesViewModel @Inject constructor(
     private val _accountInfo = MutableStateFlow<AccountInfo?>(null)
     val accountInfo: StateFlow<AccountInfo?> = _accountInfo.asStateFlow()
 
+    val googleAccount: StateFlow<String> = settingsRepository.googleTokenFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
     val pendingAssemblies: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
         .map { transfers -> 
             transfers.filter { it.status == CalibreTransferStatus.ASSEMBLED }

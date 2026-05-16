@@ -205,16 +205,19 @@ class CalibreTransfersViewModel @Inject constructor(
                     _snackbarMessage.value = "Refreshing Calibre metadata..."
                     calibreRepository.sendGlobalStatusProbe(account)
                     val dbFile = File(context.filesDir, "metadata.db")
-                    val success = calibreRepository.syncMetadataDb(account, dbFile)
+                    val result = calibreRepository.syncMetadataDb(account, dbFile)
                     calibreRepository.pollHeartbeat(account)
-                    _snackbarMessage.value = if (success) {
-                        "Calibre metadata refreshed"
-                    } else {
-                        "Could not refresh Calibre metadata"
+                    
+                    _snackbarMessage.value = when (result) {
+                        is NetworkResult.Success -> "Calibre metadata refreshed"
+                        is NetworkResult.Error -> "Sync failed: ${result.message}"
+                        else -> "Could not refresh Calibre metadata"
                     }
                 } finally {
                     _isSyncing.value = false
                 }
+            } else {
+                _snackbarMessage.value = "No Google account configured"
             }
         }
     }

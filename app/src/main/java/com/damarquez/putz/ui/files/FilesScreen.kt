@@ -104,6 +104,8 @@ fun FilesScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val accountInfo by viewModel.accountInfo.collectAsState()
+    val googleAccount by viewModel.googleAccount.collectAsState()
+    val isGoogleSignedIn = googleAccount.isNotBlank()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -130,11 +132,12 @@ fun FilesScreen(
     val isSelectionMode = selectedFiles.isNotEmpty()
     var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var currentHighlightId by remember { mutableStateOf(viewModel.highlightFileId) }
-    
+
     val searchFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isSearchMode) {
@@ -151,11 +154,60 @@ fun FilesScreen(
         }
     }
 
+    if (showSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSignOutConfirm = false },
+            title = { Text("Sign out") },
+            text = { Text("Are you sure you want to sign out of Putz?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSignOutConfirm = false
+                        viewModel.signOut()
+                        onSignOut()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Sign out")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.onSnackbarShown()
         }
+    }
+
+    if (fileToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text(if (fileToDelete!!.isLocal) "Detach from Putz" else "Delete from put.io") },
+            text = { Text("Are you sure you want to ${if (fileToDelete!!.isLocal) "detach" else "delete"} \"${fileToDelete!!.name}\"?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteFiles(listOf(fileToDelete!!))
+                        fileToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(if (fileToDelete!!.isLocal) "Detach" else "Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     LaunchedEffect(Unit) {
@@ -531,8 +583,7 @@ fun FilesScreen(
                                     text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
                                     onClick = {
                                         showMenu = false
-                                        viewModel.signOut()
-                                        onSignOut()
+                                        showSignOutConfirm = true
                                     },
                                 )
                             }
@@ -658,6 +709,7 @@ fun FilesScreen(
                                         onDelete = { fileToDelete = file },
                                         isSelected = file in selectedFiles,
                                         isSelectionMode = isSelectionMode,
+                                        isGoogleSignedIn = isGoogleSignedIn,
                                         isHighlighted = file.id == currentHighlightId,
                                         hasPendingAssemblies = pendingAssemblies.isNotEmpty(),
                                     )

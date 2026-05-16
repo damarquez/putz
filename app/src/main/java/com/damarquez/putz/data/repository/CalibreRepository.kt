@@ -302,9 +302,9 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    suspend fun syncMetadataDb(googleAccount: String, destination: File): Boolean {
-        val success = gDriveManager.downloadMetadataDb(googleAccount, destination)
-        if (success) {
+    suspend fun syncMetadataDb(googleAccount: String, destination: File): NetworkResult<Unit> {
+        val result = gDriveManager.downloadMetadataDb(googleAccount, destination)
+        if (result is NetworkResult.Success) {
             // Update the baseline timestamp after a manual or automatic sync
             gDriveManager.getFileMetadata(googleAccount, "assets.db")?.let { metadata ->
                 val timestamp = metadata.second
@@ -312,7 +312,7 @@ class CalibreRepository @Inject constructor(
                 settingsRepository.saveLibraryHasUpdates(false)
             }
         }
-        return success
+        return result
     }
 
     suspend fun pollLibraryUpdates(googleAccount: String) {
