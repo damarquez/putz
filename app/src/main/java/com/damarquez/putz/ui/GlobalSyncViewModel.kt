@@ -45,11 +45,22 @@ class GlobalSyncViewModel @Inject constructor(
 
                     val now = System.currentTimeMillis()
                     val activeProgressKeys = calibreRepository.uploadProgress.value.keys
+                    val progressTimestamps = calibreRepository.uploadProgressTimestamp.value
                     calibreRepository.getTransfers().first().forEach { transfer ->
-                        val isOrphanedUpload = transfer.status == CalibreTransferStatus.UPLOADING &&
-                                transfer.putioFileId !in activeProgressKeys &&
-                                now - transfer.lastUpdatedAt > 60_000
-                        if (isOrphanedUpload) {
+                        val progressTs = progressTimestamps[transfer.putioFileId]
+                        // Restart UPLOADING if: no progress key and idle >60s (original orphan case)
+                        // OR: progress key present but not updated in >4 min (stuck in retry loop)
+                        val isOrphanedUpload = transfer.status == CalibreTransferStatus.UPLOADING && (
+                            (transfer.putioFileId !in activeProgressKeys && now - transfer.lastUpdatedAt > 60_000) ||
+                            (progressTs != null && now - progressTs > 4 * 60_000)
+                        )
+                        // Also restart FAILED transfers that still have local URIs — these were
+                        // pack uploads that exhausted all retries but can be retried from scratch.
+                        val isRetryableFailed = transfer.status == CalibreTransferStatus.FAILED &&
+                            !transfer.localUrisJson.isNullOrBlank() &&
+                            transfer.putioFileId !in activeProgressKeys &&
+                            now - transfer.lastUpdatedAt > 5 * 60_000
+                        if (isOrphanedUpload || isRetryableFailed) {
                             launch { calibreRepository.restartOrphanedUpload(transfer) }
                         }
                     }

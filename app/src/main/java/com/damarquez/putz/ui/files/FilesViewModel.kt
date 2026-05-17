@@ -295,6 +295,7 @@ class FilesViewModel @Inject constructor(
         progressKey: Long = file.id,
         fileIndex: Int = 1,
         totalFiles: Int = 1,
+        clearProgressOnSuccess: Boolean = true,
     ): Long? {
         if (!file.isLocal || file.localUri == null) {
             android.util.Log.d("FilesViewModel", "File ${file.name} is not local or missing URI, skipping upload.")
@@ -370,7 +371,7 @@ class FilesViewModel @Inject constructor(
             val errorCode = (uploadResult as? NetworkResult.Error)?.code
             when {
                 uploadResult is NetworkResult.Success -> {
-                    calibreRepository.updateUploadProgress(progressKey, null)
+                    if (clearProgressOnSuccess) calibreRepository.updateUploadProgress(progressKey, null)
                     return uploadResult.data.id
                 }
                 attempt < maxAttempts && (errorCode in retryableCodes || errorCode == null) -> {
@@ -540,18 +541,31 @@ class FilesViewModel @Inject constructor(
                 android.util.Log.d("FilesViewModel", "Starting pack upload for ${files.size} files")
                 for ((index, file) in files.withIndex()) {
                     android.util.Log.d("FilesViewModel", "Processing file ${index + 1}/${files.size}: ${file.name}")
-                    val id = uploadLocalFileIfNecessary(file, putioToken, progressKey = tempId, fileIndex = index + 1, totalFiles = files.size)
+                    // clearProgressOnSuccess=false keeps the key in the map between files so the
+                    // orphan detector doesn't mistake the inter-file gap for a dead upload.
+                    val id = uploadLocalFileIfNecessary(
+                        file, putioToken,
+                        progressKey = tempId,
+                        fileIndex = index + 1,
+                        totalFiles = files.size,
+                        clearProgressOnSuccess = false,
+                    )
                     if (id != null) {
                         val url = filesRepository.getDownloadUrl(putioToken, id)
                         uploadedFiles.add(Triple(id, url, file.name))
                         android.util.Log.d("FilesViewModel", "Upload successful for ${file.name}, ID: $id")
                     } else {
                         android.util.Log.e("FilesViewModel", "Upload failed for ${file.name}")
-                        calibreRepository.removeTransfer(tempId)
+                        // Clear progress and leave the transfer visible as FAILED so the user
+                        // knows what happened and the orphan detector can restart it.
+                        calibreRepository.updateUploadProgress(tempId, null)
+                        calibreRepository.markPackUploadFailed(tempId, "Upload failed for ${file.name}")
                         _snackbarMessage.value = "Upload failed for ${file.name}"
                         return@launch
                     }
                 }
+                // All files uploaded — clear the progress key before finishing.
+                calibreRepository.updateUploadProgress(tempId, null)
                 android.util.Log.d("FilesViewModel", "All ${files.size} files uploaded successfully")
 
                 if (assembleBook) {

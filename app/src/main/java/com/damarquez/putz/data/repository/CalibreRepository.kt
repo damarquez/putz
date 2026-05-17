@@ -91,11 +91,20 @@ class CalibreRepository @Inject constructor(
     private val _uploadProgress = MutableStateFlow<Map<Long, String>>(emptyMap())
     val uploadProgress = _uploadProgress.asStateFlow()
 
+    // Tracks the last time updateUploadProgress was called with a non-null value.
+    // Used by the orphan detector to catch uploads stuck in a retry loop (where the
+    // progress key IS present but no bytes have flowed for several minutes).
+    private val _uploadProgressTimestamp = MutableStateFlow<Map<Long, Long>>(emptyMap())
+    val uploadProgressTimestamp = _uploadProgressTimestamp.asStateFlow()
+
     fun updateUploadProgress(transferId: Long, text: String?) {
-        _uploadProgress.value = if (text == null)
-            _uploadProgress.value - transferId
-        else
-            _uploadProgress.value + (transferId to text)
+        if (text == null) {
+            _uploadProgress.value = _uploadProgress.value - transferId
+            _uploadProgressTimestamp.value = _uploadProgressTimestamp.value - transferId
+        } else {
+            _uploadProgress.value = _uploadProgress.value + (transferId to text)
+            _uploadProgressTimestamp.value = _uploadProgressTimestamp.value + (transferId to System.currentTimeMillis())
+        }
     }
 
     private val json = Json { 
@@ -809,6 +818,15 @@ class CalibreRepository @Inject constructor(
 
     suspend fun removeTransfer(fileId: Long) {
         calibreTransferDao.deleteTransfer(fileId)
+    }
+
+    suspend fun markPackUploadFailed(fileId: Long, errorMessage: String) {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return
+        calibreTransferDao.updateTransfer(transfer.copy(
+            status = CalibreTransferStatus.FAILED,
+            errorMessage = errorMessage,
+            lastUpdatedAt = System.currentTimeMillis(),
+        ))
     }
 
     suspend fun deleteFileFromPutio(token: String, fileId: Long): NetworkResult<Unit> {
