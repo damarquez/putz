@@ -620,12 +620,19 @@ class CalibreRepository @Inject constructor(
             }
         }
 
+        val originalRequest = transfer.lastRequestPayload?.let {
+            try { json.decodeFromString<CalibreBatchRequest>(it) } catch (e: Exception) { null }
+        }
+
         val request = CalibreBatchRequest(
+            action = originalRequest?.action ?: "ADD_BOOK_BATCH",
             putio_file_id = transfer.putioFileId,
             title = transfer.title,
             author = transfer.author,
             items = items,
-            is_probe = true
+            is_probe = true,
+            calibre_book_id = originalRequest?.calibre_book_id,
+            calibre_book_uuid = transfer.calibreBookUuid
         )
 
         val jsonStr = json.encodeToString(request)
@@ -639,22 +646,63 @@ class CalibreRepository @Inject constructor(
         return false
     }
 
-    suspend fun retryTransfer(fileId: Long, googleAccount: String): Boolean {
-        val transfer = calibreTransferDao.getTransferById(fileId) ?: return false
-        val payload = transfer.lastRequestPayload ?: return false
+    suspend fun retryTransfer(fileId: Long, googleAccount: String): NetworkResult<Unit> {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return NetworkResult.Error("Transfer not found")
+        
+        val payload = transfer.lastRequestPayload ?: run {
+            // Reconstruct if missing (for legacy transfers created before lastRequestPayload was added)
+            val items = try {
+                if (!transfer.batchData.isNullOrBlank()) {
+                    json.decodeFromString<List<CalibreBatchItem>>(transfer.batchData)
+                } else {
+                    // Fallback for very old single-file transfers
+                    listOf(CalibreBatchItem(
+                        type = if (MetadataUtils.isArchive(transfer.fileName)) "ARCHIVE" else "SINGLE",
+                        putio_file_id = transfer.putioFileId,
+                        fileName = transfer.fileName,
+                        download_url = null // Note: retry might fail if daemon hasn't downloaded it yet and URL is null
+                    ))
+                }
+            } catch (e: Exception) {
+                return NetworkResult.Error("Could not reconstruct request: ${e.message}")
+            }
 
+            val action = when {
+                transfer.fileName.startsWith("Update comments for") -> "UPDATE_COMMENTS"
+                transfer.title.startsWith("Cover for") -> "REPLACE_COVER"
+                else -> "ADD_BOOK_BATCH"
+            }
+
+            if (action == "UPDATE_COMMENTS" && transfer.lastRequestPayload == null) {
+                return NetworkResult.Error("Original comment data was not saved and cannot be reconstructed")
+            }
+
+            val request = CalibreBatchRequest(
+                action = action,
+                putio_file_id = transfer.putioFileId,
+                title = transfer.title,
+                author = transfer.author,
+                items = items,
+                calibre_book_uuid = transfer.calibreBookUuid
+            )
+            json.encodeToString(request)
+        }
+
+        android.util.Log.d("CalibreRepository", "Retrying transfer $fileId for $googleAccount")
         val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_${transfer.putioFileId}.json", payload)
+        
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.REQUESTED,
                 gdriveRequestId = gDriveId,
                 lastUpdatedAt = System.currentTimeMillis(),
                 retryCount = transfer.retryCount + 1,
-                errorMessage = null
+                errorMessage = null,
+                lastRequestPayload = payload
             ))
-            return true
+            return NetworkResult.Success(Unit)
         }
-        return false
+        return NetworkResult.Error("Could not upload request to Google Drive")
     }
 
     suspend fun getTransfer(fileId: Long): CalibreTransferEntity? {

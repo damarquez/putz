@@ -191,7 +191,13 @@ class CalibreTransfersViewModel @Inject constructor(
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isNotBlank()) {
-                calibreRepository.retryTransfer(fileId, account)
+                _snackbarMessage.value = "Retrying transfer..."
+                val result = calibreRepository.retryTransfer(fileId, account)
+                _snackbarMessage.value = when (result) {
+                    is NetworkResult.Success -> "Request resent successfully"
+                    is NetworkResult.Error -> "Retry failed: ${result.message}"
+                    else -> "Could not resend request"
+                }
             }
         }
     }
