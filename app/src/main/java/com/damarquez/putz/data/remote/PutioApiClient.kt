@@ -366,22 +366,32 @@ class PutioApiClient @Inject constructor(
         parentId: Long,
         name: String,
         uri: android.net.Uri,
-        contentResolver: android.content.ContentResolver
+        contentResolver: android.content.ContentResolver,
+        onProgress: ((bytesWritten: Long, totalBytes: Long) -> Unit)? = null,
     ): NetworkResult<PutioFile> {
         return try {
+            android.util.Log.d("PutioApiClient", "Starting upload of $name to parent $parentId")
             val mediaType = (contentResolver.getType(uri) ?: "application/octet-stream").toMediaTypeOrNull()
-            
-            // Get accurate file size from SAF
+
             val fileSize = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            android.util.Log.d("PutioApiClient", "File size for $name: $fileSize bytes")
 
             val fileBody = object : okhttp3.RequestBody() {
                 override fun contentType() = mediaType
                 override fun contentLength() = fileSize
                 override fun writeTo(sink: okio.BufferedSink) {
                     contentResolver.openInputStream(uri)?.use { inputStream ->
-                        inputStream.source().use { source ->
-                            sink.writeAll(source)
+                        val source = inputStream.source()
+                        val buf = okio.Buffer()
+                        var totalWritten = 0L
+                        while (true) {
+                            val read = source.read(buf, 8192L)
+                            if (read == -1L) break
+                            sink.write(buf, read)
+                            totalWritten += read
+                            onProgress?.invoke(totalWritten, fileSize)
                         }
+                        android.util.Log.d("PutioApiClient", "Finished writing $name. Bytes: $totalWritten")
                     } ?: throw java.io.IOException("Failed to open input stream for $uri")
                 }
             }
@@ -399,9 +409,12 @@ class PutioApiClient @Inject constructor(
                 .post(multipartBody)
                 .build()
 
+            android.util.Log.d("PutioApiClient", "Executing upload call for $name...")
             okHttpClient.newCall(request).execute().use { response ->
+                android.util.Log.d("PutioApiClient", "Upload response for $name: ${response.code}")
                 val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
                 if (!response.isSuccessful) {
+                    android.util.Log.e("PutioApiClient", "Upload failed for $name: $bodyStr")
                     val parsed = runCatching { json.decodeFromString<FileResponse>(bodyStr) }.getOrNull()
                     return NetworkResult.Error(
                         parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
@@ -413,9 +426,11 @@ class PutioApiClient @Inject constructor(
                     return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
                 }
                 val file = parsed.file ?: return NetworkResult.Error("Missing file info")
+                android.util.Log.d("PutioApiClient", "Upload successful for $name, ID: ${file.id}")
                 NetworkResult.Success(file)
             }
         } catch (e: Exception) {
+            android.util.Log.e("PutioApiClient", "Upload exception for $name", e)
             NetworkResult.Error(e.message ?: "Unknown error")
         }
     }

@@ -81,6 +81,7 @@ fun CalibreTransfersScreen(
     val scope = rememberCoroutineScope()
     val transfers by viewModel.transfers.collectAsState()
     val daemonStatus by viewModel.daemonStatus.collectAsState()
+    val uploadProgress by viewModel.uploadProgress.collectAsState()
     val googleAccount by syncViewModel.googleAccount.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val isSyncing by viewModel.isSyncing.collectAsState(initial = false)
@@ -414,7 +415,8 @@ fun CalibreTransfersScreen(
                                 },
                                 onRetry = {
                                     viewModel.retryTransfer(transfer.putioFileId)
-                                }
+                                },
+                                uploadProgress = uploadProgress[transfer.putioFileId],
                             )
                         }
                     }
@@ -443,7 +445,8 @@ fun CalibreTransfersScreen(
                                 },
                                 onRetry = {
                                     viewModel.retryTransfer(transfer.putioFileId)
-                                }
+                                },
+                                uploadProgress = uploadProgress[transfer.putioFileId],
                             )
                         }
                     }

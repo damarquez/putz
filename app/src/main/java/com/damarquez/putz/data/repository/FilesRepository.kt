@@ -71,10 +71,11 @@ class FilesRepository @Inject constructor(
         parentId: Long,
         name: String,
         uri: android.net.Uri,
-        contentResolver: android.content.ContentResolver
+        contentResolver: android.content.ContentResolver,
+        onProgress: ((Long, Long) -> Unit)? = null,
     ): NetworkResult<PutioFile> =
         withContext(Dispatchers.IO) {
-            apiClient.uploadFile(token, parentId, name, uri, contentResolver)
+            apiClient.uploadFile(token, parentId, name, uri, contentResolver, onProgress)
         }
 
     suspend fun downloadToFile(url: String, targetFile: File): NetworkResult<Unit> =

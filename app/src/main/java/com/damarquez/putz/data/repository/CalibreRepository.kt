@@ -86,6 +86,16 @@ class CalibreRepository @Inject constructor(
     private val _daemonStatus = MutableStateFlow<String?>(null)
     val daemonStatus = _daemonStatus.asStateFlow()
 
+    private val _uploadProgress = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val uploadProgress = _uploadProgress.asStateFlow()
+
+    fun updateUploadProgress(transferId: Long, text: String?) {
+        _uploadProgress.value = if (text == null)
+            _uploadProgress.value - transferId
+        else
+            _uploadProgress.value + (transferId to text)
+    }
+
     private val json = Json { 
         explicitNulls = false
         ignoreUnknownKeys = true
@@ -149,12 +159,13 @@ class CalibreRepository @Inject constructor(
         title: String,
         author: String,
         googleAccount: String,
-        downloadUrl: String,
+        downloadUrl: String?,
         archiveMode: String? = null,
         isTempUpload: Boolean = false,
         sourceLocalUri: String? = null,
         assembleBook: Boolean = false,
         calibreBookUuid: String? = null,
+        isUploading: Boolean = false,
     ) {
         val initialItem = CalibreBatchItem(
             type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
@@ -168,7 +179,11 @@ class CalibreRepository @Inject constructor(
             fileName = fileName,
             title = title,
             author = author,
-            status = if (assembleBook) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
+            status = when {
+                assembleBook -> CalibreTransferStatus.ASSEMBLED
+                isUploading -> CalibreTransferStatus.UPLOADING
+                else -> CalibreTransferStatus.PENDING
+            },
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = putioFileId.toString(),
@@ -179,7 +194,7 @@ class CalibreRepository @Inject constructor(
         )
         calibreTransferDao.insertTransfer(transfer)
 
-        if (assembleBook) return
+        if (assembleBook || isUploading || downloadUrl == null) return
 
         // Immediately try to upload request
         val request = CalibreBatchRequest(
@@ -209,14 +224,49 @@ class CalibreRepository @Inject constructor(
         }
     }
 
+    suspend fun updateTransferAfterUpload(fileId: Long, newPutioFileId: Long, downloadUrl: String, googleAccount: String) {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return
+        
+        // Update batch data with new ID and URL
+        val items = transfer.batchData?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
+        } ?: emptyList()
+        
+        val updatedItems = items.map { it.copy(putio_file_id = newPutioFileId, download_url = downloadUrl) }
+        val updatedBatchData = json.encodeToString(updatedItems)
+
+        val request = CalibreBatchRequest(
+            putio_file_id = newPutioFileId,
+            title = transfer.title,
+            author = transfer.author,
+            items = updatedItems,
+            calibre_book_uuid = transfer.calibreBookUuid
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$newPutioFileId.json", jsonStr)
+
+        calibreTransferDao.deleteTransfer(fileId) // Remove temp placeholder
+        calibreTransferDao.insertTransfer(transfer.copy(
+            putioFileId = newPutioFileId,
+            allPutioFileIds = newPutioFileId.toString(),
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            lastUpdatedAt = System.currentTimeMillis(),
+            lastRequestPayload = jsonStr,
+            batchData = updatedBatchData
+        ))
+    }
+
     suspend fun addAudiobookPackTransfer(
-        files: List<Pair<PutioFile, String>>,
+        files: List<Pair<PutioFile, String?>>,
         title: String,
         author: String,
         googleAccount: String,
         assembleBook: Boolean = false,
         customFileName: String? = null,
         calibreBookUuid: String? = null,
+        isUploading: Boolean = false,
     ) {
         val primaryFileId = files.first().first.id
         val audioFiles = files.map { (file, url) ->
@@ -234,7 +284,11 @@ class CalibreRepository @Inject constructor(
             fileName = fileName,
             title = title,
             author = author,
-            status = if (assembleBook) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
+            status = when {
+                assembleBook -> CalibreTransferStatus.ASSEMBLED
+                isUploading -> CalibreTransferStatus.UPLOADING
+                else -> CalibreTransferStatus.PENDING
+            },
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = files.joinToString(",") { (file, _) -> file.id.toString() },
@@ -243,7 +297,7 @@ class CalibreRepository @Inject constructor(
         )
         calibreTransferDao.insertTransfer(transfer)
 
-        if (assembleBook) return
+        if (assembleBook || isUploading || files.any { it.second == null }) return
 
         val request = CalibreBatchRequest(
             putio_file_id = primaryFileId,
@@ -270,6 +324,44 @@ class CalibreRepository @Inject constructor(
                 lastRequestPayload = jsonStr
             ))
         }
+    }
+
+    suspend fun updateAudiobookAfterUpload(tempId: Long, files: List<Triple<Long, String, String>>, googleAccount: String) {
+        val transfer = calibreTransferDao.getTransferById(tempId) ?: return
+
+        val newPrimaryId = files.first().first
+        val audioFiles = files.map { (id, url, name) ->
+            AudiobookFile(id, name, url)
+        }
+        
+        val items = listOf(CalibreBatchItem(
+            type = "PACK",
+            putio_file_id = newPrimaryId,
+            fileName = transfer.fileName,
+            files = audioFiles
+        ))
+
+        val request = CalibreBatchRequest(
+            putio_file_id = newPrimaryId,
+            title = transfer.title,
+            author = transfer.author,
+            items = items,
+            calibre_book_uuid = transfer.calibreBookUuid
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$newPrimaryId.json", jsonStr)
+
+        calibreTransferDao.deleteTransfer(tempId)
+        calibreTransferDao.insertTransfer(transfer.copy(
+            putioFileId = newPrimaryId,
+            allPutioFileIds = files.joinToString(",") { it.first.toString() },
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            lastUpdatedAt = System.currentTimeMillis(),
+            lastRequestPayload = jsonStr,
+            batchData = json.encodeToString(items)
+        ))
     }
 
     suspend fun appendToAssembly(

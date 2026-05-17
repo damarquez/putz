@@ -39,6 +39,7 @@ fun CalibreTransferItem(
     onProbe: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    uploadProgress: String? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
@@ -137,7 +138,7 @@ fun CalibreTransferItem(
             }
 
             val isAssembled = transfer.status == CalibreTransferStatus.ASSEMBLED
-            StatusBadge(status = transfer.status)
+            StatusBadge(status = transfer.status, uploadProgress = uploadProgress)
 
             if (isAssembled) {
                 IconButton(onClick = onRetry) {
@@ -181,8 +182,9 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null) {
     val (icon, color, label) = when (status) {
+        CalibreTransferStatus.UPLOADING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
         CalibreTransferStatus.ASSEMBLED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.secondary, "Assembled")
         CalibreTransferStatus.PENDING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.outline, "Pending")
         CalibreTransferStatus.REQUESTED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.primary, "Requested")

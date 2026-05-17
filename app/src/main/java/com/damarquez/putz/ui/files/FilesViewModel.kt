@@ -22,8 +22,12 @@ import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -285,15 +289,29 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    private suspend fun uploadLocalFileIfNecessary(file: PutioFile, putioToken: String): Long? {
-        if (!file.isLocal || file.localUri == null) return file.id
+    private suspend fun uploadLocalFileIfNecessary(
+        file: PutioFile,
+        putioToken: String,
+        progressKey: Long = file.id,
+        fileIndex: Int = 1,
+        totalFiles: Int = 1,
+    ): Long? {
+        if (!file.isLocal || file.localUri == null) {
+            android.util.Log.d("FilesViewModel", "File ${file.name} is not local or missing URI, skipping upload.")
+            return file.id
+        }
 
-        _snackbarMessage.value = "Uploading \"${file.name}\" to put.io..."
-        
+        val uri = android.net.Uri.parse(file.localUri)
+
+        // Get local file size so we can compare against what's already on put.io
+        val localSize = withContext(Dispatchers.IO) {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        }
+
         // 1. Find or create .putz_attachments
         val rootFiles = filesRepository.listFiles(putioToken, 0).dataOrNull()?.first ?: emptyList()
         var tempFolderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
-        
+
         if (tempFolderId == null) {
             val createResult = filesRepository.createFolder(putioToken, 0, ".putz_attachments")
             if (createResult is NetworkResult.Success) {
@@ -304,21 +322,73 @@ class FilesViewModel @Inject constructor(
             }
         }
 
-        // 2. Upload the file
-        val uploadResult = filesRepository.uploadFile(
-            putioToken, 
-            tempFolderId!!, 
-            file.name, 
-            android.net.Uri.parse(file.localUri), 
-            context.contentResolver
-        )
-
-        return if (uploadResult is NetworkResult.Success) {
-            uploadResult.data.id
-        } else {
-            _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
-            null
+        // 2. Check if a file with the same name and size already exists — skip upload if so
+        if (localSize > 0) {
+            val folderContents = filesRepository.listFiles(putioToken, tempFolderId!!).dataOrNull()?.first ?: emptyList()
+            val existing = folderContents.find { it.name == file.name && it.size == localSize }
+            if (existing != null) {
+                android.util.Log.d("FilesViewModel", "Skipping upload for ${file.name}: already on put.io (ID ${existing.id}, size $localSize)")
+                _snackbarMessage.value = "\"${file.name}\" already uploaded, reusing…"
+                return existing.id
+            }
         }
+
+        android.util.Log.d("FilesViewModel", "uploadLocalFileIfNecessary for ${file.name}")
+        _snackbarMessage.value = "Uploading \"${file.name}\" to put.io..."
+
+        // 3. Upload with exponential-backoff retry for rate limits, server errors, and hangs
+        val retryableCodes = setOf(429, 500, 502, 503, 504)
+        val maxAttempts = 5
+        val uploadTimeoutMs = 3 * 60 * 1000L
+        var delayMs = 5_000L
+        var lastProgressMs = 0L
+        for (attempt in 1..maxAttempts) {
+            val uploadResult = try {
+                withTimeout(uploadTimeoutMs) {
+                    filesRepository.uploadFile(
+                        putioToken,
+                        tempFolderId!!,
+                        file.name,
+                        uri,
+                        context.contentResolver,
+                    ) { bytesWritten, totalBytes ->
+                        val now = System.currentTimeMillis()
+                        if (now - lastProgressMs >= 500L || bytesWritten == totalBytes) {
+                            lastProgressMs = now
+                            val pct = if (totalBytes > 0) (bytesWritten * 100 / totalBytes).toInt() else 0
+                            calibreRepository.updateUploadProgress(progressKey, "$fileIndex/$totalFiles · $pct%")
+                        }
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                android.util.Log.w("FilesViewModel", "Upload attempt $attempt timed out for ${file.name}")
+                NetworkResult.Error("Upload timed out", null)
+            } catch (e: Exception) {
+                android.util.Log.w("FilesViewModel", "Upload attempt $attempt threw for ${file.name}: ${e.message}")
+                NetworkResult.Error(e.message ?: "Unknown error", null)
+            }
+            val errorCode = (uploadResult as? NetworkResult.Error)?.code
+            when {
+                uploadResult is NetworkResult.Success -> {
+                    calibreRepository.updateUploadProgress(progressKey, null)
+                    return uploadResult.data.id
+                }
+                attempt < maxAttempts && (errorCode in retryableCodes || errorCode == null) -> {
+                    val reason = if (errorCode == null) "timed out" else "throttled ($errorCode)"
+                    android.util.Log.w("FilesViewModel", "Upload $reason, attempt $attempt/$maxAttempts for ${file.name}, retrying in ${delayMs}ms")
+                    _snackbarMessage.value = "Upload $reason, retrying \"${file.name}\" ($attempt/${maxAttempts - 1})…"
+                    delay(delayMs)
+                    delayMs = minOf(delayMs * 2, 60_000L)
+                }
+                else -> {
+                    calibreRepository.updateUploadProgress(progressKey, null)
+                    _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
+                    return null
+                }
+            }
+        }
+        calibreRepository.updateUploadProgress(progressKey, null)
+        return null
     }
 
     fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null) {
@@ -330,47 +400,200 @@ class FilesViewModel @Inject constructor(
             }
 
             val putioToken = settingsRepository.authTokenFlow.first()
-            var targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
-            var targetFileName = file.name
+            
+            if (file.isLocal) {
+                // For local files, create a placeholder transfer in UPLOADING state
+                calibreRepository.addTransfer(
+                    putioFileId = file.id,
+                    fileName = file.name,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    downloadUrl = null,
+                    archiveMode = archiveMode,
+                    isTempUpload = true,
+                    sourceLocalUri = file.localUri,
+                    assembleBook = assembleBook,
+                    calibreBookUuid = calibreBookUuid,
+                    isUploading = true
+                )
 
-            if (isAltVersion) {
-                val ext = targetFileName.substringAfterLast('.', "")
-                if (ext.isNotEmpty()) {
-                    val newName = targetFileName.substringBeforeLast('.') + "." + ext + "_bkp"
-                    val renameResult = filesRepository.renameFile(putioToken, targetFileId, newName)
-                    if (renameResult is NetworkResult.Success) {
-                        targetFileName = newName
+                val uploadedId = uploadLocalFileIfNecessary(file, putioToken, progressKey = file.id)
+                if (uploadedId != null) {
+                    val downloadUrl = filesRepository.getDownloadUrl(putioToken, uploadedId)
+                    var targetFileName = file.name
+                    var finalId = uploadedId
+
+                    if (isAltVersion) {
+                        val ext = targetFileName.substringAfterLast('.', "")
+                        if (ext.isNotEmpty()) {
+                            val newName = targetFileName.substringBeforeLast('.') + "." + ext + "_bkp"
+                            val renameResult = filesRepository.renameFile(putioToken, uploadedId, newName)
+                            if (renameResult is NetworkResult.Success) {
+                                targetFileName = newName
+                            }
+                        }
+                    }
+
+                    if (assembleBook) {
+                        // Just update status to ASSEMBLED
+                        val transfer = calibreRepository.getTransfer(file.id)
+                        if (transfer != null) {
+                            val initialItem = CalibreBatchItem(
+                                type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
+                                putio_file_id = finalId,
+                                fileName = targetFileName,
+                                download_url = downloadUrl,
+                                archiveMode = archiveMode
+                            )
+                            calibreRepository.removeTransfer(file.id)
+                            calibreRepository.addTransfer(
+                                putioFileId = finalId,
+                                fileName = targetFileName,
+                                title = title,
+                                author = author,
+                                googleAccount = googleAccount,
+                                downloadUrl = downloadUrl,
+                                archiveMode = archiveMode,
+                                isTempUpload = true,
+                                sourceLocalUri = file.localUri,
+                                assembleBook = true,
+                                calibreBookUuid = calibreBookUuid
+                            )
+                        }
                     } else {
-                        _snackbarMessage.value = "Failed to rename: ${(renameResult as NetworkResult.Error).message}"
+                        calibreRepository.updateTransferAfterUpload(file.id, finalId, downloadUrl, googleAccount)
+                    }
+                    _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
+                } else {
+                    calibreRepository.removeTransfer(file.id)
+                    _snackbarMessage.value = "Upload failed"
+                }
+            } else {
+                // Standard remote file path
+                var targetFileId = file.id
+                var targetFileName = file.name
+
+                if (isAltVersion) {
+                    val ext = targetFileName.substringAfterLast('.', "")
+                    if (ext.isNotEmpty()) {
+                        val newName = targetFileName.substringBeforeLast('.') + "." + ext + "_bkp"
+                        val renameResult = filesRepository.renameFile(putioToken, targetFileId, newName)
+                        if (renameResult is NetworkResult.Success) {
+                            targetFileName = newName
+                        } else {
+                            _snackbarMessage.value = "Failed to rename: ${(renameResult as NetworkResult.Error).message}"
+                            return@launch
+                        }
+                    }
+                }
+
+                val downloadUrl = filesRepository.getDownloadUrl(putioToken, targetFileId)
+                calibreRepository.addTransfer(
+                    putioFileId = targetFileId,
+                    fileName = targetFileName,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    downloadUrl = downloadUrl,
+                    archiveMode = archiveMode,
+                    isTempUpload = false,
+                    sourceLocalUri = null,
+                    assembleBook = assembleBook,
+                    calibreBookUuid = calibreBookUuid
+                )
+                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
+            }
+        }
+    }
+
+    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val tempId = files.first().id
+            
+            val anyLocal = files.any { it.isLocal }
+            if (anyLocal) {
+                // Create placeholder
+                calibreRepository.addAudiobookPackTransfer(
+                    files = files.map { it to null },
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    assembleBook = assembleBook,
+                    customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
+                    calibreBookUuid = calibreBookUuid,
+                    isUploading = true
+                )
+
+                // Triple: (put.io file ID after upload, download URL, original local file name)
+                val uploadedFiles = mutableListOf<Triple<Long, String, String>>()
+                android.util.Log.d("FilesViewModel", "Starting pack upload for ${files.size} files")
+                for ((index, file) in files.withIndex()) {
+                    android.util.Log.d("FilesViewModel", "Processing file ${index + 1}/${files.size}: ${file.name}")
+                    val id = uploadLocalFileIfNecessary(file, putioToken, progressKey = tempId, fileIndex = index + 1, totalFiles = files.size)
+                    if (id != null) {
+                        val url = filesRepository.getDownloadUrl(putioToken, id)
+                        uploadedFiles.add(Triple(id, url, file.name))
+                        android.util.Log.d("FilesViewModel", "Upload successful for ${file.name}, ID: $id")
+                    } else {
+                        android.util.Log.e("FilesViewModel", "Upload failed for ${file.name}")
+                        calibreRepository.removeTransfer(tempId)
+                        _snackbarMessage.value = "Upload failed for ${file.name}"
                         return@launch
                     }
                 }
+                android.util.Log.d("FilesViewModel", "All ${files.size} files uploaded successfully")
+
+                if (assembleBook) {
+                    calibreRepository.removeTransfer(tempId)
+                    // Pair each original PutioFile (correct name) with its uploaded put.io ID and URL
+                    val uploadedPutioFiles = files.zip(uploadedFiles).map { (originalFile, triple) ->
+                        originalFile.copy(id = triple.first) to triple.second
+                    }
+                    calibreRepository.addAudiobookPackTransfer(
+                        files = uploadedPutioFiles,
+                        title = title,
+                        author = author,
+                        googleAccount = googleAccount,
+                        assembleBook = true,
+                        customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
+                        calibreBookUuid = calibreBookUuid
+                    )
+                } else {
+                    calibreRepository.updateAudiobookAfterUpload(tempId, uploadedFiles, googleAccount)
+                }
+                _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
+            } else {
+                // Standard remote path
+                val filesWithUrls = files.map { file ->
+                    file to filesRepository.getDownloadUrl(putioToken, file.id)
+                }
+
+                calibreRepository.addAudiobookPackTransfer(
+                    files = filesWithUrls,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    assembleBook = assembleBook,
+                    customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
+                    calibreBookUuid = calibreBookUuid
+                )
+                _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
             }
-
-            val isTempUpload = file.isLocal
-            val downloadUrl = filesRepository.getDownloadUrl(putioToken, targetFileId)
-
-            calibreRepository.addTransfer(
-                putioFileId = targetFileId,
-                fileName = targetFileName,
-                title = title,
-                author = author,
-                googleAccount = googleAccount,
-                downloadUrl = downloadUrl,
-                archiveMode = archiveMode,
-                isTempUpload = isTempUpload,
-                sourceLocalUri = file.localUri,
-                assembleBook = assembleBook,
-                calibreBookUuid = calibreBookUuid
-            )
-            _snackbarMessage.value = if (assembleBook) "Book assembled in Calibre list" else "Transfer requested for $title"
         }
     }
 
     fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             val putioToken = settingsRepository.authTokenFlow.first()
-            var targetFileId = uploadLocalFileIfNecessary(file, putioToken) ?: return@launch
+            var targetFileId = uploadLocalFileIfNecessary(file, putioToken, progressKey = assemblyFileId) ?: return@launch
             var targetFileName = file.name
 
             if (isAltVersion) {
@@ -405,35 +628,6 @@ class FilesViewModel @Inject constructor(
                 newFileIds = listOf(targetFileId)
             )
             _snackbarMessage.value = "File added to assembly: $title"
-        }
-    }
-
-    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null) {
-        viewModelScope.launch {
-            val googleAccount = settingsRepository.googleTokenFlow.first()
-            if (googleAccount.isBlank()) {
-                _snackbarMessage.value = "Link your Google account in Settings first"
-                return@launch
-            }
-
-            val putioToken = settingsRepository.authTokenFlow.first()
-            val filesWithUrls = files.map { file ->
-                file to filesRepository.getDownloadUrl(putioToken, file.id)
-            }
-
-            val packLabel = if (isAltVersion) "${files.size} audio files (m4b_bkp)" else "${files.size} audio files"
-            val initialItemName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
-
-            calibreRepository.addAudiobookPackTransfer(
-                files = filesWithUrls,
-                title = title,
-                author = author,
-                googleAccount = googleAccount,
-                assembleBook = assembleBook,
-                customFileName = initialItemName,
-                calibreBookUuid = calibreBookUuid
-            )
-            _snackbarMessage.value = if (assembleBook) "Audiobook assembled in Calibre list" else "Audiobook transfer requested for $title"
         }
     }
 

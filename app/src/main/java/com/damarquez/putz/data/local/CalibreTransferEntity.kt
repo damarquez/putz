@@ -45,6 +45,7 @@ data class CalibreTransferEntity(
 }
 
 enum class CalibreTransferStatus {
+    UPLOADING,
     PENDING,
     REQUESTED,
     PROCESSING,
