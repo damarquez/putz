@@ -7,6 +7,9 @@ import com.damarquez.putz.data.model.PutioTransfer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -15,6 +18,7 @@ import okhttp3.Request
 import okio.source
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
 
 @Serializable
 private data class BaseResponse(
@@ -361,77 +365,88 @@ class PutioApiClient @Inject constructor(
         }
     }
 
-    fun uploadFile(
+    suspend fun uploadFile(
         token: String,
         parentId: Long,
         name: String,
         uri: android.net.Uri,
         contentResolver: android.content.ContentResolver,
         onProgress: ((bytesWritten: Long, totalBytes: Long) -> Unit)? = null,
-    ): NetworkResult<PutioFile> {
-        return try {
-            android.util.Log.d("PutioApiClient", "Starting upload of $name to parent $parentId")
-            val mediaType = (contentResolver.getType(uri) ?: "application/octet-stream").toMediaTypeOrNull()
+    ): NetworkResult<PutioFile> = withContext(Dispatchers.IO) {
+        android.util.Log.d("PutioApiClient", "Starting upload of $name to parent $parentId")
+        val mediaType = (contentResolver.getType(uri) ?: "application/octet-stream").toMediaTypeOrNull()
+        val fileSize = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        android.util.Log.d("PutioApiClient", "File size for $name: $fileSize bytes")
 
-            val fileSize = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
-            android.util.Log.d("PutioApiClient", "File size for $name: $fileSize bytes")
-
-            val fileBody = object : okhttp3.RequestBody() {
-                override fun contentType() = mediaType
-                override fun contentLength() = fileSize
-                override fun writeTo(sink: okio.BufferedSink) {
-                    contentResolver.openInputStream(uri)?.use { inputStream ->
-                        val source = inputStream.source()
-                        val buf = okio.Buffer()
-                        var totalWritten = 0L
-                        while (true) {
-                            val read = source.read(buf, 8192L)
-                            if (read == -1L) break
-                            sink.write(buf, read)
-                            totalWritten += read
-                            onProgress?.invoke(totalWritten, fileSize)
-                        }
-                        android.util.Log.d("PutioApiClient", "Finished writing $name. Bytes: $totalWritten")
-                    } ?: throw java.io.IOException("Failed to open input stream for $uri")
-                }
+        val fileBody = object : okhttp3.RequestBody() {
+            override fun contentType() = mediaType
+            override fun contentLength() = fileSize
+            override fun writeTo(sink: okio.BufferedSink) {
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val source = inputStream.source()
+                    val buf = okio.Buffer()
+                    var totalWritten = 0L
+                    while (true) {
+                        val read = source.read(buf, 8192L)
+                        if (read == -1L) break
+                        sink.write(buf, read)
+                        totalWritten += read
+                        onProgress?.invoke(totalWritten, fileSize)
+                    }
+                    android.util.Log.d("PutioApiClient", "Finished writing $name. Bytes: $totalWritten")
+                } ?: throw java.io.IOException("Failed to open input stream for $uri")
             }
+        }
 
-            val multipartBody = okhttp3.MultipartBody.Builder()
-                .setType(okhttp3.MultipartBody.FORM)
-                .addFormDataPart("file", name, fileBody)
-                .addFormDataPart("parent_id", parentId.toString())
-                .addFormDataPart("oauth_token", token)
-                .build()
+        val multipartBody = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart("file", name, fileBody)
+            .addFormDataPart("parent_id", parentId.toString())
+            .addFormDataPart("oauth_token", token)
+            .build()
 
-            val request = Request.Builder()
-                .url("$UPLOAD_URL/files/upload")
-                .header("Accept", "application/json")
-                .post(multipartBody)
-                .build()
+        val request = Request.Builder()
+            .url("$UPLOAD_URL/files/upload")
+            .header("Accept", "application/json")
+            .post(multipartBody)
+            .build()
 
-            android.util.Log.d("PutioApiClient", "Executing upload call for $name...")
-            okHttpClient.newCall(request).execute().use { response ->
-                android.util.Log.d("PutioApiClient", "Upload response for $name: ${response.code}")
-                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
-                if (!response.isSuccessful) {
-                    android.util.Log.e("PutioApiClient", "Upload failed for $name: $bodyStr")
-                    val parsed = runCatching { json.decodeFromString<FileResponse>(bodyStr) }.getOrNull()
-                    return NetworkResult.Error(
-                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
-                        response.code
-                    )
-                }
-                val parsed = json.decodeFromString<FileResponse>(bodyStr)
-                if (parsed.status == "ERROR") {
-                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
-                }
-                val file = parsed.file ?: return NetworkResult.Error("Missing file info")
-                android.util.Log.d("PutioApiClient", "Upload successful for $name, ID: ${file.id}")
-                NetworkResult.Success(file)
+        val call = okHttpClient.newCall(request)
+        suspendCancellableCoroutine { continuation ->
+            // When withTimeout (or any cancellation) fires, immediately abort the OkHttp call
+            // so the blocked execute() returns instead of hanging indefinitely.
+            continuation.invokeOnCancellation {
+                android.util.Log.w("PutioApiClient", "Upload cancelled for $name, aborting OkHttp call")
+                call.cancel()
             }
-        } catch (e: Exception) {
-            android.util.Log.e("PutioApiClient", "Upload exception for $name", e)
-            NetworkResult.Error(e.message ?: "Unknown error")
+            try {
+                android.util.Log.d("PutioApiClient", "Executing upload call for $name...")
+                val result = call.execute().use { response ->
+                    android.util.Log.d("PutioApiClient", "Upload response for $name: ${response.code}")
+                    val bodyStr = response.body?.string()
+                        ?: return@use NetworkResult.Error("Empty response", response.code)
+                    if (!response.isSuccessful) {
+                        android.util.Log.e("PutioApiClient", "Upload failed for $name: $bodyStr")
+                        val parsed = runCatching { json.decodeFromString<FileResponse>(bodyStr) }.getOrNull()
+                        return@use NetworkResult.Error(
+                            parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                            response.code
+                        )
+                    }
+                    val parsed = json.decodeFromString<FileResponse>(bodyStr)
+                    if (parsed.status == "ERROR") {
+                        return@use NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                    }
+                    val file = parsed.file
+                        ?: return@use NetworkResult.Error("Missing file info")
+                    android.util.Log.d("PutioApiClient", "Upload successful for $name, ID: ${file.id}")
+                    NetworkResult.Success(file)
+                }
+                if (continuation.isActive) continuation.resume(result)
+            } catch (e: Exception) {
+                android.util.Log.e("PutioApiClient", "Upload exception for $name", e)
+                if (continuation.isActive) continuation.resume(NetworkResult.Error(e.message ?: "Unknown error"))
+            }
         }
     }
 

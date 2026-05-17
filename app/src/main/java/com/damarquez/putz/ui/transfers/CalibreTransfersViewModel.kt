@@ -161,11 +161,12 @@ class CalibreTransfersViewModel @Inject constructor(
                     // Also check for stuck transfers (older than 5 mins) or failed GDrive uploads
                     val currentTransfers = calibreRepository.getTransfers().first()
                     val now = System.currentTimeMillis()
+                    val activeProgressKeys = calibreRepository.uploadProgress.value.keys
                     currentTransfers.forEach { transfer ->
                         val isStuck = transfer.status == CalibreTransferStatus.PENDING ||
                                      transfer.status == CalibreTransferStatus.REQUESTED ||
                                      transfer.status == CalibreTransferStatus.PROCESSING
-                        
+
                         val isFailedUpload = transfer.status == CalibreTransferStatus.FAILED &&
                                              transfer.errorMessage?.contains("upload to GDrive", ignoreCase = true) == true
 

@@ -415,7 +415,8 @@ class FilesViewModel @Inject constructor(
                     sourceLocalUri = file.localUri,
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
-                    isUploading = true
+                    isUploading = true,
+                    localUrisJson = file.localUri?.let { """["$it"]""" },
                 )
 
                 val uploadedId = uploadLocalFileIfNecessary(file, putioToken, progressKey = file.id)
@@ -520,7 +521,8 @@ class FilesViewModel @Inject constructor(
             
             val anyLocal = files.any { it.isLocal }
             if (anyLocal) {
-                // Create placeholder
+                // Create placeholder — store local URIs so the upload can be restarted if the app is killed
+                val localUrisJson = org.json.JSONArray(files.mapNotNull { it.localUri }).toString()
                 calibreRepository.addAudiobookPackTransfer(
                     files = files.map { it to null },
                     title = title,
@@ -529,7 +531,8 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
                     calibreBookUuid = calibreBookUuid,
-                    isUploading = true
+                    isUploading = true,
+                    localUrisJson = localUrisJson,
                 )
 
                 // Triple: (put.io file ID after upload, download URL, original local file name)

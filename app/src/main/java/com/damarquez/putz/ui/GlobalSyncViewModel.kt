@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.damarquez.putz.data.local.CalibreTransferStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +41,17 @@ class GlobalSyncViewModel @Inject constructor(
                         calibreRepository.pollHeartbeat(account)
                     } catch (e: Exception) {
                         e.printStackTrace()
+                    }
+
+                    val now = System.currentTimeMillis()
+                    val activeProgressKeys = calibreRepository.uploadProgress.value.keys
+                    calibreRepository.getTransfers().first().forEach { transfer ->
+                        val isOrphanedUpload = transfer.status == CalibreTransferStatus.UPLOADING &&
+                                transfer.putioFileId !in activeProgressKeys &&
+                                now - transfer.lastUpdatedAt > 60_000
+                        if (isOrphanedUpload) {
+                            launch { calibreRepository.restartOrphanedUpload(transfer) }
+                        }
                     }
                 }
                 delay(60_000) // Poll every 60 seconds

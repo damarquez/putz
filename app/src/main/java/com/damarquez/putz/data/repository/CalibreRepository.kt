@@ -12,7 +12,9 @@ import com.damarquez.putz.util.MetadataUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -166,6 +168,7 @@ class CalibreRepository @Inject constructor(
         assembleBook: Boolean = false,
         calibreBookUuid: String? = null,
         isUploading: Boolean = false,
+        localUrisJson: String? = null,
     ) {
         val initialItem = CalibreBatchItem(
             type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
@@ -190,7 +193,8 @@ class CalibreRepository @Inject constructor(
             isTempUpload = isTempUpload,
             sourceLocalUri = sourceLocalUri,
             batchData = json.encodeToString(listOf(initialItem)),
-            calibreBookUuid = calibreBookUuid
+            calibreBookUuid = calibreBookUuid,
+            localUrisJson = localUrisJson,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -267,6 +271,7 @@ class CalibreRepository @Inject constructor(
         customFileName: String? = null,
         calibreBookUuid: String? = null,
         isUploading: Boolean = false,
+        localUrisJson: String? = null,
     ) {
         val primaryFileId = files.first().first.id
         val audioFiles = files.map { (file, url) ->
@@ -293,7 +298,8 @@ class CalibreRepository @Inject constructor(
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = files.joinToString(",") { (file, _) -> file.id.toString() },
             batchData = json.encodeToString(listOf(initialItem)),
-            calibreBookUuid = calibreBookUuid
+            calibreBookUuid = calibreBookUuid,
+            localUrisJson = localUrisJson,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -809,6 +815,122 @@ class CalibreRepository @Inject constructor(
         return withContext(Dispatchers.IO) {
             val ids = calibreTransferDao.getTransferById(fileId)?.parsedFileIds() ?: listOf(fileId)
             putioApiClient.deleteFiles(token, ids)
+        }
+    }
+
+    suspend fun restartOrphanedUpload(transfer: CalibreTransferEntity) {
+        val token = secureStorage.authTokenFlow.value
+        val googleAccount = settingsRepository.googleTokenFlow.first()
+        if (token.isBlank() || googleAccount.isBlank()) return
+
+        val localUris: List<String> = transfer.localUrisJson?.let {
+            try { json.decodeFromString(it) } catch (e: Exception) { null }
+        } ?: transfer.sourceLocalUri?.let { listOf(it) } ?: return
+
+        // Derive file names from batchData (PACK) or the single fileName
+        val fileNames: List<String> = if (localUris.size == 1) {
+            listOf(transfer.fileName)
+        } else {
+            try {
+                val items = json.decodeFromString<List<CalibreBatchItem>>(transfer.batchData ?: "")
+                items.firstOrNull()?.files?.map { it.fileName } ?: return
+            } catch (e: Exception) { return }
+        }
+        if (localUris.size != fileNames.size) return
+
+        // Mark as restarting immediately so the polling loop doesn't launch a second restart
+        updateUploadProgress(transfer.putioFileId, "Restarting…")
+
+        // Find or create .putz_attachments
+        val rootFiles = withContext(Dispatchers.IO) {
+            (putioApiClient.listFiles(token, 0) as? NetworkResult.Success)?.data?.first ?: emptyList()
+        }
+        var folderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
+        if (folderId == null) {
+            val result = withContext(Dispatchers.IO) { putioApiClient.createFolder(token, 0, ".putz_attachments") }
+            folderId = (result as? NetworkResult.Success)?.data?.id
+        }
+        if (folderId == null) {
+            updateUploadProgress(transfer.putioFileId, null)
+            return
+        }
+
+        val uploadedFiles = mutableListOf<Triple<Long, String, String>>()
+        val total = localUris.size
+
+        for ((index, uriStr) in localUris.withIndex()) {
+            val uri = android.net.Uri.parse(uriStr)
+            val name = fileNames[index]
+
+            // Dedup: skip upload if a file with the same name and size already exists
+            val localSize = withContext(Dispatchers.IO) {
+                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            }
+            if (localSize > 0) {
+                val folderFiles = withContext(Dispatchers.IO) {
+                    (putioApiClient.listFiles(token, folderId) as? NetworkResult.Success)?.data?.first ?: emptyList()
+                }
+                val existing = folderFiles.find { it.name == name && it.size == localSize }
+                if (existing != null) {
+                    val url = "${com.damarquez.putz.data.remote.PutioApiClient.BASE_URL}/files/${existing.id}/download?oauth_token=$token"
+                    uploadedFiles.add(Triple(existing.id, url, name))
+                    updateUploadProgress(transfer.putioFileId, "${index + 1}/$total · cached")
+                    continue
+                }
+            }
+
+            // Upload with timeout + exponential-backoff retry
+            val retryableCodes = setOf(429, 500, 502, 503, 504)
+            val maxAttempts = 5
+            var delayMs = 5_000L
+            var succeeded = false
+            for (attempt in 1..maxAttempts) {
+                val result = try {
+                    withTimeout(3 * 60 * 1000L) {
+                        putioApiClient.uploadFile(token, folderId, name, uri, context.contentResolver) { bytesWritten, totalBytes ->
+                            val pct = if (totalBytes > 0) (bytesWritten * 100 / totalBytes).toInt() else 0
+                            updateUploadProgress(transfer.putioFileId, "${index + 1}/$total · $pct%")
+                        }
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    NetworkResult.Error("Upload timed out", null)
+                } catch (e: Exception) {
+                    NetworkResult.Error(e.message ?: "Error", null)
+                }
+
+                val errorCode = (result as? NetworkResult.Error)?.code
+                when {
+                    result is NetworkResult.Success -> {
+                        val url = "${com.damarquez.putz.data.remote.PutioApiClient.BASE_URL}/files/${result.data.id}/download?oauth_token=$token"
+                        uploadedFiles.add(Triple(result.data.id, url, name))
+                        succeeded = true
+                        break
+                    }
+                    attempt < maxAttempts && (errorCode in retryableCodes || errorCode == null) -> {
+                        delay(delayMs)
+                        delayMs = minOf(delayMs * 2, 60_000L)
+                    }
+                    else -> break
+                }
+            }
+
+            if (!succeeded) {
+                updateUploadProgress(transfer.putioFileId, null)
+                calibreTransferDao.updateTransfer(transfer.copy(
+                    status = CalibreTransferStatus.FAILED,
+                    errorMessage = "Upload failed on restart",
+                    lastUpdatedAt = System.currentTimeMillis(),
+                ))
+                return
+            }
+        }
+
+        updateUploadProgress(transfer.putioFileId, null)
+        if (localUris.size == 1) {
+            val (uploadedId, downloadUrl, _) = uploadedFiles.first()
+            updateTransferAfterUpload(transfer.putioFileId, uploadedId, downloadUrl, googleAccount)
+        } else {
+            updateAudiobookAfterUpload(transfer.putioFileId, uploadedFiles, googleAccount)
         }
     }
 }

@@ -34,6 +34,10 @@ data class CalibreTransferEntity(
 
     /** The exact JSON payload last uploaded to GDrive for this transfer. Used verbatim on retry. */
     val lastRequestPayload: String? = null,
+
+    /** JSON array of local SAF URIs (in file order) for UPLOADING transfers, so the upload
+     *  can be restarted if the app is killed mid-upload. */
+    val localUrisJson: String? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 
