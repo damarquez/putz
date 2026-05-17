@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -154,7 +155,9 @@ class CalibreRepository @Inject constructor(
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr
         )
-        calibreTransferDao.insertTransfer(transfer)
+        // NonCancellable: the GDrive upload already completed; the DB record must always
+        // be written so the transfer is visible even if the calling scope navigates away.
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
     suspend fun sendGlobalStatusProbe(googleAccount: String): Boolean {
@@ -688,7 +691,9 @@ class CalibreRepository @Inject constructor(
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr
         )
-        calibreTransferDao.insertTransfer(transfer)
+        // NonCancellable: the GDrive upload already completed; the DB record must always
+        // be written so the transfer is visible even if the calling scope navigates away.
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
     suspend fun sendProbeRequest(fileId: Long, googleAccount: String): Boolean {
