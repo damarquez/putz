@@ -52,6 +52,7 @@ import com.google.api.services.drive.DriveScopes
 fun SettingsScreen(
     onNavigateUp: () -> Unit,
     onNavigateToCalibreTransfers: () -> Unit,
+    onNavigateToLanConnections: () -> Unit,
     viewModel: SettingsViewModel,
 ) {
     val appCategory by viewModel.appCategory.collectAsState()
@@ -174,6 +175,14 @@ fun SettingsScreen(
             ButtonRow(
                 label = "Manage Calibre Transfers",
                 onClick = onNavigateToCalibreTransfers
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            SettingsSectionHeader("LAN Files")
+            ButtonRow(
+                label = "Manage LAN Connections",
+                onClick = onNavigateToLanConnections
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

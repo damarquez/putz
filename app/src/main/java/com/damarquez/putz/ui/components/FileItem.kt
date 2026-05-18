@@ -50,6 +50,7 @@ import com.damarquez.putz.ui.theme.LocalAppStyling
 import com.damarquez.putz.util.MetadataUtils
 
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 
@@ -124,11 +125,21 @@ fun FileItem(
                         isFolder = file.isFolder,
                         cornerRadius = cornerRadius.value.toInt(),
                     )
-                    if (file.isLocal) {
-                        Icon(
+                    when {
+                        file.isLocal -> Icon(
                             imageVector = Icons.Default.Smartphone,
                             contentDescription = "Local file",
                             tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
+                                .padding(1.dp)
+                        )
+                        file.isLan -> Icon(
+                            imageVector = Icons.Default.Storage,
+                            contentDescription = "LAN file",
+                            tint = MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier
                                 .size(14.dp)
                                 .align(Alignment.BottomEnd)
@@ -188,7 +199,7 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
-                        if (!file.isFolder) {
+                        if (!file.isFolder && !file.isLan) {
                             DropdownMenuItem(
                                 text = { Text("Preview") },
                                 onClick = {
@@ -198,21 +209,23 @@ fun FileItem(
                             )
                             HorizontalDivider()
                         }
-                        DropdownMenuItem(
-                            text = { Text("Download") },
-                            onClick = {
-                                showMenu = false
-                                onDownload(file)
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Copy download link") },
-                            onClick = {
-                                showMenu = false
-                                onCopyLink(file)
-                            },
-                        )
-                        HorizontalDivider()
+                        if (!file.isLan) {
+                            DropdownMenuItem(
+                                text = { Text("Download") },
+                                onClick = {
+                                    showMenu = false
+                                    onDownload(file)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy download link") },
+                                onClick = {
+                                    showMenu = false
+                                    onCopyLink(file)
+                                },
+                            )
+                            HorizontalDivider()
+                        }
                         if (isEbook) {
                             DropdownMenuItem(
                                 text = { Text("Send to Calibre") },
@@ -274,25 +287,27 @@ fun FileItem(
                             },
                         )
                         HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { 
-                                Text(
-                                    text = if (file.isLocal) "Detach from Putz" else "Delete",
-                                    color = MaterialTheme.colorScheme.error
-                                ) 
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            },
-                            onClick = {
-                                showMenu = false
-                                onDelete()
-                            }
-                        )
+                        if (!file.isLan) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (file.isLocal) "Detach from Putz" else "Delete",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onDelete()
+                                }
+                            )
+                        }
 
                     }
                 }

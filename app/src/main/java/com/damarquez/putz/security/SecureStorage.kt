@@ -45,6 +45,17 @@ class SecureStorage @Inject constructor(
         _googleToken.value = ""
     }
 
+    fun saveLanPassword(connectionId: Long, password: String) {
+        prefs.edit().putString("lan_pass_$connectionId", password).apply()
+    }
+
+    fun getLanPassword(connectionId: Long): String =
+        prefs.getString("lan_pass_$connectionId", "") ?: ""
+
+    fun clearLanPassword(connectionId: Long) {
+        prefs.edit().remove("lan_pass_$connectionId").apply()
+    }
+
     private fun createPrefs(): SharedPreferences {
         return try {
             val masterKey = MasterKey.Builder(context)

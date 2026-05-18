@@ -93,7 +93,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
-    onNavigateToFolder: (Long, String, String?) -> Unit,
+    onNavigateToFolder: (Long, String, String?, Long, String?) -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onSignOut: () -> Unit,
@@ -690,7 +690,13 @@ fun FilesScreen(
                                                 selectedFiles = if (file in selectedFiles)
                                                     selectedFiles - file else selectedFiles + file
                                             } else if (file.isFolder) {
-                                                onNavigateToFolder(file.id, file.name, file.localUri)
+                                                onNavigateToFolder(
+                                                    file.id,
+                                                    file.name,
+                                                    file.localUri,
+                                                    file.lanConnectionId ?: -1L,
+                                                    file.lanPath,
+                                                )
                                             }
                                         },
                                         onLongClick = { selectedFiles = selectedFiles + file },

@@ -55,6 +55,9 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/INDEX.LIST"
             excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/*.SF"
+            excludes += "META-INF/*.DSA"
+            excludes += "META-INF/*.RSA"
         }
     }
 
@@ -117,6 +120,7 @@ dependencies {
     implementation(libs.google.api.services.drive)
     implementation(libs.google.api.client.android)
     implementation(libs.google.http.client.gson)
+    implementation(libs.smbj)
 
     debugImplementation(libs.compose.ui.tooling)
 }

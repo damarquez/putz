@@ -21,6 +21,11 @@ data class PutioFile(
     // Local file integration
     val isLocal: Boolean = false,
     val localUri: String? = null,
+
+    // LAN file integration
+    val isLan: Boolean = false,
+    val lanPath: String? = null,
+    val lanConnectionId: Long? = null,
 ) {
     val isFolder: Boolean get() = fileType == "FOLDER"
 }

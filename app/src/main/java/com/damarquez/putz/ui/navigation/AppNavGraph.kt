@@ -28,6 +28,7 @@ import androidx.navigation.navArgument
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.auth.AuthScreen
 import com.damarquez.putz.ui.files.FilesScreen
+import com.damarquez.putz.ui.settings.LanConnectionsScreen
 import com.damarquez.putz.ui.settings.SettingsScreen
 import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
@@ -197,11 +198,27 @@ fun AppNavGraph(
                         nullable = true
                         defaultValue = null
                     },
+                    navArgument(Screen.Files.ARG_LAN_CONNECTION_ID) {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    },
+                    navArgument(Screen.Files.ARG_LAN_PATH) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
                 ),
             ) {
                 FilesScreen(
-                    onNavigateToFolder = { id, name, localUri ->
-                        navController.navigate(Screen.Files.createRoute(id, name, localUri = localUri))
+                    onNavigateToFolder = { id, name, localUri, lanConnectionId, lanPath ->
+                        navController.navigate(
+                            Screen.Files.createRoute(
+                                id, name,
+                                localUri = localUri,
+                                lanConnectionId = if (lanConnectionId != -1L) lanConnectionId else null,
+                                lanPath = lanPath,
+                            )
+                        )
                     },
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
@@ -230,6 +247,14 @@ fun AppNavGraph(
                 SettingsScreen(
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToCalibreTransfers = { navController.navigate(Screen.CalibreTransfers.route) },
+                    onNavigateToLanConnections = { navController.navigate(Screen.LanConnections.route) },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.LanConnections.route) {
+                LanConnectionsScreen(
+                    onNavigateUp = { navController.navigateUp() },
                     viewModel = hiltViewModel(),
                 )
             }

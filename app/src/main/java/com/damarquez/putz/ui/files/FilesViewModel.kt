@@ -62,6 +62,7 @@ class FilesViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val filesRepository: FilesRepository,
     private val localFilesRepository: com.damarquez.putz.data.repository.LocalFilesRepository,
+    private val lanFilesRepository: com.damarquez.putz.data.repository.LanFilesRepository,
     private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
@@ -70,6 +71,8 @@ class FilesViewModel @Inject constructor(
     val folderName: String = savedStateHandle[Screen.Files.ARG_FOLDER_NAME] ?: "Your Files"
     val highlightFileId: Long = savedStateHandle[Screen.Files.ARG_HIGHLIGHT_ID] ?: -1L
     val localUri: String? = savedStateHandle[Screen.Files.ARG_LOCAL_URI]
+    val lanConnectionId: Long = savedStateHandle[Screen.Files.ARG_LAN_CONNECTION_ID] ?: -1L
+    val lanPath: String? = savedStateHandle[Screen.Files.ARG_LAN_PATH]
 
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
@@ -173,9 +176,10 @@ class FilesViewModel @Inject constructor(
         viewModelScope.launch {
             val isLocalRoot = parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID
             val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
+            val isLanRoot = parentId == com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID
+            val isLanBrowsing = lanConnectionId != -1L
 
             if (isLocalRoot) {
-                // Browsing the Local Files virtual root
                 _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
                 val attachments = localFilesRepository.getAttachments()
                 _uiState.value = FilesUiState.Success(files = attachments, parent = null)
@@ -183,7 +187,6 @@ class FilesViewModel @Inject constructor(
             }
 
             if (isLocalFolder && localUri != null) {
-                // Browsing inside a local folder - STREAMED
                 _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
                 localFilesRepository.listLocalFolder(localUri).collect { files ->
                     _uiState.value = FilesUiState.Success(
@@ -193,7 +196,40 @@ class FilesViewModel @Inject constructor(
                         isScanning = true
                     )
                 }
-                // Once collect finishes, scanning is done
+                val current = _uiState.value
+                if (current is FilesUiState.Success) {
+                    _uiState.value = current.copy(isScanning = false)
+                }
+                return@launch
+            }
+
+            if (isLanRoot) {
+                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
+                val connections = lanFilesRepository.getConnectionsSync()
+                val connectionFiles = connections.map { conn ->
+                    PutioFile(
+                        id = com.damarquez.putz.data.repository.LanFilesRepository.connectionVirtualId(conn.id),
+                        name = conn.label,
+                        fileType = "FOLDER",
+                        isLan = true,
+                        lanPath = "",
+                        lanConnectionId = conn.id,
+                    )
+                }
+                _uiState.value = FilesUiState.Success(files = connectionFiles, parent = null)
+                return@launch
+            }
+
+            if (isLanBrowsing) {
+                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
+                lanFilesRepository.listDirectory(lanConnectionId, lanPath ?: "").collect { files ->
+                    _uiState.value = FilesUiState.Success(
+                        files = files,
+                        parent = null,
+                        isRefreshing = false,
+                        isScanning = true,
+                    )
+                }
                 val current = _uiState.value
                 if (current is FilesUiState.Success) {
                     _uiState.value = current.copy(isScanning = false)
@@ -240,9 +276,15 @@ class FilesViewModel @Inject constructor(
                 id = com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID,
                 name = "Local Files",
                 fileType = "FOLDER",
-                isLocal = true
+                isLocal = true,
             )
-            listOf(localRoot) + apiFiles
+            val lanRoot = PutioFile(
+                id = com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID,
+                name = "LAN Files",
+                fileType = "FOLDER",
+                isLan = true,
+            )
+            listOf(localRoot, lanRoot) + apiFiles
         } else apiFiles
 
         return list.sortedWith(
@@ -297,16 +339,20 @@ class FilesViewModel @Inject constructor(
         totalFiles: Int = 1,
         clearProgressOnSuccess: Boolean = true,
     ): Long? {
-        if (!file.isLocal || file.localUri == null) {
-            android.util.Log.d("FilesViewModel", "File ${file.name} is not local or missing URI, skipping upload.")
+        if (!file.isLocal && !file.isLan) {
+            android.util.Log.d("FilesViewModel", "File ${file.name} is remote, skipping upload.")
             return file.id
         }
+        if (file.isLocal && file.localUri == null) return null
+        if (file.isLan && (file.lanConnectionId == null || file.lanPath == null)) return null
 
-        val uri = android.net.Uri.parse(file.localUri)
-
-        // Get local file size so we can compare against what's already on put.io
-        val localSize = withContext(Dispatchers.IO) {
-            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        val localSize: Long = when {
+            file.isLocal -> withContext(Dispatchers.IO) {
+                val uri = android.net.Uri.parse(file.localUri!!)
+                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            }
+            file.isLan -> file.size
+            else -> -1L
         }
 
         // 1. Find or create .putz_attachments
@@ -346,19 +392,24 @@ class FilesViewModel @Inject constructor(
         for (attempt in 1..maxAttempts) {
             val uploadResult = try {
                 withTimeout(uploadTimeoutMs) {
-                    filesRepository.uploadFile(
-                        putioToken,
-                        tempFolderId!!,
-                        file.name,
-                        uri,
-                        context.contentResolver,
-                    ) { bytesWritten, totalBytes ->
+                    val progressCallback: (Long, Long) -> Unit = { bytesWritten, totalBytes ->
                         val now = System.currentTimeMillis()
                         if (now - lastProgressMs >= 500L || bytesWritten == totalBytes) {
                             lastProgressMs = now
                             val pct = if (totalBytes > 0) (bytesWritten * 100 / totalBytes).toInt() else 0
                             calibreRepository.updateUploadProgress(progressKey, "$fileIndex/$totalFiles · $pct%")
                         }
+                    }
+                    if (file.isLan) {
+                        val inputStream = lanFilesRepository.openFileStream(file.lanConnectionId!!, file.lanPath!!)
+                        filesRepository.uploadFileFromStream(
+                            putioToken, tempFolderId!!, file.name, inputStream, localSize, progressCallback
+                        )
+                    } else {
+                        val uri = android.net.Uri.parse(file.localUri!!)
+                        filesRepository.uploadFile(
+                            putioToken, tempFolderId!!, file.name, uri, context.contentResolver, progressCallback
+                        )
                     }
                 }
             } catch (e: TimeoutCancellationException) {
@@ -402,8 +453,7 @@ class FilesViewModel @Inject constructor(
 
             val putioToken = settingsRepository.authTokenFlow.first()
             
-            if (file.isLocal) {
-                // For local files, create a placeholder transfer in UPLOADING state
+            if (file.isLocal || file.isLan) {
                 calibreRepository.addTransfer(
                     putioFileId = file.id,
                     fileName = file.name,
@@ -520,7 +570,7 @@ class FilesViewModel @Inject constructor(
             val putioToken = settingsRepository.authTokenFlow.first()
             val tempId = files.first().id
             
-            val anyLocal = files.any { it.isLocal }
+            val anyLocal = files.any { it.isLocal || it.isLan }
             if (anyLocal) {
                 // Create placeholder — store local URIs so the upload can be restarted if the app is killed
                 val localUrisJson = org.json.JSONArray(files.mapNotNull { it.localUri }).toString()
@@ -724,7 +774,7 @@ class FilesViewModel @Inject constructor(
     fun deleteFiles(files: List<PutioFile>) {
         viewModelScope.launch {
             val localFiles = files.filter { it.isLocal }
-            val remoteIds = files.filter { !it.isLocal }.map { it.id }
+            val remoteIds = files.filter { !it.isLocal && !it.isLan }.map { it.id }
 
             if (localFiles.isNotEmpty()) {
                 localFiles.forEach { local ->
@@ -782,9 +832,20 @@ class FilesViewModel @Inject constructor(
 
         searchJob = viewModelScope.launch {
             delay(300) // Debounce
-            
+
             val isLocalRoot = parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID
             val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
+            val isLanRoot = parentId == com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID
+            val isLanBrowsing = lanConnectionId != -1L
+
+            if (isLanRoot || isLanBrowsing) {
+                val current = _uiState.value
+                if (current is FilesUiState.Success) {
+                    val immediateResults = current.files.filter { it.name.contains(query, ignoreCase = true) }
+                    _uiState.value = current.copy(isSearching = false, searchResults = immediateResults)
+                }
+                return@launch
+            }
 
             if (isLocalRoot || isLocalFolder) {
                 // LOCAL SEARCH - STREAMED

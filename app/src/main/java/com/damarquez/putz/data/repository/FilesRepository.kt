@@ -78,6 +78,18 @@ class FilesRepository @Inject constructor(
             apiClient.uploadFile(token, parentId, name, uri, contentResolver, onProgress)
         }
 
+    suspend fun uploadFileFromStream(
+        token: String,
+        parentId: Long,
+        name: String,
+        inputStream: java.io.InputStream,
+        fileSize: Long,
+        onProgress: ((Long, Long) -> Unit)? = null,
+    ): NetworkResult<PutioFile> =
+        withContext(Dispatchers.IO) {
+            apiClient.uploadFileFromStream(token, parentId, name, inputStream, fileSize, onProgress)
+        }
+
     suspend fun downloadToFile(url: String, targetFile: File): NetworkResult<Unit> =
         withContext(Dispatchers.IO) {
             try {
