@@ -38,9 +38,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
+import com.damarquez.putz.data.repository.CalibreBatchItem
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.decodeFromString
+
+private val batchItemsJson = Json { ignoreUnknownKeys = true }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -57,10 +62,26 @@ fun CalibreTransferItem(
     var showContextMenu by remember { mutableStateOf(false) }
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
     val dateStr = dateFormat.format(Date(transfer.addedAt))
-    val formatLabel = transfer.fileName
-        .substringAfterLast('.', "")
-        .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
-        ?.uppercase() ?: "M4B"
+    val formatLabels: List<String> = remember(transfer.batchData, transfer.fileName) {
+        val items = transfer.batchData?.let {
+            try { batchItemsJson.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
+        }
+        if (!items.isNullOrEmpty()) {
+            items.map { item ->
+                when (item.type) {
+                    "PACK" -> "M4B"
+                    else -> item.fileName.substringAfterLast('.', "")
+                        .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
+                        ?.uppercase() ?: item.type
+                }
+            }.distinct()
+        } else {
+            val ext = transfer.fileName.substringAfterLast('.', "")
+                .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
+                ?.uppercase() ?: "M4B"
+            listOf(ext)
+        }
+    }
 
     val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
     val containerColor = if (isCompleted) {
@@ -115,12 +136,14 @@ fun CalibreTransferItem(
                     tint = contentColor,
                     modifier = Modifier.size(28.dp)
                 )
-                Text(
-                    text = formatLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontSize = 9.sp,
-                    color = contentColor,
-                )
+                formatLabels.forEach { label ->
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 9.sp,
+                        color = contentColor,
+                    )
+                }
                 if (transfer.retryCount > 0) {
                     Text(
                         text = "Tried: ${transfer.retryCount}",
@@ -160,14 +183,18 @@ fun CalibreTransferItem(
             }
 
             val isAssembled = transfer.status == CalibreTransferStatus.ASSEMBLED
-            StatusBadge(status = transfer.status, uploadProgress = uploadProgress)
+            val isAssemblyUploading = isAssembled && uploadProgress != null
+            StatusBadge(status = transfer.status, uploadProgress = uploadProgress, isAssemblyUploading = isAssemblyUploading)
 
             if (isAssembled) {
-                IconButton(onClick = onRetry) {
+                IconButton(
+                    onClick = onRetry,
+                    enabled = !isAssemblyUploading,
+                ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "Start transfer",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (isAssemblyUploading) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
                     )
                 }
             } else if (transfer.status == CalibreTransferStatus.PENDING ||
@@ -220,10 +247,14 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false) {
     val (icon, color, label) = when (status) {
         CalibreTransferStatus.UPLOADING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
-        CalibreTransferStatus.ASSEMBLED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.secondary, "Assembled")
+        CalibreTransferStatus.ASSEMBLED -> if (isAssemblyUploading) {
+            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
+        } else {
+            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.secondary, "Assembled")
+        }
         CalibreTransferStatus.PENDING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.outline, "Pending")
         CalibreTransferStatus.REQUESTED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.primary, "Requested")
         CalibreTransferStatus.PROCESSING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, "Processing")

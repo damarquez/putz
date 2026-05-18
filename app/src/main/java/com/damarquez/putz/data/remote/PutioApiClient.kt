@@ -16,6 +16,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.source
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -68,6 +69,17 @@ class PutioApiClient @Inject constructor(
     companion object {
         const val BASE_URL = "https://api.put.io/v2"
         const val UPLOAD_URL = "https://upload.put.io/v2"
+    }
+
+    // Uploads use no per-call OkHttp timeouts — the coroutine's withTimeout is the sole guard.
+    // The 60-second readTimeout on the shared client would fire after bytes are sent but
+    // before put.io responds for large files, causing spurious retries.
+    private val uploadOkHttpClient: OkHttpClient by lazy {
+        okHttpClient.newBuilder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .writeTimeout(0, TimeUnit.MILLISECONDS)
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .build()
     }
 
     fun listFiles(token: String, parentId: Long = 0L): NetworkResult<Pair<List<PutioFile>, PutioFile?>> {
@@ -411,7 +423,7 @@ class PutioApiClient @Inject constructor(
             .post(multipartBody)
             .build()
 
-        val call = okHttpClient.newCall(request)
+        val call = uploadOkHttpClient.newCall(request)
         suspendCancellableCoroutine { continuation ->
             // When withTimeout (or any cancellation) fires, immediately abort the OkHttp call
             // so the blocked execute() returns instead of hanging indefinitely.
@@ -494,7 +506,7 @@ class PutioApiClient @Inject constructor(
             .post(multipartBody)
             .build()
 
-        val call = okHttpClient.newCall(request)
+        val call = uploadOkHttpClient.newCall(request)
         suspendCancellableCoroutine { continuation ->
             continuation.invokeOnCancellation {
                 android.util.Log.w("PutioApiClient", "Stream upload cancelled for $name")

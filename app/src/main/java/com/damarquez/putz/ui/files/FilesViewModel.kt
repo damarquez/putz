@@ -395,7 +395,14 @@ class FilesViewModel @Inject constructor(
         // 3. Upload with exponential-backoff retry for rate limits, server errors, and hangs
         val retryableCodes = setOf(429, 500, 502, 503, 504)
         val maxAttempts = 5
-        val uploadTimeoutMs = 3 * 60 * 1000L
+        // Allow enough time for large files: ~200 KB/s minimum throughput + 5 min for server
+        // processing after all bytes are sent. Floor 20 min, cap 60 min.
+        val uploadTimeoutMs = if (localSize > 0) {
+            val transferMs = (localSize / 200L) // ms at 200 KB/s
+            (transferMs + 5 * 60_000L).coerceIn(20 * 60_000L, 60 * 60_000L)
+        } else {
+            20 * 60_000L
+        }
         var delayMs = 5_000L
         var lastProgressMs = 0L
         for (attempt in 1..maxAttempts) {
@@ -710,17 +717,35 @@ class FilesViewModel @Inject constructor(
     fun appendAudiobookPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             val putioToken = settingsRepository.authTokenFlow.first()
-            val filesWithUrls = files.map { file ->
-                file to filesRepository.getDownloadUrl(putioToken, file.id)
+
+            // Upload Local/LAN files to put.io first; remote files resolve immediately.
+            val resolvedIds = mutableListOf<Long>()
+            val resolvedUrls = mutableListOf<String>()
+            val total = files.size
+            files.forEachIndexed { index, file ->
+                val uploadedId = uploadLocalFileIfNecessary(
+                    file, putioToken,
+                    progressKey = assemblyFileId,
+                    fileIndex = index + 1,
+                    totalFiles = total,
+                    clearProgressOnSuccess = index < total - 1,
+                ) ?: run {
+                    return@launch // error already shown via snackbar
+                }
+                resolvedIds.add(uploadedId)
+                resolvedUrls.add(filesRepository.getDownloadUrl(putioToken, uploadedId))
+            }
+            if (files.any { it.isLocal || it.isLan }) {
+                calibreRepository.updateUploadProgress(assemblyFileId, null)
             }
 
-            val audioFiles = filesWithUrls.map { (file, url) ->
-                AudiobookFile(file.id, file.name, url)
+            val audioFiles = files.zip(resolvedIds.zip(resolvedUrls)).map { (file, idAndUrl) ->
+                AudiobookFile(idAndUrl.first, file.name, idAndUrl.second)
             }
             val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
             val newItem = CalibreBatchItem(
                 type = "PACK",
-                putio_file_id = files.first().id,
+                putio_file_id = resolvedIds.first(),
                 fileName = fileName,
                 files = audioFiles
             )
@@ -730,7 +755,7 @@ class FilesViewModel @Inject constructor(
                 title = title,
                 author = author,
                 newItem = newItem,
-                newFileIds = files.map { it.id }
+                newFileIds = resolvedIds,
             )
             _snackbarMessage.value = "Audiobook pack added to assembly: $title"
         }
