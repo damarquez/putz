@@ -68,6 +68,7 @@ data class CalibreResponse(
     val status: String,
     val error: String? = null,
     val daemon_status: String? = null, // "IDLE" or "WORKING"
+    val calibre_book_uuid: String? = null,
 )
 
 data class CalibreBookMatch(
@@ -512,6 +513,7 @@ class CalibreRepository @Inject constructor(
                                 calibreTransferDao.updateTransfer(transfer.copy(
                                     status = newStatus,
                                     errorMessage = response.error,
+                                    calibreBookUuid = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_uuid != null) response.calibre_book_uuid else transfer.calibreBookUuid,
                                     lastUpdatedAt = System.currentTimeMillis()
                                 ))
 

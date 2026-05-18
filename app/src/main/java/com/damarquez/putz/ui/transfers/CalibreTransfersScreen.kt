@@ -47,7 +47,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,6 +66,7 @@ import com.damarquez.putz.util.MetadataUtils
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.ui.files.CalibreConfirmationSheet
+import com.damarquez.putz.ui.files.TransferRef
 import com.damarquez.putz.ui.GlobalSyncViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,8 +81,15 @@ fun CalibreTransfersScreen(
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val transfers by viewModel.transfers.collectAsState()
+    val completedTransferRefs = remember(transfers) {
+        transfers
+            .filter { it.status == CalibreTransferStatus.COMPLETED && it.calibreBookUuid != null }
+            .map { TransferRef(it.calibreBookUuid!!, it.title, it.author) }
+            .distinctBy { it.uuid }
+    }
     val daemonStatus by viewModel.daemonStatus.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
     val googleAccount by syncViewModel.googleAccount.collectAsState()
@@ -182,7 +192,8 @@ fun CalibreTransfersScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isReplaceCover = true,
-            initialUuid = prefilledUuid ?: ""
+            initialUuid = prefilledUuid ?: "",
+            transferRefs = completedTransferRefs,
         )
     }
 
@@ -214,7 +225,8 @@ fun CalibreTransfersScreen(
             initialUuid = prefilledUuid ?: "",
             initialComments = clipboardComments ?: "",
             autoAddTags = autoAddTags,
-            includeComments = includeClipboardComments
+            includeComments = includeClipboardComments,
+            transferRefs = completedTransferRefs,
         )
     }
 
@@ -447,6 +459,10 @@ fun CalibreTransfersScreen(
                                     viewModel.retryTransfer(transfer.putioFileId)
                                 },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
+                                onCopyUuid = { uuid ->
+                                    clipboardManager.setText(AnnotatedString(uuid))
+                                    scope.launch { snackbarHostState.showSnackbar("UUID copied") }
+                                },
                             )
                         }
                     }

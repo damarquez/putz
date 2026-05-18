@@ -87,8 +87,17 @@ class FilesViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     val pendingAssemblies: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
-        .map { transfers -> 
+        .map { transfers ->
             transfers.filter { it.status == CalibreTransferStatus.ASSEMBLED }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val completedTransfersWithUuid: StateFlow<List<TransferRef>> = calibreRepository.getTransfers()
+        .map { transfers ->
+            transfers
+                .filter { it.status == CalibreTransferStatus.COMPLETED && it.calibreBookUuid != null }
+                .map { TransferRef(it.calibreBookUuid!!, it.title, it.author) }
+                .distinctBy { it.uuid }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

@@ -1,5 +1,8 @@
 package com.damarquez.putz.ui.transfers
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +14,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.PlayArrow
@@ -18,11 +22,17 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -32,6 +42,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CalibreTransferItem(
     transfer: CalibreTransferEntity,
@@ -40,8 +51,10 @@ fun CalibreTransferItem(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     uploadProgress: String? = null,
+    onCopyUuid: ((String) -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    var showContextMenu by remember { mutableStateOf(false) }
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
     val dateStr = dateFormat.format(Date(transfer.addedAt))
     val formatLabel = transfer.fileName
@@ -69,10 +82,19 @@ fun CalibreTransferItem(
         MaterialTheme.colorScheme.primary
     }
 
+    Box {
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .combinedClickable(
+                onClick = {},
+                onLongClick = {
+                    if (transfer.status == CalibreTransferStatus.COMPLETED && transfer.calibreBookUuid != null) {
+                        showContextMenu = true
+                    }
+                },
+            ),
         colors = CardDefaults.cardColors(
             containerColor = containerColor
         )
@@ -179,6 +201,22 @@ fun CalibreTransferItem(
             }
         }
     }
+    DropdownMenu(
+        expanded = showContextMenu,
+        onDismissRequest = { showContextMenu = false },
+    ) {
+        DropdownMenuItem(
+            text = { Text("Copy UUID") },
+            leadingIcon = {
+                Icon(Icons.Default.ContentCopy, contentDescription = null)
+            },
+            onClick = {
+                showContextMenu = false
+                transfer.calibreBookUuid?.let { onCopyUuid?.invoke(it) }
+            },
+        )
+    }
+    } // Box
 }
 
 @Composable

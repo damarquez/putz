@@ -105,6 +105,7 @@ fun FilesScreen(
     val uiState by viewModel.uiState.collectAsState()
     val accountInfo by viewModel.accountInfo.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
+    val completedTransfersWithUuid by viewModel.completedTransfersWithUuid.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
@@ -286,7 +287,7 @@ fun FilesScreen(
             displayName = if (isPack) "${selectedPackFilesForAssembly?.size} audio files" else file.name,
             initialTitle = targetAssemblyForFile!!.title,
             initialAuthor = targetAssemblyForFile!!.author,
-            onDismiss = { 
+            onDismiss = {
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
@@ -300,11 +301,12 @@ fun FilesScreen(
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
-            },            
+            },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isArchive = !isPack && MetadataUtils.isArchive(file.name),
-            forceAssemble = true
+            forceAssemble = true,
+            transferRefs = completedTransfersWithUuid,
         )
     }
 
@@ -328,6 +330,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isArchive = MetadataUtils.isArchive(singleFile.name),
+            transferRefs = completedTransfersWithUuid,
         )
     }
 
@@ -349,7 +352,8 @@ fun FilesScreen(
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            isReplaceCover = true
+            isReplaceCover = true,
+            transferRefs = completedTransfersWithUuid,
         )
     }
 
@@ -393,6 +397,7 @@ fun FilesScreen(
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
         )
     }
 

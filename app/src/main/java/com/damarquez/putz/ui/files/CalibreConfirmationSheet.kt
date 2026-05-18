@@ -10,18 +10,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +55,8 @@ import android.content.Intent
 import android.net.Uri
 import com.damarquez.putz.data.repository.CalibreBookMatch
 
+data class TransferRef(val uuid: String, val title: String, val author: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalibreConfirmationSheet(
@@ -64,6 +72,7 @@ fun CalibreConfirmationSheet(
     isReplaceCover: Boolean = false,
     isUpdateComments: Boolean = false,
     initialUuid: String = "",
+    transferRefs: List<TransferRef> = emptyList(),
     initialComments: String = "",
     initialTags: String = "",
     autoAddTags: String? = null,
@@ -98,6 +107,9 @@ fun CalibreConfirmationSheet(
     var matchedBookAuthor by remember { mutableStateOf<String?>(null) }
     var isUuidMatched by remember { mutableStateOf(false) }
     var isUuidValidating by remember { mutableStateOf(false) }
+    var uuidFromTransfer by remember { mutableStateOf(false) }
+    var selectedTransferRef by remember { mutableStateOf<TransferRef?>(null) }
+    var showTransferPicker by remember { mutableStateOf(false) }
 
     var archiveMode by remember { mutableStateOf("default") }
     var assembleBook by remember { mutableStateOf(forceAssemble) }
@@ -107,6 +119,7 @@ fun CalibreConfirmationSheet(
     val requiresUuidMatch = isReplaceCover
 
     LaunchedEffect(uuid, autoAddTags) {
+        if (uuidFromTransfer) return@LaunchedEffect
         if (uuid.isNotBlank()) {
             isUuidValidating = true
             val match = checkExistsByUuid(uuid.trim())
@@ -227,6 +240,22 @@ fun CalibreConfirmationSheet(
                             color = if (isReplaceCover || isUpdateComments || isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
+                } else if (uuidFromTransfer && selectedTransferRef != null) {
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "From completed transfer: ${selectedTransferRef!!.title} by ${selectedTransferRef!!.author}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 } else if (isReplaceCover || isUpdateComments || (uuid.isNotBlank() && !isUuidValidating)) {
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -271,15 +300,81 @@ fun CalibreConfirmationSheet(
 
                 Spacer(Modifier.height(24.dp))
 
-                OutlinedTextField(
-                    value = uuid,
-                    onValueChange = { uuid = it },
-                    label = { Text(if (isReplaceCover) "Book UUID (Required)" else "Book UUID (Optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text("Directly target an existing book") },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = uuid,
+                        onValueChange = { uuid = it },
+                        label = { Text(if (isReplaceCover) "Book UUID (Required)" else "Book UUID (Optional)") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        enabled = !uuidFromTransfer,
+                        placeholder = { Text("Directly target an existing book") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    )
+                    if (transferRefs.isNotEmpty()) {
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = { showTransferPicker = true }) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = "Pick from completed transfers",
+                                tint = if (uuidFromTransfer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (uuidFromTransfer) {
+                    TextButton(
+                        onClick = {
+                            uuidFromTransfer = false
+                            selectedTransferRef = null
+                            isUuidMatched = false
+                            uuid = ""
+                        },
+                        modifier = Modifier.padding(start = 4.dp),
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Clear selection", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                if (showTransferPicker) {
+                    AlertDialog(
+                        onDismissRequest = { showTransferPicker = false },
+                        title = { Text("Pick completed transfer") },
+                        text = {
+                            LazyColumn {
+                                items(transferRefs) { ref ->
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                uuid = ref.uuid
+                                                title = ref.title
+                                                author = ref.author
+                                                uuidFromTransfer = true
+                                                isUuidMatched = true
+                                                selectedTransferRef = ref
+                                                matchedBookId = null
+                                                matchedBookTitle = null
+                                                matchedBookAuthor = null
+                                                showTransferPicker = false
+                                            }
+                                            .padding(vertical = 12.dp, horizontal = 4.dp)
+                                    ) {
+                                        Text(ref.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                        Text(ref.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    HorizontalDivider()
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { showTransferPicker = false }) { Text("Cancel") }
+                        },
+                    )
+                }
 
                 Spacer(Modifier.height(16.dp))
 
@@ -339,9 +434,9 @@ fun CalibreConfirmationSheet(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = {
                             val canSend = title.isNotBlank() &&
-                                (!isReplaceCover && !isUpdateComments || matchedBookId != null) &&
-                                (uuid.isBlank() || isUuidMatched) &&
-                                (!requiresUuidMatch || isUuidMatched)
+                                (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
+                                (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
+                                (!requiresUuidMatch || isUuidMatched || uuidFromTransfer)
                             if (canSend) {
                                 onConfirm(
                                     if (isReplaceCover) matchedBookTitle ?: title.trim() else title.trim(),
@@ -460,9 +555,9 @@ fun CalibreConfirmationSheet(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = title.isNotBlank() &&
-                        (!isReplaceCover && !isUpdateComments || matchedBookId != null) &&
-                        (uuid.isBlank() || isUuidMatched) &&
-                        (!requiresUuidMatch || isUuidMatched),
+                        (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
+                        (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
+                        (!requiresUuidMatch || isUuidMatched || uuidFromTransfer),
                 ) {
                     Text(
                         when {
