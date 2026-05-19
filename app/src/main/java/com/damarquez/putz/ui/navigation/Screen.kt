@@ -33,6 +33,8 @@ sealed class Screen(val route: String) {
 
     data object Transfers : Screen("transfers")
 
+    data object Trash : Screen("trash")
+
     data object Settings : Screen("settings")
     data object CalibreTransfers : Screen("calibre_transfers")
     data object LanConnections : Screen("lan_connections")

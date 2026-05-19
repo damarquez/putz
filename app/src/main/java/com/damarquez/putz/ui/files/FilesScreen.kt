@@ -94,6 +94,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @Composable
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?) -> Unit,
+    onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onSignOut: () -> Unit,
@@ -701,6 +702,8 @@ fun FilesScreen(
                                             if (isSelectionMode) {
                                                 selectedFiles = if (file in selectedFiles)
                                                     selectedFiles - file else selectedFiles + file
+                                            } else if (file.isTrash) {
+                                                onNavigateToTrash()
                                             } else if (file.isFolder) {
                                                 onNavigateToFolder(
                                                     file.id,

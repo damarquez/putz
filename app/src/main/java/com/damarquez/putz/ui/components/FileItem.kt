@@ -199,7 +199,7 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
-                        if (!file.isFolder && !file.isLan) {
+                        if (!file.isFolder && !file.isLan && !file.isTrash) {
                             DropdownMenuItem(
                                 text = { Text("Preview") },
                                 onClick = {
@@ -287,7 +287,7 @@ fun FileItem(
                             },
                         )
                         HorizontalDivider()
-                        if (!file.isLan) {
+                        if (!file.isLan && !file.isTrash) {
                             DropdownMenuItem(
                                 text = {
                                     Text(

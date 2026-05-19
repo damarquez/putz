@@ -4,6 +4,7 @@ import com.damarquez.putz.data.model.AccountInfo
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.model.PutioTransfer
+import com.damarquez.putz.data.model.TrashFile
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -13,6 +14,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.source
@@ -23,6 +25,17 @@ import kotlin.coroutines.resume
 
 @Serializable
 private data class BaseResponse(
+    val status: String = "",
+    @SerialName("error_type") val errorType: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+private data class TrashListResponse(
+    val files: List<TrashFile> = emptyList(),
+    @SerialName("trash_size") val trashSize: Long = 0L,
+    val cursor: String? = null,
+    val total: Int = 0,
     val status: String = "",
     @SerialName("error_type") val errorType: String? = null,
     val error: String? = null,
@@ -552,6 +565,128 @@ class PutioApiClient @Inject constructor(
                 .header("Authorization", "Bearer $token")
                 .header("Accept", "application/json")
                 .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<BaseResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<BaseResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun listTrash(token: String): NetworkResult<Pair<List<TrashFile>, Long>> {
+        return try {
+            val request = Request.Builder()
+                .url("$BASE_URL/trash/list")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .get()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<TrashListResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<TrashListResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(parsed.files to parsed.trashSize)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun restoreTrash(token: String, fileIds: List<Long>): NetworkResult<Unit> {
+        return try {
+            val body = FormBody.Builder()
+                .add("file_ids", fileIds.joinToString(","))
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/trash/restore")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<BaseResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<BaseResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun deleteFromTrash(token: String, fileIds: List<Long>): NetworkResult<Unit> {
+        return try {
+            val body = FormBody.Builder()
+                .add("file_ids", fileIds.joinToString(","))
+                .build()
+            val request = Request.Builder()
+                .url("$BASE_URL/trash/delete")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<BaseResponse>(bodyStr) }.getOrNull()
+                    return NetworkResult.Error(
+                        parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                        response.code
+                    )
+                }
+                val parsed = json.decodeFromString<BaseResponse>(bodyStr)
+                if (parsed.status == "ERROR") {
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                }
+                NetworkResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
+    fun emptyTrash(token: String): NetworkResult<Unit> {
+        return try {
+            val request = Request.Builder()
+                .url("$BASE_URL/trash/empty")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/json")
+                .post(ByteArray(0).toRequestBody(null))
                 .build()
 
             okHttpClient.newCall(request).execute().use { response ->

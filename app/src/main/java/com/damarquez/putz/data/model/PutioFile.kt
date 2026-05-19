@@ -26,8 +26,15 @@ data class PutioFile(
     val isLan: Boolean = false,
     val lanPath: String? = null,
     val lanConnectionId: Long? = null,
+
+    // Trash virtual folder
+    val isTrash: Boolean = false,
 ) {
     val isFolder: Boolean get() = fileType == "FOLDER"
+
+    companion object {
+        const val TRASH_ROOT_ID = -3000L
+    }
 }
 
 enum class PutioFileType(val apiValue: String) {

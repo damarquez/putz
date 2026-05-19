@@ -13,6 +13,7 @@ import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.data.model.AccountInfo
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.data.model.PutioFile.Companion.TRASH_ROOT_ID
 import com.damarquez.putz.data.repository.AudiobookFile
 import com.damarquez.putz.data.repository.CalibreBatchItem
 import com.damarquez.putz.data.repository.CalibreBookMatch
@@ -293,7 +294,13 @@ class FilesViewModel @Inject constructor(
                 fileType = "FOLDER",
                 isLan = true,
             )
-            listOf(localRoot, lanRoot) + apiFiles
+            val trashRoot = PutioFile(
+                id = TRASH_ROOT_ID,
+                name = "Trash",
+                fileType = "FOLDER",
+                isTrash = true,
+            )
+            listOf(localRoot, lanRoot, trashRoot) + apiFiles
         } else apiFiles
 
         return list.sortedWith(

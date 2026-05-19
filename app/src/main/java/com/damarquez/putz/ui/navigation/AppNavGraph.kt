@@ -29,6 +29,7 @@ import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.auth.AuthScreen
 import com.damarquez.putz.ui.files.FilesScreen
 import com.damarquez.putz.ui.settings.LanConnectionsScreen
+import com.damarquez.putz.ui.trash.TrashScreen
 import com.damarquez.putz.ui.settings.SettingsScreen
 import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
@@ -220,6 +221,7 @@ fun AppNavGraph(
                             )
                         )
                     },
+                    onNavigateToTrash = { navController.navigate(Screen.Trash.route) },
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                     onSignOut = {
@@ -227,6 +229,13 @@ fun AppNavGraph(
                             popUpTo(0) { inclusive = true }
                         }
                     },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.Trash.route) {
+                TrashScreen(
+                    onNavigateUp = { navController.navigateUp() },
                     viewModel = hiltViewModel(),
                 )
             }
