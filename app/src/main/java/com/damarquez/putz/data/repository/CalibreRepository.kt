@@ -403,8 +403,14 @@ class CalibreRepository @Inject constructor(
             author = author,
             batchData = json.encodeToString(updatedItems),
             allPutioFileIds = updatedIds.joinToString(","),
-            lastUpdatedAt = System.currentTimeMillis()
+            lastUpdatedAt = System.currentTimeMillis(),
+            errorMessage = null,
         ))
+    }
+
+    suspend fun setTransferErrorMessage(fileId: Long, message: String?) {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return
+        calibreTransferDao.updateTransfer(transfer.copy(errorMessage = message))
     }
 
     suspend fun getPendingAssemblies(): List<CalibreTransferEntity> {

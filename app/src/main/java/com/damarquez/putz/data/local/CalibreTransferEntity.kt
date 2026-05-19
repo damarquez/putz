@@ -2,7 +2,9 @@ package com.damarquez.putz.data.local
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "calibre_transfers")
 data class CalibreTransferEntity(
     @PrimaryKey val putioFileId: Long,
@@ -48,6 +50,7 @@ data class CalibreTransferEntity(
             listOf(putioFileId)
 }
 
+@Serializable
 enum class CalibreTransferStatus {
     UPLOADING,
     PENDING,

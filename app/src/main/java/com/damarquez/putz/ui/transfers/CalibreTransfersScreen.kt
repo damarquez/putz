@@ -428,6 +428,10 @@ fun CalibreTransfersScreen(
                                 onRetry = {
                                     viewModel.retryTransfer(transfer.putioFileId)
                                 },
+                                onCopyJson = { json ->
+                                    clipboardManager.setText(AnnotatedString(json))
+                                    scope.launch { snackbarHostState.showSnackbar("JSON copied") }
+                                },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
                             )
                         }
@@ -457,6 +461,10 @@ fun CalibreTransfersScreen(
                                 },
                                 onRetry = {
                                     viewModel.retryTransfer(transfer.putioFileId)
+                                },
+                                onCopyJson = { json ->
+                                    clipboardManager.setText(AnnotatedString(json))
+                                    scope.launch { snackbarHostState.showSnackbar("JSON copied") }
                                 },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
                                 onCopyUuid = { uuid ->

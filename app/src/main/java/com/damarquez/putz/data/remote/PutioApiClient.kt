@@ -518,14 +518,16 @@ class PutioApiClient @Inject constructor(
                         ?: return@use NetworkResult.Error("Empty response", response.code)
                     if (!response.isSuccessful) {
                         val parsed = runCatching { json.decodeFromString<FileResponse>(bodyStr) }.getOrNull()
+                        android.util.Log.w("PutioApiClient", "Stream upload HTTP error ${response.code} for $name: $bodyStr")
                         return@use NetworkResult.Error(
-                            parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
+                            parsed?.error ?: parsed?.errorType ?: bodyStr.take(120).ifBlank { "HTTP ${response.code}" },
                             response.code
                         )
                     }
                     val parsed = json.decodeFromString<FileResponse>(bodyStr)
                     if (parsed.status == "ERROR") {
-                        return@use NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                        android.util.Log.w("PutioApiClient", "Stream upload API error (HTTP ${response.code}) for $name: $bodyStr")
+                        return@use NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error", response.code)
                     }
                     val file = parsed.file ?: return@use NetworkResult.Error("Missing file info")
                     android.util.Log.d("PutioApiClient", "Stream upload successful for $name, ID: ${file.id}")

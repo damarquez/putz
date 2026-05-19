@@ -42,10 +42,12 @@ import com.damarquez.putz.data.repository.CalibreBatchItem
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 
 private val batchItemsJson = Json { ignoreUnknownKeys = true }
+private val prettyJson = Json { prettyPrint = true }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -54,6 +56,7 @@ fun CalibreTransferItem(
     onDelete: () -> Unit,
     onProbe: () -> Unit,
     onRetry: () -> Unit,
+    onCopyJson: (String) -> Unit,
     modifier: Modifier = Modifier,
     uploadProgress: String? = null,
     onCopyUuid: ((String) -> Unit)? = null,
@@ -111,9 +114,7 @@ fun CalibreTransferItem(
             .combinedClickable(
                 onClick = {},
                 onLongClick = {
-                    if (transfer.status == CalibreTransferStatus.COMPLETED && transfer.calibreBookUuid != null) {
-                        showContextMenu = true
-                    }
+                    showContextMenu = true
                 },
             ),
         colors = CardDefaults.cardColors(
@@ -172,7 +173,7 @@ fun CalibreTransferItem(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
-                if (transfer.status == CalibreTransferStatus.FAILED && !transfer.errorMessage.isNullOrBlank()) {
+                if (!transfer.errorMessage.isNullOrBlank()) {
                     Text(
                         text = transfer.errorMessage,
                         style = MaterialTheme.typography.labelSmall,
@@ -233,15 +234,27 @@ fun CalibreTransferItem(
         onDismissRequest = { showContextMenu = false },
     ) {
         DropdownMenuItem(
-            text = { Text("Copy UUID") },
+            text = { Text("Copy JSON") },
             leadingIcon = {
                 Icon(Icons.Default.ContentCopy, contentDescription = null)
             },
             onClick = {
                 showContextMenu = false
-                transfer.calibreBookUuid?.let { onCopyUuid?.invoke(it) }
+                onCopyJson(prettyJson.encodeToString(transfer))
             },
         )
+        if (transfer.calibreBookUuid != null) {
+            DropdownMenuItem(
+                text = { Text("Copy UUID") },
+                leadingIcon = {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onCopyUuid?.invoke(transfer.calibreBookUuid)
+                },
+            )
+        }
     }
     } // Box
 }

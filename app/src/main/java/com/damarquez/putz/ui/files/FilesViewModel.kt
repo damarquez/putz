@@ -450,12 +450,17 @@ class FilesViewModel @Inject constructor(
                 }
                 else -> {
                     calibreRepository.updateUploadProgress(progressKey, null)
-                    _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
+                    val msg = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
+                    _snackbarMessage.value = msg
+                    calibreRepository.setTransferErrorMessage(progressKey, msg)
                     return null
                 }
             }
         }
         calibreRepository.updateUploadProgress(progressKey, null)
+        val msg = "Upload failed after $maxAttempts attempts: ${file.name}"
+        _snackbarMessage.value = msg
+        calibreRepository.setTransferErrorMessage(progressKey, msg)
         return null
     }
 
