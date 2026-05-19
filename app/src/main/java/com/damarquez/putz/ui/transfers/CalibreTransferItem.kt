@@ -125,8 +125,9 @@ fun CalibreTransferItem(
             modifier = Modifier
                 .padding(16.dp)
                 .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
+            // Left column: book icon + format labels
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.width(40.dp)
@@ -157,6 +158,9 @@ fun CalibreTransferItem(
 
             Spacer(Modifier.width(16.dp))
 
+            // Right column: text info, then status + buttons
+            val isAssembled = transfer.status == CalibreTransferStatus.ASSEMBLED
+            val isAssemblyUploading = isAssembled && uploadProgress != null
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = transfer.title,
@@ -178,54 +182,59 @@ fun CalibreTransferItem(
                         text = transfer.errorMessage,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
-                        maxLines = 1
                     )
                 }
-            }
 
-            val isAssembled = transfer.status == CalibreTransferStatus.ASSEMBLED
-            val isAssemblyUploading = isAssembled && uploadProgress != null
-            StatusBadge(status = transfer.status, uploadProgress = uploadProgress, isAssemblyUploading = isAssemblyUploading)
-
-            if (isAssembled) {
-                IconButton(
-                    onClick = onRetry,
-                    enabled = !isAssemblyUploading,
+                // Status badge + action buttons
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Start transfer",
-                        tint = if (isAssemblyUploading) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
+                    StatusBadge(
+                        status = transfer.status,
+                        uploadProgress = uploadProgress,
+                        isAssemblyUploading = isAssemblyUploading,
                     )
+                    Spacer(Modifier.weight(1f))
+                    if (isAssembled) {
+                        IconButton(
+                            onClick = onRetry,
+                            enabled = !isAssemblyUploading,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Start transfer",
+                                tint = if (isAssemblyUploading) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    } else if (transfer.status == CalibreTransferStatus.PENDING ||
+                        transfer.status == CalibreTransferStatus.REQUESTED ||
+                        transfer.status == CalibreTransferStatus.PROCESSING) {
+                        IconButton(onClick = onProbe) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = "Probe status",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    if (transfer.status == CalibreTransferStatus.FAILED) {
+                        IconButton(onClick = onRetry) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Retry",
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Remove",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-            } else if (transfer.status == CalibreTransferStatus.PENDING ||
-                transfer.status == CalibreTransferStatus.REQUESTED ||
-                transfer.status == CalibreTransferStatus.PROCESSING) {
-                IconButton(onClick = onProbe) {
-                    Icon(
-                        imageVector = Icons.Default.Sync,
-                        contentDescription = "Probe status",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            if (transfer.status == CalibreTransferStatus.FAILED) {
-                IconButton(onClick = onRetry) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Retry",
-                        tint = MaterialTheme.colorScheme.tertiary
-                    )
-                }
-            }
-
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Remove",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
