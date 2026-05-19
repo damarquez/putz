@@ -53,9 +53,9 @@ import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -328,9 +328,24 @@ private fun FileTypeIcon(
     cornerRadius: Int,
 ) {
     val styling = LocalAppStyling.current
+    val extension = fileName.substringAfterLast('.', "")
+    val customRes: Int? = when {
+        isFolder -> FileIconProvider.folder
+        else -> FileIconProvider.forExtension(extension)
+    }
+
+    if (customRes != null) {
+        Icon(
+            painter = painterResource(id = customRes),
+            contentDescription = null,
+            tint = Color.Unspecified,
+            modifier = Modifier.size(44.dp),
+        )
+        return
+    }
+
     val isEbook = MetadataUtils.isEbook(fileName)
     val icon: ImageVector = when {
-        isFolder -> Icons.Default.Folder
         isEbook -> Icons.Default.Book
         fileType == PutioFileType.VIDEO -> Icons.Default.VideoFile
         fileType == PutioFileType.AUDIO -> Icons.Default.AudioFile
