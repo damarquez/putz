@@ -491,8 +491,15 @@ fun FilesScreen(
                             )
                             accountInfo?.let { info ->
                                 if (isRoot) {
+                                    val subtitle = when {
+                                        info.diskQuota > 0 ->
+                                            "${info.username} (${formatDiskSize(info.diskAvail)} of ${formatDiskSize(info.diskQuota)} free)"
+                                        info.diskUsed > 0 ->
+                                            "${info.username} (${formatDiskSize(info.diskUsed)} used, quota unknown)"
+                                        else -> info.username
+                                    }
                                     Text(
-                                        text = info.username,
+                                        text = subtitle,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -754,6 +761,13 @@ private fun NoResultsView(query: String, modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+private fun formatDiskSize(bytes: Long): String = when {
+    bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)
+    bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
+    bytes >= 1_000L -> "%.1f KB".format(bytes / 1_000.0)
+    else -> "$bytes B"
 }
 
 @Composable
