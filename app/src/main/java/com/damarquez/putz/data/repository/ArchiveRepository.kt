@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.damarquez.putz.data.archive.LocalArchiveStream
+import com.damarquez.putz.data.archive.PutioArchiveStream
 import com.damarquez.putz.data.model.ArchiveDestination
 import com.damarquez.putz.data.model.ArchiveEntry
 import com.damarquez.putz.data.model.ArchiveSource
@@ -26,11 +27,13 @@ import java.io.IOException
 import java.io.OutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import okhttp3.OkHttpClient
 
 @Singleton
 class ArchiveRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val lanFilesRepository: LanFilesRepository,
+    private val okHttpClient: OkHttpClient,
 ) {
     private val initialized: Boolean by lazy {
         try {
@@ -135,6 +138,7 @@ class ArchiveRepository @Inject constructor(
             LocalArchiveStream(pfd)
         }
         is ArchiveSource.Lan -> lanFilesRepository.openArchiveStream(source.connectionId, source.path)
+        is ArchiveSource.Putio -> PutioArchiveStream(source.downloadUrl, source.fileSize, okHttpClient)
     }
 
     private fun buildEntryList(inArchive: IInArchive): List<ArchiveEntry> {

@@ -31,18 +31,24 @@ sealed class Screen(val route: String) {
         const val ARG_LAN_PATH = "lanPath"
     }
 
-    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}") {
+    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}") {
         fun createRoute(
             archiveName: String,
             localUri: String? = null,
             lanConnectionId: Long? = null,
             lanPath: String? = null,
+            putioFileId: Long? = null,
+            putioDownloadUrl: String? = null,
+            putioFileSize: Long? = null,
         ): String {
             var route = "archive/${Uri.encode(archiveName)}"
             val params = mutableListOf<String>()
             if (localUri != null) params.add("localUri=${Uri.encode(localUri)}")
             if (lanConnectionId != null) params.add("lanConnectionId=$lanConnectionId")
             if (lanPath != null) params.add("lanPath=${Uri.encode(lanPath)}")
+            if (putioFileId != null) params.add("putioFileId=$putioFileId")
+            if (putioDownloadUrl != null) params.add("putioDownloadUrl=${Uri.encode(putioDownloadUrl)}")
+            if (putioFileSize != null) params.add("putioFileSize=$putioFileSize")
             if (params.isNotEmpty()) route += "?" + params.joinToString("&")
             return route
         }
@@ -50,6 +56,9 @@ sealed class Screen(val route: String) {
         const val ARG_LOCAL_URI = "localUri"
         const val ARG_LAN_CONNECTION_ID = "lanConnectionId"
         const val ARG_LAN_PATH = "lanPath"
+        const val ARG_PUTIO_FILE_ID = "putioFileId"
+        const val ARG_PUTIO_DOWNLOAD_URL = "putioDownloadUrl"
+        const val ARG_PUTIO_FILE_SIZE = "putioFileSize"
     }
 
     data object Transfers : Screen("transfers")

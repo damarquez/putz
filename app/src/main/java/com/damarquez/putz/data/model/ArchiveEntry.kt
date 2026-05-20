@@ -11,6 +11,7 @@ data class ArchiveEntry(
 sealed class ArchiveSource {
     data class Local(val uri: String) : ArchiveSource()
     data class Lan(val connectionId: Long, val path: String) : ArchiveSource()
+    data class Putio(val fileId: Long, val downloadUrl: String, val fileSize: Long) : ArchiveSource()
 }
 
 sealed class ArchiveDestination {

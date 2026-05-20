@@ -56,12 +56,18 @@ class ArchiveViewModel @Inject constructor(
     private val localUri: String? = savedStateHandle[Screen.Archive.ARG_LOCAL_URI]
     private val lanConnectionId: Long = savedStateHandle[Screen.Archive.ARG_LAN_CONNECTION_ID] ?: -1L
     private val lanPath: String? = savedStateHandle[Screen.Archive.ARG_LAN_PATH]
+    private val putioFileId: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_FILE_ID] ?: -1L
+    private val putioDownloadUrl: String? = savedStateHandle[Screen.Archive.ARG_PUTIO_DOWNLOAD_URL]
+    private val putioFileSize: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_FILE_SIZE] ?: 0L
 
     val source: ArchiveSource = when {
         localUri != null -> ArchiveSource.Local(localUri)
         lanConnectionId != -1L && lanPath != null -> ArchiveSource.Lan(lanConnectionId, lanPath)
+        putioFileId != -1L && putioDownloadUrl != null -> ArchiveSource.Putio(putioFileId, putioDownloadUrl, putioFileSize)
         else -> error("ArchiveViewModel: no valid source in saved state")
     }
+
+    val isPutio: Boolean get() = source is ArchiveSource.Putio
 
     private val _uiState = MutableStateFlow<ArchiveUiState>(ArchiveUiState.Loading)
     val uiState: StateFlow<ArchiveUiState> = _uiState.asStateFlow()

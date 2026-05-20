@@ -136,7 +136,7 @@ fun ArchiveScreen(
                     }
                 },
                 actions = {
-                    if (s != null && s.isSelectionMode) {
+                    if (!viewModel.isPutio && s != null && s.isSelectionMode) {
                         Text(
                             text = "${s.selectedEntries.size} selected",
                             style = MaterialTheme.typography.bodyMedium,
@@ -151,7 +151,7 @@ fun ArchiveScreen(
                         ) {
                             Text("Extract")
                         }
-                    } else if (s != null) {
+                    } else if (!viewModel.isPutio && s != null) {
                         Button(
                             onClick = { showDestinationPicker = true },
                             modifier = Modifier.padding(end = 8.dp),

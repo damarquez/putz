@@ -95,6 +95,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
+    onNavigateToPutioArchive: (fileId: Long, fileName: String, downloadUrl: String, fileSize: Long) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -216,6 +217,12 @@ fun FilesScreen(
     LaunchedEffect(Unit) {
         viewModel.previewIntent.collect { intent ->
             context.startActivity(intent)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.putioArchiveEvent.collect { event ->
+            onNavigateToPutioArchive(event.fileId, event.fileName, event.downloadUrl, event.fileSize)
         }
     }
 
@@ -720,6 +727,8 @@ fun FilesScreen(
                                                     file.lanPath,
                                                     file.name,
                                                 )
+                                            } else if (!file.isLocal && !file.isLan && MetadataUtils.isArchive(file.name)) {
+                                                viewModel.openPutioArchive(file)
                                             }
                                         },
                                         onLongClick = { selectedFiles = selectedFiles + file },

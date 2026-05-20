@@ -105,6 +105,10 @@ class FilesViewModel @Inject constructor(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+    data class PutioArchiveEvent(val fileId: Long, val fileName: String, val downloadUrl: String, val fileSize: Long)
+    private val _putioArchiveEvent = MutableSharedFlow<PutioArchiveEvent>()
+    val putioArchiveEvent: SharedFlow<PutioArchiveEvent> = _putioArchiveEvent.asSharedFlow()
+
     private val _isSearchMode = MutableStateFlow(false)
     val isSearchMode: StateFlow<Boolean> = _isSearchMode.asStateFlow()
 
@@ -770,6 +774,14 @@ class FilesViewModel @Inject constructor(
                 newFileIds = resolvedIds,
             )
             _snackbarMessage.value = "Audiobook pack added to assembly: $title"
+        }
+    }
+
+    fun openPutioArchive(file: PutioFile) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val url = filesRepository.getDownloadUrl(token, file.id)
+            _putioArchiveEvent.emit(PutioArchiveEvent(file.id, file.name, url, file.size))
         }
     }
 
