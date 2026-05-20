@@ -17,6 +17,7 @@ security-crypto = "1.1.0-alpha06"
 room = "2.6.1"
 playServicesAuth = "21.2.0"
 smbj = "0.13.0"
+sevenzipjbinding = "Release-16.02-2.03"
 googleDrive = "v3-rev20240521-2.0.0"
 googleApiClient = "2.7.0"
 googleHttpClientGson = "1.45.0"
@@ -54,6 +55,7 @@ google-api-services-drive = { group = "com.google.apis", name = "google-api-serv
 google-api-client-android = { group = "com.google.api-client", name = "google-api-client-android", version.ref = "googleApiClient" }
 google-http-client-gson = { group = "com.google.http-client", name = "google-http-client-gson", version.ref = "googleHttpClientGson" }
 smbj = { group = "com.hierynomus", name = "smbj", version.ref = "smbj" }
+sevenzipjbinding = { group = "com.github.omicronapps", name = "7-Zip-JBinding-4Android", version.ref = "sevenzipjbinding" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

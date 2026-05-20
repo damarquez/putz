@@ -26,6 +26,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.damarquez.putz.settings.SettingsRepository
+import com.damarquez.putz.ui.archive.ArchiveScreen
 import com.damarquez.putz.ui.auth.AuthScreen
 import com.damarquez.putz.ui.files.FilesScreen
 import com.damarquez.putz.ui.settings.LanConnectionsScreen
@@ -221,6 +222,16 @@ fun AppNavGraph(
                             )
                         )
                     },
+                    onNavigateToArchive = { localUri, lanConnectionId, lanPath, archiveName ->
+                        navController.navigate(
+                            Screen.Archive.createRoute(
+                                archiveName,
+                                localUri = localUri,
+                                lanConnectionId = if (lanConnectionId != -1L) lanConnectionId else null,
+                                lanPath = lanPath,
+                            )
+                        )
+                    },
                     onNavigateToTrash = { navController.navigate(Screen.Trash.route) },
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
@@ -235,6 +246,32 @@ fun AppNavGraph(
 
             composable(Screen.Trash.route) {
                 TrashScreen(
+                    onNavigateUp = { navController.navigateUp() },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(
+                route = Screen.Archive.route,
+                arguments = listOf(
+                    navArgument(Screen.Archive.ARG_ARCHIVE_NAME) { type = NavType.StringType },
+                    navArgument(Screen.Archive.ARG_LOCAL_URI) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                    navArgument(Screen.Archive.ARG_LAN_CONNECTION_ID) {
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    },
+                    navArgument(Screen.Archive.ARG_LAN_PATH) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) {
+                ArchiveScreen(
                     onNavigateUp = { navController.navigateUp() },
                     viewModel = hiltViewModel(),
                 )

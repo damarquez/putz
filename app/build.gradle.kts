@@ -121,6 +121,7 @@ dependencies {
     implementation(libs.google.api.client.android)
     implementation(libs.google.http.client.gson)
     implementation(libs.smbj)
+    implementation(libs.sevenzipjbinding)
 
     debugImplementation(libs.compose.ui.tooling)
 }

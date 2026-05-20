@@ -5,7 +5,9 @@ import com.damarquez.putz.data.local.LanConnectionEntity
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.security.SecureStorage
 import com.damarquez.putz.util.MetadataUtils
+import com.damarquez.putz.data.archive.LanArchiveStream
 import com.hierynomus.msdtyp.AccessMask
+import com.hierynomus.msfscc.fileinformation.FileStandardInformation
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2Dialect
 import com.hierynomus.mssmb2.SMB2ShareAccess
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.EnumSet
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -214,6 +217,83 @@ class LanFilesRepository @Inject constructor(
                 try { session.close() } catch (_: Exception) {}
                 try { smbConnection.close() } catch (_: Exception) {}
             }
+        }
+    }
+
+    suspend fun openArchiveStream(connectionId: Long, lanPath: String): LanArchiveStream = withContext(Dispatchers.IO) {
+        val conn = dao.getById(connectionId) ?: throw IOException("LAN connection not found: $connectionId")
+        val password = secureStorage.getLanPassword(connectionId)
+        val filePath = lanPath.replace("/", "\\")
+
+        val smbConnection = smbClient.connect(conn.host)
+        val session = smbConnection.authenticate(
+            AuthenticationContext(conn.username, password.toCharArray(), null)
+        )
+        val share = session.connectShare(conn.shareName) as DiskShare
+        val smbFile = share.openFile(
+            filePath,
+            EnumSet.of(AccessMask.GENERIC_READ),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN,
+            null,
+        )
+        val fileSize = smbFile.getFileInformation(FileStandardInformation::class.java).endOfFile
+        LanArchiveStream(smbFile, share, session, smbConnection, fileSize)
+    }
+
+    // Suspend: resolves the connection record and password from the DB/secure store.
+    // Call this before entering any blocking section, then pass the result to openWriteStreamBlocking.
+    suspend fun prepareWriteContext(connectionId: Long): ((String) -> OutputStream)? {
+        val conn = dao.getById(connectionId) ?: return null
+        val password = secureStorage.getLanPassword(connectionId)
+        return { lanPath -> openWriteStreamBlocking(conn, password, lanPath) }
+    }
+
+    // Blocking (non-suspend): all SMBJ calls are synchronous, safe to call from IO threads
+    // without wrapping in withContext or runBlocking.
+    fun openWriteStreamBlocking(conn: LanConnectionEntity, password: String, lanPath: String): OutputStream {
+        val filePath = lanPath.replace("/", "\\")
+        val smbConnection = smbClient.connect(conn.host)
+        val session = smbConnection.authenticate(
+            AuthenticationContext(conn.username, password.toCharArray(), null)
+        )
+        val share = session.connectShare(conn.shareName) as DiskShare
+
+        val parentPath = filePath.substringBeforeLast("\\", "")
+        if (parentPath.isNotEmpty()) {
+            createDirectories(share, parentPath)
+        }
+
+        val smbFile = share.openFile(
+            filePath,
+            EnumSet.of(AccessMask.GENERIC_WRITE),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OVERWRITE_IF,
+            null,
+        )
+        val inner = smbFile.outputStream
+        return object : OutputStream() {
+            override fun write(b: Int) = inner.write(b)
+            override fun write(b: ByteArray, off: Int, len: Int) = inner.write(b, off, len)
+            override fun flush() = inner.flush()
+            override fun close() {
+                runCatching { inner.close() }
+                runCatching { smbFile.close() }
+                runCatching { share.close() }
+                runCatching { session.close() }
+                runCatching { smbConnection.close() }
+            }
+        }
+    }
+
+    private fun createDirectories(share: DiskShare, path: String) {
+        val parts = path.split("\\")
+        var current = ""
+        for (part in parts) {
+            current = if (current.isEmpty()) part else "$current\\$part"
+            runCatching { share.mkdir(current) }
         }
     }
 

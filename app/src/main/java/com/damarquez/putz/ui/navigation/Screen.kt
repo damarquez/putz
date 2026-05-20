@@ -31,6 +31,27 @@ sealed class Screen(val route: String) {
         const val ARG_LAN_PATH = "lanPath"
     }
 
+    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}") {
+        fun createRoute(
+            archiveName: String,
+            localUri: String? = null,
+            lanConnectionId: Long? = null,
+            lanPath: String? = null,
+        ): String {
+            var route = "archive/${Uri.encode(archiveName)}"
+            val params = mutableListOf<String>()
+            if (localUri != null) params.add("localUri=${Uri.encode(localUri)}")
+            if (lanConnectionId != null) params.add("lanConnectionId=$lanConnectionId")
+            if (lanPath != null) params.add("lanPath=${Uri.encode(lanPath)}")
+            if (params.isNotEmpty()) route += "?" + params.joinToString("&")
+            return route
+        }
+        const val ARG_ARCHIVE_NAME = "archiveName"
+        const val ARG_LOCAL_URI = "localUri"
+        const val ARG_LAN_CONNECTION_ID = "lanConnectionId"
+        const val ARG_LAN_PATH = "lanPath"
+    }
+
     data object Transfers : Screen("transfers")
 
     data object Trash : Screen("trash")

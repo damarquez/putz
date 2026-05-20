@@ -94,6 +94,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @Composable
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?) -> Unit,
+    onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -711,6 +712,13 @@ fun FilesScreen(
                                                     file.localUri,
                                                     file.lanConnectionId ?: -1L,
                                                     file.lanPath,
+                                                )
+                                            } else if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.name)) {
+                                                onNavigateToArchive(
+                                                    file.localUri,
+                                                    file.lanConnectionId ?: -1L,
+                                                    file.lanPath,
+                                                    file.name,
                                                 )
                                             }
                                         },

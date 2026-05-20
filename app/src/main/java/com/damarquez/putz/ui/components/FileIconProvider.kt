@@ -14,6 +14,7 @@ object FileIconProvider {
         "m4b"  -> R.drawable.ic_file_m4b
         "m4a"  -> R.drawable.ic_file_m4a
         "mp3"  -> R.drawable.ic_file_mp3
+        "epub" -> R.drawable.ic_file_epub
         "mobi" -> R.drawable.ic_file_mobi
         "rar"  -> R.drawable.ic_file_rar
         "rtf"  -> R.drawable.ic_file_rtf
