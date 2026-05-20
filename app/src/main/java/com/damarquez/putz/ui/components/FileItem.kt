@@ -230,7 +230,7 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
-                        if (!file.isFolder && !file.isLan && !file.isTrash) {
+                        if (!file.isFolder && !file.isTrash) {
                             DropdownMenuItem(
                                 text = { Text("Preview") },
                                 onClick = {

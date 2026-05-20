@@ -138,28 +138,43 @@ class FilesViewModel @Inject constructor(
 
     fun previewFile(file: PutioFile) {
         viewModelScope.launch {
-            // 1. Show loading
             val current = _uiState.value
             if (current is FilesUiState.Success) {
                 _uiState.value = current.copy(isPreviewLoading = true)
             }
 
             try {
-                val token = settingsRepository.authTokenFlow.first()
-                val url = filesRepository.getDownloadUrl(token, file.id)
-                val targetFile = File(File(context.cacheDir, "previews"), file.name)
-                
-                // 2. Download to cache if doesn't exist
-                if (!targetFile.exists()) {
-                    val result = filesRepository.downloadToFile(url, targetFile)
-                    if (result is NetworkResult.Error) {
-                        _snackbarMessage.value = "Preview failed: ${result.message}"
-                        return@launch
+                val uri: Uri = when {
+                    file.isLocal && file.localUri != null -> {
+                        Uri.parse(file.localUri)
+                    }
+                    file.isLan && file.lanConnectionId != null && file.lanPath != null -> {
+                        val targetFile = File(File(context.cacheDir, "previews"), file.name)
+                        if (!targetFile.exists()) {
+                            withContext(Dispatchers.IO) {
+                                targetFile.parentFile?.mkdirs()
+                                lanFilesRepository.openFileStream(file.lanConnectionId, file.lanPath).use { input ->
+                                    targetFile.outputStream().use { output -> input.copyTo(output) }
+                                }
+                            }
+                        }
+                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
+                    }
+                    else -> {
+                        val token = settingsRepository.authTokenFlow.first()
+                        val url = filesRepository.getDownloadUrl(token, file.id)
+                        val targetFile = File(File(context.cacheDir, "previews"), file.name)
+                        if (!targetFile.exists()) {
+                            val result = filesRepository.downloadToFile(url, targetFile)
+                            if (result is NetworkResult.Error) {
+                                _snackbarMessage.value = "Preview failed: ${result.message}"
+                                return@launch
+                            }
+                        }
+                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
                     }
                 }
 
-                // 3. Prepare intent
-                val uri = FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
                 val extension = MimeTypeMap.getFileExtensionFromUrl(file.name)
                 val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
 
@@ -168,12 +183,11 @@ class FilesViewModel @Inject constructor(
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                
+
                 _previewIntent.emit(intent)
             } catch (e: Exception) {
                 _snackbarMessage.value = "Preview error: ${e.message}"
             } finally {
-                // Hide loading
                 val finalState = _uiState.value
                 if (finalState is FilesUiState.Success) {
                     _uiState.value = finalState.copy(isPreviewLoading = false)
