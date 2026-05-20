@@ -51,6 +51,22 @@ class FilesRepository @Inject constructor(
         return "${PutioApiClient.BASE_URL}/files/$fileId/download?oauth_token=$token"
     }
 
+    suspend fun resolveDirectDownloadUrl(url: String): String =
+        withContext(Dispatchers.IO) {
+            try {
+                val noFollowClient = apiClient.okHttpClient.newBuilder()
+                    .followRedirects(false)
+                    .followSslRedirects(false)
+                    .build()
+                val request = okhttp3.Request.Builder().url(url).build()
+                noFollowClient.newCall(request).execute().use { response ->
+                    response.header("Location") ?: url
+                }
+            } catch (e: Exception) {
+                url
+            }
+        }
+
     suspend fun deleteFiles(token: String, fileIds: List<Long>): NetworkResult<Unit> =
         withContext(Dispatchers.IO) {
             apiClient.deleteFiles(token, fileIds)

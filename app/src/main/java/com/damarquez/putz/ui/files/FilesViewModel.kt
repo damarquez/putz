@@ -315,15 +315,16 @@ class FilesViewModel @Inject constructor(
     fun downloadFile(file: PutioFile) {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
-            val url = filesRepository.getDownloadUrl(token, file.id)
-            
+            val putioUrl = filesRepository.getDownloadUrl(token, file.id)
+            val directUrl = filesRepository.resolveDirectDownloadUrl(putioUrl)
+            val safeFileName = file.name.replace(Regex("[\\[\\]<>|*?\"']"), "_")
+
             val downloadManager = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-            val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
+            val request = android.app.DownloadManager.Request(android.net.Uri.parse(directUrl))
                 .setTitle(file.name)
                 .setDescription("Downloading from put.io")
                 .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, file.name)
-                .addRequestHeader("Authorization", "Bearer $token")
+                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, safeFileName)
 
             downloadManager.enqueue(request)
             _snackbarMessage.value = "Download started: ${file.name}"
