@@ -82,10 +82,11 @@ fun AppNavGraph(
 
     val showBottomNav = currentRoute == Screen.Files.route ||
                         currentRoute == Screen.Transfers.route ||
-                        currentRoute == Screen.CalibreTransfers.route
+                        currentRoute == Screen.CalibreTransfers.route ||
+                        currentRoute == Screen.Archive.route
 
     // Tab selection state
-    val filesSelected = currentRoute == Screen.Files.route
+    val filesSelected = currentRoute == Screen.Files.route || currentRoute == Screen.Archive.route
     val transfersSelected = currentRoute == Screen.Transfers.route
     val calibreSelected = currentRoute == Screen.CalibreTransfers.route
 
