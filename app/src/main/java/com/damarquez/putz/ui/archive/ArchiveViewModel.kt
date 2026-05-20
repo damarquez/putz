@@ -3,26 +3,44 @@ package com.damarquez.putz.ui.archive
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
+import com.damarquez.putz.data.local.CalibreTransferEntity
+import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.data.model.ArchiveDestination
 import com.damarquez.putz.data.model.ArchiveEntry
 import com.damarquez.putz.data.model.ArchiveSource
 import com.damarquez.putz.data.model.ExtractionProgress
-import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.ArchiveRepository
+import com.damarquez.putz.data.repository.CalibreBatchItem
+import com.damarquez.putz.data.repository.CalibreBookMatch
+import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.data.repository.LanFilesRepository
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val CALIBRE_PUTIO_MAX_ENTRY_BYTES = 50L * 1024 * 1024
+
+sealed class CalibreSendStatus {
+    data class Working(val text: String) : CalibreSendStatus()
+    data object Done : CalibreSendStatus()
+    data class Error(val message: String) : CalibreSendStatus()
+}
 
 data class PutioPickerState(
     val currentFolderId: Long,
@@ -59,9 +77,11 @@ sealed class ArchiveUiState {
 @HiltViewModel
 class ArchiveViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
+    @ApplicationContext private val context: Context,
     private val archiveRepository: ArchiveRepository,
     val lanFilesRepository: LanFilesRepository,
     private val filesRepository: FilesRepository,
+    private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
@@ -91,6 +111,18 @@ class ArchiveViewModel @Inject constructor(
 
     private val _putioPickerState = MutableStateFlow<PutioPickerState?>(null)
     val putioPickerState: StateFlow<PutioPickerState?> = _putioPickerState.asStateFlow()
+
+    private val _calibreSendStatus = MutableStateFlow<CalibreSendStatus?>(null)
+    val calibreSendStatus: StateFlow<CalibreSendStatus?> = _calibreSendStatus.asStateFlow()
+
+    private val _snackbarMessage = MutableStateFlow<String?>(null)
+    val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
+    val pendingAssemblies: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
+        .map { transfers -> transfers.filter { it.status == CalibreTransferStatus.ASSEMBLED } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val uploadProgress: StateFlow<Map<Long, String>> = calibreRepository.uploadProgress
 
     init {
         load()
@@ -310,6 +342,154 @@ class ArchiveViewModel @Inject constructor(
         if (source is ArchiveSource.Lan && source.connectionId == connectionId)
             source.path.substringBeforeLast('/', "")
         else ""
+
+    fun dismissSnackbar() { _snackbarMessage.value = null }
+    fun dismissCalibreSendStatus() { _calibreSendStatus.value = null }
+
+    suspend fun checkBookExists(title: String, author: String): Long? {
+        val dbFile = java.io.File(context.filesDir, "metadata.db")
+        return calibreRepository.checkExists(dbFile, title, author)
+    }
+
+    suspend fun checkBookExistsByUuid(uuid: String): CalibreBookMatch? {
+        val dbFile = java.io.File(context.filesDir, "metadata.db")
+        return calibreRepository.checkExistsByUuid(dbFile, uuid)
+    }
+
+    fun sendEntryToCalibre(
+        entry: ArchiveEntry,
+        title: String,
+        author: String,
+        assembleBook: Boolean = false,
+        assemblyFileId: Long? = null,
+        calibreBookUuid: String? = null,
+    ) {
+        if (source is ArchiveSource.Putio && entry.size > CALIBRE_PUTIO_MAX_ENTRY_BYTES) {
+            _snackbarMessage.value = "File exceeds 50 MB — extract it first, then send to Calibre"
+            return
+        }
+
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val tempId = System.currentTimeMillis()
+            var tempFile: java.io.File? = null
+
+            try {
+                _calibreSendStatus.value = CalibreSendStatus.Working("Extracting…")
+                calibreRepository.updateUploadProgress(tempId, "Extracting…")
+                calibreRepository.addTransfer(
+                    putioFileId = tempId,
+                    fileName = entry.name,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    downloadUrl = null,
+                    isTempUpload = true,
+                    assembleBook = assembleBook && assemblyFileId == null,
+                    calibreBookUuid = calibreBookUuid,
+                    isUploading = true,
+                )
+
+                tempFile = archiveRepository.extractEntryToTempFile(source, entry, context.cacheDir)
+
+                _calibreSendStatus.value = CalibreSendStatus.Working("Uploading…")
+
+                val rootFiles = filesRepository.listFiles(putioToken, 0).dataOrNull()?.first ?: emptyList()
+                var tempFolderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
+                if (tempFolderId == null) {
+                    val r = filesRepository.createFolder(putioToken, 0, ".putz_attachments")
+                    tempFolderId = (r as? NetworkResult.Success)?.data?.id
+                }
+                if (tempFolderId == null) throw java.io.IOException("Could not find or create .putz_attachments")
+
+                val retryableCodes = setOf(429, 500, 502, 503, 504)
+                val maxAttempts = 5
+                var delayMs = 5_000L
+                var uploadResult: NetworkResult<com.damarquez.putz.data.model.PutioFile>? = null
+                for (attempt in 1..maxAttempts) {
+                    uploadResult = filesRepository.uploadFileFromStream(
+                        putioToken, tempFolderId, entry.name,
+                        tempFile.inputStream(), tempFile.length(),
+                    ) { bytesWritten, totalBytes ->
+                        val pct = if (totalBytes > 0) (bytesWritten * 100 / totalBytes).toInt() else 0
+                        calibreRepository.updateUploadProgress(tempId, "1/1 · $pct%")
+                        _calibreSendStatus.value = CalibreSendStatus.Working("Uploading… $pct%")
+                    }
+                    val errorCode = (uploadResult as? NetworkResult.Error)?.code
+                    when {
+                        uploadResult is NetworkResult.Success -> break
+                        errorCode == 403 || errorCode == 507 -> {
+                            val msg = "put.io storage full — free up space and try again"
+                            throw java.io.IOException(msg)
+                        }
+                        attempt < maxAttempts && (errorCode in retryableCodes || errorCode == null) -> {
+                            kotlinx.coroutines.delay(delayMs)
+                            delayMs = minOf(delayMs * 2, 60_000L)
+                        }
+                        else -> break
+                    }
+                }
+
+                if (uploadResult !is NetworkResult.Success)
+                    throw java.io.IOException("Upload failed: ${(uploadResult as NetworkResult.Error).message}")
+
+                val uploadedId = uploadResult.data.id
+                val downloadUrl = filesRepository.getDownloadUrl(putioToken, uploadedId)
+                calibreRepository.updateUploadProgress(tempId, null)
+
+                if (assemblyFileId != null) {
+                    val newItem = CalibreBatchItem(
+                        type = "SINGLE",
+                        putio_file_id = uploadedId,
+                        fileName = entry.name,
+                        download_url = downloadUrl,
+                    )
+                    calibreRepository.appendToAssembly(
+                        assemblyFileId = assemblyFileId,
+                        title = title,
+                        author = author,
+                        newItem = newItem,
+                        newFileIds = listOf(uploadedId),
+                    )
+                    calibreRepository.removeTransfer(tempId)
+                    _snackbarMessage.value = "Added to assembly: $title"
+                } else if (assembleBook) {
+                    calibreRepository.removeTransfer(tempId)
+                    calibreRepository.addTransfer(
+                        putioFileId = uploadedId,
+                        fileName = entry.name,
+                        title = title,
+                        author = author,
+                        googleAccount = googleAccount,
+                        downloadUrl = downloadUrl,
+                        isTempUpload = true,
+                        assembleBook = true,
+                        calibreBookUuid = calibreBookUuid,
+                    )
+                    _snackbarMessage.value = "Book assembled"
+                } else {
+                    calibreRepository.updateTransferAfterUpload(tempId, uploadedId, downloadUrl, googleAccount)
+                    _snackbarMessage.value = "Transfer requested for $title"
+                }
+
+                _calibreSendStatus.value = CalibreSendStatus.Done
+
+            } catch (e: Exception) {
+                calibreRepository.updateUploadProgress(tempId, null)
+                calibreRepository.removeTransfer(tempId)
+                val msg = e.message ?: "Unknown error"
+                _snackbarMessage.value = "Failed: $msg"
+                _calibreSendStatus.value = CalibreSendStatus.Error(msg)
+            } finally {
+                tempFile?.delete()
+            }
+        }
+    }
 
     private fun directChildren(dir: String, all: List<ArchiveEntry>): List<ArchiveEntry> {
         val prefix = if (dir.isEmpty()) "" else "$dir/"

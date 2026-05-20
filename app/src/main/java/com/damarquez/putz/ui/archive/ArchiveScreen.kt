@@ -33,9 +33,12 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,16 +47,23 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.damarquez.putz.data.local.CalibreTransferEntity
+import com.damarquez.putz.ui.files.CalibreConfirmationSheet
+import com.damarquez.putz.ui.files.TransferRef
+import com.damarquez.putz.util.MetadataUtils
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,8 +90,24 @@ fun ArchiveScreen(
     val uiState by viewModel.uiState.collectAsState()
     val lanPickerState by viewModel.lanPickerState.collectAsState()
     val putioPickerState by viewModel.putioPickerState.collectAsState()
+    val calibreSendStatus by viewModel.calibreSendStatus.collectAsState()
+    val pendingAssemblies by viewModel.pendingAssemblies.collectAsState()
+    val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val context = LocalContext.current
     var showDestinationPicker by remember { mutableStateOf(false) }
+
+    // Calibre send state
+    var entryForCalibre by remember { mutableStateOf<ArchiveEntry?>(null) }
+    var entryForAssembly by remember { mutableStateOf<ArchiveEntry?>(null) }
+    var targetAssembly by remember { mutableStateOf<CalibreTransferEntity?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(snackbarMessage) {
+        if (snackbarMessage != null) {
+            snackbarHostState.showSnackbar(snackbarMessage!!)
+            viewModel.dismissSnackbar()
+        }
+    }
 
     val pickLocalFolderLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -111,6 +137,7 @@ fun ArchiveScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -212,6 +239,8 @@ fun ArchiveScreen(
                                         }
                                     },
                                     onLongClick = { viewModel.toggleSelection(entry) },
+                                    onSendToCalibre = if (!entry.isDirectory) ({ entryForCalibre = entry }) else null,
+                                    onAssembleBook = if (!entry.isDirectory) ({ entryForAssembly = entry }) else null,
                                 )
                                 HorizontalDivider()
                             }
@@ -264,9 +293,130 @@ fun ArchiveScreen(
                         }
                         null -> {}
                     }
+
+                    // Calibre send overlay
+                    when (val cs = calibreSendStatus) {
+                        is CalibreSendStatus.Working -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator()
+                                    Text(
+                                        text = cs.text,
+                                        modifier = Modifier.padding(top = 12.dp),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
+                        }
+                        is CalibreSendStatus.Error -> {
+                            AlertDialog(
+                                onDismissRequest = { viewModel.dismissCalibreSendStatus() },
+                                title = { Text("Send to Calibre failed") },
+                                text = { Text(cs.message) },
+                                confirmButton = {
+                                    TextButton(onClick = { viewModel.dismissCalibreSendStatus() }) { Text("OK") }
+                                },
+                            )
+                        }
+                        is CalibreSendStatus.Done -> viewModel.dismissCalibreSendStatus()
+                        null -> {}
+                    }
                 }
             }
         }
+    }
+
+    // Calibre send sheet
+    entryForCalibre?.let { entry ->
+        val (initialTitle, initialAuthor) = remember(entry) {
+            MetadataUtils.extractMetadata(entry.name)
+        }
+        CalibreConfirmationSheet(
+            displayName = entry.name,
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { entryForCalibre = null },
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _ ->
+                viewModel.sendEntryToCalibre(entry, title, author, assembleBook, null, uuid)
+                entryForCalibre = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+        )
+    }
+
+    // Assembly picker → target assembly dialog
+    if (entryForAssembly != null && targetAssembly == null) {
+        if (pendingAssemblies.isEmpty()) {
+            // No pending assembly — start a new one using the regular send sheet with assembleBook=true
+            val entry = entryForAssembly!!
+            val (initialTitle, initialAuthor) = remember(entry) {
+                MetadataUtils.extractMetadata(entry.name)
+            }
+            CalibreConfirmationSheet(
+                displayName = entry.name,
+                initialTitle = initialTitle,
+                initialAuthor = initialAuthor,
+                onDismiss = { entryForAssembly = null },
+                onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+                    viewModel.sendEntryToCalibre(entry, title, author, assembleBook = true, assemblyFileId = null, calibreBookUuid = uuid)
+                    entryForAssembly = null
+                },
+                checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+                checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+                forceAssemble = true,
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { entryForAssembly = null },
+                title = { Text("Pick Assembly") },
+                text = {
+                    Column {
+                        pendingAssemblies.forEach { assembly ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
+                                        Text(assembly.author, style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = { targetAssembly = assembly },
+                            )
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { entryForAssembly = null }) { Text("Cancel") }
+                },
+            )
+        }
+    }
+
+    // Confirm append to selected assembly
+    if (targetAssembly != null && entryForAssembly != null) {
+        val entry = entryForAssembly!!
+        val assembly = targetAssembly!!
+        CalibreConfirmationSheet(
+            displayName = entry.name,
+            initialTitle = assembly.title,
+            initialAuthor = assembly.author,
+            onDismiss = { targetAssembly = null; entryForAssembly = null },
+            onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+                viewModel.sendEntryToCalibre(entry, title, author, assembleBook = true, assemblyFileId = assembly.putioFileId, calibreBookUuid = uuid)
+                targetAssembly = null
+                entryForAssembly = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            forceAssemble = true,
+        )
     }
 
     // Destination picker bottom sheet
@@ -497,8 +647,11 @@ private fun ArchiveEntryItem(
     isSelectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onSendToCalibre: (() -> Unit)? = null,
+    onAssembleBook: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
     val styling = LocalAppStyling.current
     val cornerRadius = styling.cornerRadiusDp.dp
     val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -577,6 +730,30 @@ private fun ArchiveEntryItem(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
+        } else if (!isSelectionMode && (onSendToCalibre != null || onAssembleBook != null)) {
+            Box {
+                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More actions",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    if (onSendToCalibre != null) {
+                        DropdownMenuItem(
+                            text = { Text("Send to Calibre") },
+                            onClick = { menuExpanded = false; onSendToCalibre() },
+                        )
+                    }
+                    if (onAssembleBook != null) {
+                        DropdownMenuItem(
+                            text = { Text("Assemble book") },
+                            onClick = { menuExpanded = false; onAssembleBook() },
+                        )
+                    }
+                }
+            }
         }
     }
 }

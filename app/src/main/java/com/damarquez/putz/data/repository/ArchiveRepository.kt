@@ -172,6 +172,52 @@ class ArchiveRepository @Inject constructor(
         emit(result)
     }
 
+    suspend fun extractEntryToTempFile(source: ArchiveSource, entry: ArchiveEntry, cacheDir: java.io.File): java.io.File =
+        withContext(Dispatchers.IO) {
+            check(initialized) { "7-Zip native library failed to initialize" }
+            val ext = entry.name.substringAfterLast('.', "")
+            val suffix = if (ext.isNotEmpty()) ".$ext" else ""
+            val tempFile = java.io.File(cacheDir, "putz_${java.util.UUID.randomUUID()}$suffix")
+            val stream = openStream(source)
+            try {
+                val inArchive = SevenZip.openInArchive(null, stream)
+                try {
+                    val allEntries = buildEntryList(inArchive)
+                    val index = allEntries.indexOfFirst { it.path == entry.path }
+                    if (index == -1) throw IOException("Entry not found in archive: ${entry.path}")
+                    var extractError: String? = null
+                    inArchive.extract(intArrayOf(index), false, object : IArchiveExtractCallback {
+                        private var os: OutputStream? = null
+                        override fun getStream(idx: Int, extractAskMode: ExtractAskMode): ISequentialOutStream? {
+                            if (extractAskMode != ExtractAskMode.EXTRACT) return null
+                            os = tempFile.outputStream()
+                            return ISequentialOutStream { data -> os!!.write(data); data.size }
+                        }
+                        override fun prepareOperation(extractAskMode: ExtractAskMode) {}
+                        override fun setOperationResult(result: ExtractOperationResult) {
+                            runCatching { os?.close() }
+                            os = null
+                            if (result != ExtractOperationResult.OK) extractError = "Extraction failed: ${result.name}"
+                        }
+                        override fun setTotal(total: Long) {}
+                        override fun setCompleted(complete: Long) {}
+                    })
+                    if (extractError != null) {
+                        tempFile.delete()
+                        throw IOException(extractError)
+                    }
+                    tempFile
+                } finally {
+                    runCatching { inArchive.close() }
+                }
+            } catch (e: Exception) {
+                runCatching { tempFile.delete() }
+                throw e
+            } finally {
+                runCatching { stream.close() }
+            }
+        }
+
     private suspend fun openStream(source: ArchiveSource): IInStream = when (source) {
         is ArchiveSource.Local -> {
             val pfd = context.contentResolver.openFileDescriptor(Uri.parse(source.uri), "r")
