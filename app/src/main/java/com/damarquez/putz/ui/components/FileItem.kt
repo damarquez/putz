@@ -51,6 +51,7 @@ import com.damarquez.putz.util.MetadataUtils
 
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.filled.Book
@@ -92,9 +93,19 @@ fun FileItem(
         .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
         ?.uppercase()
 
+    val specialBandColor: Color? = when {
+        file.isSpecialRootFolder || file.isPutzAttachments -> Color(0xFF757575)
+        else -> null
+    }
+    val foregroundColor: Color? = when {
+        file.isSpecialRootFolder || file.isPutzAttachments -> Color.White
+        else -> null
+    }
+
     val backgroundColor = when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
         isHighlighted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+        specialBandColor != null -> specialBandColor
         else -> Color.Transparent
     }
 
@@ -131,20 +142,40 @@ fun FileItem(
                             contentDescription = "Local file",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
-                                .size(14.dp)
+                                .size(20.dp)
                                 .align(Alignment.BottomEnd)
-                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
-                                .padding(1.dp)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
+                                .padding(2.dp)
                         )
                         file.isLan -> Icon(
                             imageVector = Icons.Default.Storage,
                             contentDescription = "LAN file",
                             tint = MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier
-                                .size(14.dp)
+                                .size(20.dp)
                                 .align(Alignment.BottomEnd)
-                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(2.dp))
-                                .padding(1.dp)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
+                                .padding(2.dp)
+                        )
+                        file.isTrash -> Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Trash",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
+                                .padding(2.dp)
+                        )
+                        file.isPutzAttachments -> Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Attachments folder",
+                            tint = Color(0xFFFF6D00),
+                            modifier = Modifier
+                                .size(20.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
+                                .padding(2.dp)
                         )
                     }
                 }
@@ -167,7 +198,7 @@ fun FileItem(
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = foregroundColor ?: MaterialTheme.colorScheme.onSurface,
                 )
                 if (!file.isFolder) {
                     Text(
@@ -179,7 +210,7 @@ fun FileItem(
                             }
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = foregroundColor?.copy(alpha = 0.7f) ?: MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -209,7 +240,7 @@ fun FileItem(
                             )
                             HorizontalDivider()
                         }
-                        if (!file.isLan) {
+                        if (!file.isLan && !file.isFolder) {
                             DropdownMenuItem(
                                 text = { Text("Download") },
                                 onClick = {
@@ -287,7 +318,7 @@ fun FileItem(
                             },
                         )
                         HorizontalDivider()
-                        if (!file.isLan && !file.isTrash) {
+                        if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments) {
                             DropdownMenuItem(
                                 text = {
                                     Text(

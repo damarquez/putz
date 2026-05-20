@@ -31,9 +31,13 @@ data class PutioFile(
     val isTrash: Boolean = false,
 ) {
     val isFolder: Boolean get() = fileType == "FOLDER"
+    val isSpecialRootFolder: Boolean get() = id == LOCAL_ROOT_ID || id == LAN_ROOT_ID || id == TRASH_ROOT_ID
+    val isPutzAttachments: Boolean get() = name == ".putz_attachments"
 
     companion object {
         const val TRASH_ROOT_ID = -3000L
+        const val LOCAL_ROOT_ID = -2L
+        const val LAN_ROOT_ID = -3L
     }
 }
 
