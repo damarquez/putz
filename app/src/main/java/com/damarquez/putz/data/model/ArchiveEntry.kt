@@ -17,6 +17,7 @@ sealed class ArchiveSource {
 sealed class ArchiveDestination {
     data class Local(val treeUri: String) : ArchiveDestination()
     data class Lan(val connectionId: Long, val basePath: String) : ArchiveDestination()
+    data class Putio(val parentFolderId: Long) : ArchiveDestination()
 }
 
 sealed class ExtractionProgress {

@@ -95,7 +95,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
-    onNavigateToPutioArchive: (fileId: Long, fileName: String, downloadUrl: String, fileSize: Long) -> Unit,
+    onNavigateToPutioArchive: (fileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -222,7 +222,7 @@ fun FilesScreen(
 
     LaunchedEffect(Unit) {
         viewModel.putioArchiveEvent.collect { event ->
-            onNavigateToPutioArchive(event.fileId, event.fileName, event.downloadUrl, event.fileSize)
+            onNavigateToPutioArchive(event.fileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId)
         }
     }
 

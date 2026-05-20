@@ -23,16 +23,24 @@ import net.sf.sevenzipjbinding.ISequentialOutStream
 import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.SevenZipNativeInitializationException
+import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.settings.SettingsRepository
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 
 @Singleton
 class ArchiveRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val lanFilesRepository: LanFilesRepository,
+    private val filesRepository: FilesRepository,
+    private val settingsRepository: SettingsRepository,
     private val okHttpClient: OkHttpClient,
 ) {
     private val initialized: Boolean by lazy {
@@ -87,17 +95,27 @@ class ArchiveRepository @Inject constructor(
                         var extractedCount = 0
                         var lastError: String? = null
 
+                        val putioToken: String? = if (destination is ArchiveDestination.Putio)
+                            runBlocking { settingsRepository.authTokenFlow.first() } else null
+                        val folderCache = mutableMapOf<String, Long>()
+
                         inArchive.extract(indices, false, object : IArchiveExtractCallback {
                             private var currentOs: OutputStream? = null
+                            private var currentRelPath: String? = null
 
                             override fun getStream(index: Int, extractAskMode: ExtractAskMode): ISequentialOutStream? {
                                 val entry = allEntries.getOrNull(index) ?: return null
                                 if (entry.isDirectory || extractAskMode != ExtractAskMode.EXTRACT) return null
                                 val relative = entry.path.removePrefix(prefix).trimStart('/')
                                 if (relative.isEmpty()) return null
-                                val os = runCatching {
-                                    openDestinationStream(destination, relative, lanWriteFactory)
-                                }.getOrNull() ?: return null
+                                val os: OutputStream = if (destination is ArchiveDestination.Putio) {
+                                    currentRelPath = relative
+                                    ByteArrayOutputStream()
+                                } else {
+                                    runCatching {
+                                        openDestinationStream(destination, relative, lanWriteFactory)
+                                    }.getOrNull() ?: return null
+                                }
                                 currentOs = os
                                 return ISequentialOutStream { data -> os.write(data); data.size }
                             }
@@ -105,10 +123,33 @@ class ArchiveRepository @Inject constructor(
                             override fun prepareOperation(extractAskMode: ExtractAskMode) {}
 
                             override fun setOperationResult(result: ExtractOperationResult) {
-                                runCatching { currentOs?.close() }
+                                val os = currentOs
                                 currentOs = null
-                                if (result == ExtractOperationResult.OK) extractedCount++
-                                else lastError = "One or more files failed to extract (${result.name})"
+                                if (destination is ArchiveDestination.Putio && result == ExtractOperationResult.OK) {
+                                    val baos = os as? ByteArrayOutputStream
+                                    val relPath = currentRelPath
+                                    currentRelPath = null
+                                    if (baos != null && relPath != null && putioToken != null) {
+                                        val bytes = baos.toByteArray()
+                                        val uploadResult = runBlocking {
+                                            val dirPart = relPath.substringBeforeLast('/', "")
+                                            val fileName = relPath.substringAfterLast('/')
+                                            val parentId = if (dirPart.isEmpty()) destination.parentFolderId
+                                                else getOrCreatePutioFolderPath(putioToken, dirPart, destination.parentFolderId, folderCache)
+                                            filesRepository.uploadFileFromStream(
+                                                putioToken, parentId, fileName,
+                                                ByteArrayInputStream(bytes), bytes.size.toLong()
+                                            )
+                                        }
+                                        if (uploadResult is NetworkResult.Success) extractedCount++
+                                        else lastError = "Upload failed for $relPath"
+                                    }
+                                } else {
+                                    runCatching { os?.close() }
+                                    currentRelPath = null
+                                    if (result == ExtractOperationResult.OK) extractedCount++
+                                    else lastError = "One or more files failed to extract (${result.name})"
+                                }
                             }
 
                             override fun setTotal(total: Long) {}
@@ -177,6 +218,26 @@ class ArchiveRepository @Inject constructor(
         return result.toList()
     }
 
+    private suspend fun getOrCreatePutioFolderPath(
+        token: String,
+        dirPath: String,
+        rootFolderId: Long,
+        cache: MutableMap<String, Long>,
+    ): Long {
+        var parentId = rootFolderId
+        val accumulated = StringBuilder()
+        for (part in dirPath.split('/')) {
+            if (accumulated.isNotEmpty()) accumulated.append('/')
+            accumulated.append(part)
+            val key = accumulated.toString()
+            parentId = cache.getOrPut(key) {
+                val result = filesRepository.createFolder(token, parentId, part)
+                (result as? NetworkResult.Success)?.data?.id ?: parentId
+            }
+        }
+        return parentId
+    }
+
     private fun openDestinationStream(
         destination: ArchiveDestination,
         relativePath: String,
@@ -192,6 +253,7 @@ class ArchiveRepository @Inject constructor(
             lanWriteFactory?.invoke(lanPath)
                 ?: throw IOException("LAN write context unavailable")
         }
+        is ArchiveDestination.Putio -> throw IOException("Putio destination must be handled separately")
     }
 
     private fun createLocalFile(treeUri: Uri, relativePath: String): OutputStream? {

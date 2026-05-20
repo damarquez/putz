@@ -8,8 +8,11 @@ import com.damarquez.putz.data.model.ArchiveEntry
 import com.damarquez.putz.data.model.ArchiveSource
 import com.damarquez.putz.data.model.ExtractionProgress
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.repository.ArchiveRepository
+import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.data.repository.LanFilesRepository
+import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +23,14 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class PutioPickerState(
+    val currentFolderId: Long,
+    val currentFolderName: String,
+    val folderStack: List<Pair<Long, String>> = emptyList(),
+    val dirs: List<PutioFile> = emptyList(),
+    val isLoading: Boolean = true,
+)
 
 data class LanPickerState(
     val connectionId: Long,
@@ -50,6 +61,8 @@ class ArchiveViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val archiveRepository: ArchiveRepository,
     val lanFilesRepository: LanFilesRepository,
+    private val filesRepository: FilesRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     val archiveName: String = savedStateHandle[Screen.Archive.ARG_ARCHIVE_NAME] ?: "Archive"
@@ -59,6 +72,7 @@ class ArchiveViewModel @Inject constructor(
     private val putioFileId: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_FILE_ID] ?: -1L
     private val putioDownloadUrl: String? = savedStateHandle[Screen.Archive.ARG_PUTIO_DOWNLOAD_URL]
     private val putioFileSize: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_FILE_SIZE] ?: 0L
+    val putioParentFolderId: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_PARENT_FOLDER_ID] ?: 0L
 
     val source: ArchiveSource = when {
         localUri != null -> ArchiveSource.Local(localUri)
@@ -74,6 +88,9 @@ class ArchiveViewModel @Inject constructor(
 
     private val _lanPickerState = MutableStateFlow<LanPickerState?>(null)
     val lanPickerState: StateFlow<LanPickerState?> = _lanPickerState.asStateFlow()
+
+    private val _putioPickerState = MutableStateFlow<PutioPickerState?>(null)
+    val putioPickerState: StateFlow<PutioPickerState?> = _putioPickerState.asStateFlow()
 
     init {
         load()
@@ -220,6 +237,71 @@ class ArchiveViewModel @Inject constructor(
             val current = _lanPickerState.value ?: return@launch
             if (current.connectionId == state.connectionId && current.currentPath == state.currentPath) {
                 _lanPickerState.value = current.copy(dirs = dirs, isLoading = false)
+            }
+        }
+    }
+
+    fun openPutioPicker() {
+        val state = PutioPickerState(currentFolderId = putioParentFolderId, currentFolderName = "")
+        _putioPickerState.value = state
+        loadPutioPickerDirs(state)
+    }
+
+    fun putioPickerEnterDir(dir: PutioFile) {
+        val state = _putioPickerState.value ?: return
+        val newState = state.copy(
+            currentFolderId = dir.id,
+            currentFolderName = dir.name,
+            folderStack = state.folderStack + (state.currentFolderId to state.currentFolderName),
+            dirs = emptyList(),
+            isLoading = true,
+        )
+        _putioPickerState.value = newState
+        loadPutioPickerDirs(newState)
+    }
+
+    fun putioPickerNavigateUp(): Boolean {
+        val state = _putioPickerState.value ?: return false
+        if (state.folderStack.isEmpty()) return false
+        val (parentId, parentName) = state.folderStack.last()
+        val newState = state.copy(
+            currentFolderId = parentId,
+            currentFolderName = parentName,
+            folderStack = state.folderStack.dropLast(1),
+            dirs = emptyList(),
+            isLoading = true,
+        )
+        _putioPickerState.value = newState
+        loadPutioPickerDirs(newState)
+        return true
+    }
+
+    fun closePutioPicker() {
+        _putioPickerState.value = null
+    }
+
+    fun confirmPutioExtraction() {
+        val picker = _putioPickerState.value ?: return
+        _putioPickerState.value = null
+        extract(ArchiveDestination.Putio(picker.currentFolderId))
+    }
+
+    private fun loadPutioPickerDirs(state: PutioPickerState) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val result = runCatching { filesRepository.listFiles(token, state.currentFolderId) }.getOrNull()
+            val dirs: List<PutioFile>
+            val folderName: String
+            if (result is NetworkResult.Success) {
+                dirs = result.data.first.filter { it.isFolder }.sortedBy { it.name.lowercase() }
+                folderName = result.data.second?.name ?: state.currentFolderName
+            } else {
+                dirs = emptyList()
+                folderName = state.currentFolderName
+            }
+            val current = _putioPickerState.value ?: return@launch
+            if (current.currentFolderId == state.currentFolderId) {
+                _putioPickerState.value = current.copy(dirs = dirs, isLoading = false, currentFolderName = folderName)
             }
         }
     }

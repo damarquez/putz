@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
@@ -78,6 +79,7 @@ fun ArchiveScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val lanPickerState by viewModel.lanPickerState.collectAsState()
+    val putioPickerState by viewModel.putioPickerState.collectAsState()
     val context = LocalContext.current
     var showDestinationPicker by remember { mutableStateOf(false) }
 
@@ -94,10 +96,13 @@ fun ArchiveScreen(
         }
     }
 
+    BackHandler(enabled = putioPickerState != null) {
+        if (!viewModel.putioPickerNavigateUp()) viewModel.closePutioPicker()
+    }
     BackHandler(enabled = lanPickerState != null) {
         if (!viewModel.lanPickerNavigateUp()) viewModel.closeLanPicker()
     }
-    BackHandler(enabled = lanPickerState == null) {
+    BackHandler(enabled = lanPickerState == null && putioPickerState == null) {
         val handledInternally = viewModel.navigateUp()
         if (!handledInternally) onNavigateUp()
     }
@@ -136,7 +141,7 @@ fun ArchiveScreen(
                     }
                 },
                 actions = {
-                    if (!viewModel.isPutio && s != null && s.isSelectionMode) {
+                    if (s != null && s.isSelectionMode) {
                         Text(
                             text = "${s.selectedEntries.size} selected",
                             style = MaterialTheme.typography.bodyMedium,
@@ -151,7 +156,7 @@ fun ArchiveScreen(
                         ) {
                             Text("Extract")
                         }
-                    } else if (!viewModel.isPutio && s != null) {
+                    } else if (s != null) {
                         Button(
                             onClick = { showDestinationPicker = true },
                             modifier = Modifier.padding(end = 8.dp),
@@ -282,6 +287,17 @@ fun ArchiveScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
             HorizontalDivider()
+            if (viewModel.isPutio) {
+                ListItem(
+                    headlineContent = { Text("put.io…") },
+                    leadingContent = { Icon(Icons.Default.Cloud, contentDescription = null) },
+                    modifier = Modifier.clickable {
+                        showDestinationPicker = false
+                        viewModel.openPutioPicker()
+                    },
+                )
+                HorizontalDivider()
+            }
             ListItem(
                 headlineContent = { Text("Local folder…") },
                 leadingContent = { Icon(Icons.Default.Smartphone, contentDescription = null) },
@@ -315,6 +331,83 @@ fun ArchiveScreen(
                 }
             }
             Spacer(Modifier.padding(bottom = 16.dp))
+        }
+    }
+
+    // put.io folder picker
+    putioPickerState?.let { picker ->
+        val pickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.closePutioPicker() },
+            sheetState = pickerSheetState,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = {
+                        if (!viewModel.putioPickerNavigateUp()) viewModel.closePutioPicker()
+                    },
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Up")
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "put.io",
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (picker.currentFolderName.isNotEmpty()) {
+                        Text(
+                            text = picker.currentFolderName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { viewModel.confirmPutioExtraction() }) {
+                    Text("Extract here")
+                }
+            }
+            HorizontalDivider()
+            if (picker.isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (picker.dirs.isEmpty()) {
+                Text(
+                    text = "No subfolders",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    contentPadding = WindowInsets.navigationBars.asPaddingValues(),
+                ) {
+                    items(picker.dirs, key = { it.id }) { dir ->
+                        ListItem(
+                            headlineContent = { Text(dir.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            leadingContent = { Icon(Icons.Default.Folder, contentDescription = null) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                            modifier = Modifier.clickable { viewModel.putioPickerEnterDir(dir) },
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
         }
     }
 
