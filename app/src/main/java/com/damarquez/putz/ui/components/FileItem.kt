@@ -49,9 +49,11 @@ import com.damarquez.putz.data.model.PutioFileType
 import com.damarquez.putz.ui.theme.LocalAppStyling
 import com.damarquez.putz.util.MetadataUtils
 
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.filled.Book
@@ -82,13 +84,18 @@ fun FileItem(
     val styling = LocalAppStyling.current
     val cornerRadius = styling.cornerRadiusDp.dp
     val fileType = PutioFileType.from(file.fileType)
-    val isEbook = MetadataUtils.isEbook(file.name)
-    val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.name)
+    // Use displayName for all labelling so .sk_synced is hidden
+    val isEbook = MetadataUtils.isEbook(file.displayName)
+    val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.displayName)
     val isImage = fileType == PutioFileType.IMAGE
     val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
-    val formatLabel = file.name
+    // Regular put.io files (not yet synced, not a folder, not a virtual root) appear dimmed
+    val isRegularRemote = !file.isLocal && !file.isLan && !file.isTrash && !file.isFolder
+        && !file.isSpecialRootFolder && !file.isSynced && !file.isPutzAttachments
+
+    val formatLabel = file.displayName
         .substringAfterLast('.', "")
         .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
         ?.uppercase()
@@ -109,11 +116,16 @@ fun FileItem(
         else -> Color.Transparent
     }
 
-    Column(modifier = modifier.fillMaxWidth().background(backgroundColor)) {
+    Column(modifier = modifier.fillMaxWidth().background(backgroundColor).then(
+        if (isRegularRemote) Modifier.alpha(0.45f) else Modifier
+    )) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = if (!isRegularRemote) onLongClick else { {} },
+                )
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -132,11 +144,21 @@ fun FileItem(
                 Box {
                     FileTypeIcon(
                         fileType = fileType,
-                        fileName = file.name,
+                        fileName = file.displayName,
                         isFolder = file.isFolder,
                         cornerRadius = cornerRadius.value.toInt(),
                     )
                     when {
+                        file.isSynced -> Icon(
+                            imageVector = Icons.Default.CloudDone,
+                            contentDescription = "Synced locally",
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
+                                .padding(2.dp)
+                        )
                         file.isLocal -> Icon(
                             imageVector = Icons.Default.Smartphone,
                             contentDescription = "Local file",
@@ -194,7 +216,7 @@ fun FileItem(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = file.name,
+                    text = file.displayName,
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

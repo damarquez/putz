@@ -59,6 +59,11 @@ fun SettingsScreen(
     val appMode by viewModel.appMode.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
     val googleWebClientId by viewModel.googleWebClientId.collectAsState()
+    val putioLocalLanConnectionId by viewModel.putioLocalLanConnectionId.collectAsState()
+    val putioLocalLanPath by viewModel.putioLocalLanPath.collectAsState()
+    val lanConnections by viewModel.lanConnections.collectAsState()
+    var showLanConnectionPicker by remember { mutableStateOf(false) }
+    var editingLanPath by remember { mutableStateOf<String?>(null) }
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showGoogleSignOutConfirm by remember { mutableStateOf(false) }
@@ -199,6 +204,92 @@ fun SettingsScreen(
                 singleLine = true,
                 placeholder = { Text("12345...apps.googleusercontent.com") }
             )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            SettingsSectionHeader("put.io Local Sync")
+            val selectedConn = lanConnections.find { it.id == putioLocalLanConnectionId }
+            ButtonRow(
+                label = if (selectedConn != null) "LAN connection: ${selectedConn.label}" else "Select LAN connection…",
+                onClick = { showLanConnectionPicker = true }
+            )
+            if (selectedConn != null) {
+                val lanPathState = editingLanPath ?: putioLocalLanPath
+                OutlinedTextField(
+                    value = lanPathState,
+                    onValueChange = { editingLanPath = it },
+                    label = { Text("Path within share") },
+                    placeholder = { Text(".put.io") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    supportingText = { Text("Subfolder inside the share where files are stored") },
+                )
+                if (editingLanPath != null) {
+                    Row(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        TextButton(onClick = {
+                            viewModel.setPutioLocalLanPath(editingLanPath ?: "")
+                            editingLanPath = null
+                        }) { Text("Save") }
+                        TextButton(onClick = { editingLanPath = null }) { Text("Cancel") }
+                    }
+                }
+                ButtonRow(
+                    label = "Remove put.io local sync",
+                    onClick = {
+                        viewModel.setPutioLocalLanConnection(null)
+                        viewModel.setPutioLocalLanPath("")
+                        editingLanPath = null
+                    },
+                    isError = true
+                )
+            }
+
+            if (showLanConnectionPicker) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showLanConnectionPicker = false },
+                    title = { Text("Select LAN connection") },
+                    text = {
+                        Column {
+                            if (lanConnections.isEmpty()) {
+                                Text("No LAN connections configured. Add one in LAN Files settings first.")
+                            } else {
+                                lanConnections.forEach { conn ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.setPutioLocalLanConnection(conn.id)
+                                                showLanConnectionPicker = false
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(
+                                            selected = conn.id == putioLocalLanConnectionId,
+                                            onClick = {
+                                                viewModel.setPutioLocalLanConnection(conn.id)
+                                                showLanConnectionPicker = false
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(conn.label, style = MaterialTheme.typography.bodyLarge)
+                                            Text("\\\\${conn.host}\\${conn.shareName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showLanConnectionPicker = false }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             SettingsSectionHeader("Google Account")
             

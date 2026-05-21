@@ -39,6 +39,7 @@ data class CalibreBatchItem(
     val download_url: String? = null,
     val files: List<AudiobookFile>? = null, // For PACK
     val archiveMode: String? = null, // For ARCHIVE
+    val use_local: Boolean? = null,  // When true the daemon uses the local synced copy; no download needed
 )
 @Serializable
 data class CalibreBatchRequest(
@@ -69,6 +70,7 @@ data class CalibreResponse(
     val error: String? = null,
     val daemon_status: String? = null, // "IDLE" or "WORKING"
     val calibre_book_uuid: String? = null,
+    val warnings: List<String>? = null,
 )
 
 data class CalibreBookMatch(
@@ -182,13 +184,15 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String? = null,
         isUploading: Boolean = false,
         localUrisJson: String? = null,
+        useLocal: Boolean = false,
     ) {
         val initialItem = CalibreBatchItem(
             type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
             putio_file_id = putioFileId,
             fileName = fileName,
             download_url = downloadUrl,
-            archiveMode = archiveMode
+            archiveMode = archiveMode,
+            use_local = if (useLocal) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -211,7 +215,8 @@ class CalibreRepository @Inject constructor(
         )
         calibreTransferDao.insertTransfer(transfer)
 
-        if (assembleBook || isUploading || downloadUrl == null) return
+        // useLocal=true means we can dispatch immediately without a download URL
+        if (assembleBook || isUploading || (downloadUrl == null && !useLocal)) return
 
         // Immediately try to upload request
         val request = CalibreBatchRequest(
@@ -223,7 +228,7 @@ class CalibreRepository @Inject constructor(
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$putioFileId.json", jsonStr)
-        
+
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.REQUESTED,
@@ -530,6 +535,7 @@ class CalibreRepository @Inject constructor(
                                     status = newStatus,
                                     errorMessage = response.error,
                                     calibreBookUuid = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_uuid != null) response.calibre_book_uuid else transfer.calibreBookUuid,
+                                    warnings = if (newStatus == CalibreTransferStatus.COMPLETED) response.warnings?.joinToString("\n")?.takeIf { it.isNotBlank() } else transfer.warnings,
                                     lastUpdatedAt = System.currentTimeMillis()
                                 ))
 

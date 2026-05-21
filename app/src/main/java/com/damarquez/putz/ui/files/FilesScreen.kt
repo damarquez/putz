@@ -194,7 +194,7 @@ fun FilesScreen(
         AlertDialog(
             onDismissRequest = { fileToDelete = null },
             title = { Text(if (fileToDelete!!.isLocal) "Detach from Putz" else "Delete from put.io") },
-            text = { Text("Are you sure you want to ${if (fileToDelete!!.isLocal) "detach" else "delete"} \"${fileToDelete!!.name}\"?") },
+            text = { Text("Are you sure you want to ${if (fileToDelete!!.isLocal) "detach" else "delete"} \"${fileToDelete!!.displayName}\"?" + if (fileToDelete!!.isSynced) "\n\nThe local copy will be moved to the trashcan folder." else "") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -413,10 +413,11 @@ fun FilesScreen(
     fileToDelete?.let { file ->
         AlertDialog(
             onDismissRequest = { fileToDelete = null },
-            title = { Text("${if (file.isLocal) "Detach" else "Delete"} \"${file.name}\"?") },
+            title = { Text("${if (file.isLocal) "Detach" else "Delete"} \"${file.displayName}\"?") },
             text = {
                 Text(
                     if (file.isLocal) "This local attachment will be removed from Putz. Your original file will not be touched."
+                    else if (file.isSynced) "The put.io stub will be deleted. The local copy will be moved to the trashcan folder."
                     else if (file.isFolder) "This folder and all its contents will be permanently deleted from put.io."
                     else "This file will be permanently deleted from put.io."
                 )
@@ -439,6 +440,7 @@ fun FilesScreen(
     if (showBatchDeleteConfirm) {
         val hasLocal = selectedFiles.any { it.isLocal }
         val hasRemote = selectedFiles.any { !it.isLocal }
+        val hasSynced = selectedFiles.any { it.isSynced }
         val actionText = when {
             hasLocal && hasRemote -> "Detach/Delete"
             hasLocal -> "Detach"
@@ -448,7 +450,7 @@ fun FilesScreen(
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
             title = { Text("$actionText ${selectedFiles.size} items?") },
-            text = { Text("Selected items will be removed from Putz/put.io.") },
+            text = { Text("Selected items will be removed from Putz/put.io." + if (hasSynced) " Local copies of synced files will be moved to the trashcan folder." else "") },
             confirmButton = {
                 Button(
                     onClick = {

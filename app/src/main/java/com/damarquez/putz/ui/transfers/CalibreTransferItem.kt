@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -233,6 +234,27 @@ fun CalibreTransferItem(
                             contentDescription = "Remove",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+                if (isCompleted && !transfer.warnings.isNullOrBlank()) {
+                    transfer.warnings.split("\n").forEach { warning ->
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = androidx.compose.ui.graphics.Color(0xFFE65100),
+                                modifier = Modifier.size(14.dp).padding(top = 1.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = warning,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = androidx.compose.ui.graphics.Color(0xFFE65100),
+                            )
+                        }
                     }
                 }
             }

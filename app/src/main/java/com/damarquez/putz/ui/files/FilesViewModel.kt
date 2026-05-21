@@ -75,6 +75,12 @@ class FilesViewModel @Inject constructor(
     val lanConnectionId: Long = savedStateHandle[Screen.Files.ARG_LAN_CONNECTION_ID] ?: -1L
     val lanPath: String? = savedStateHandle[Screen.Files.ARG_LAN_PATH]
 
+    val putioLocalLanConnectionId: StateFlow<Long?> = settingsRepository.putioLocalLanConnectionIdFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val putioLocalLanPath: StateFlow<String> = settingsRepository.putioLocalLanPathFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
 
@@ -318,7 +324,19 @@ class FilesViewModel @Inject constructor(
                 fileType = "FOLDER",
                 isTrash = true,
             )
-            listOf(localRoot, lanRoot, trashRoot) + apiFiles
+            val putioLocalConnId = putioLocalLanConnectionId.value
+            val putioLocalPath = putioLocalLanPath.value
+            val putioLocalRoot = if (putioLocalConnId != null) {
+                PutioFile(
+                    id = PutioFile.PUTIO_LOCAL_ROOT_ID,
+                    name = "put.io Local",
+                    fileType = "FOLDER",
+                    isLan = true,
+                    lanConnectionId = putioLocalConnId,
+                    lanPath = putioLocalPath,
+                )
+            } else null
+            listOfNotNull(localRoot, lanRoot, putioLocalRoot, trashRoot) + apiFiles
         } else apiFiles
 
         return list.sortedWith(
@@ -500,7 +518,24 @@ class FilesViewModel @Inject constructor(
 
             val putioToken = settingsRepository.authTokenFlow.first()
             
-            if (file.isLocal || file.isLan) {
+            if (file.isSynced) {
+                // File already in local repository — tell daemon to use local copy directly
+                calibreRepository.addTransfer(
+                    putioFileId = file.id,
+                    fileName = file.displayName,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    downloadUrl = null,
+                    archiveMode = archiveMode,
+                    isTempUpload = false,
+                    assembleBook = assembleBook,
+                    calibreBookUuid = calibreBookUuid,
+                    useLocal = true,
+                )
+                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
+                return@launch
+            } else if (file.isLocal || file.isLan) {
                 calibreRepository.addTransfer(
                     putioFileId = file.id,
                     fileName = file.name,
@@ -795,6 +830,11 @@ class FilesViewModel @Inject constructor(
     }
 
     fun openPutioArchive(file: PutioFile) {
+        if (file.isSynced) {
+            // The put.io file is now a JSON stub — open archives via the "put.io Local" folder instead
+            _snackbarMessage.value = "Open archives through the \"put.io Local\" folder"
+            return
+        }
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val url = filesRepository.getDownloadUrl(token, file.id)

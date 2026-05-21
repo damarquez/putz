@@ -58,6 +58,14 @@ class SettingsRepository @Inject constructor(
         prefs[AppSettingsKeys.DAEMON_STATUS]
     }
 
+    val putioLocalLanConnectionIdFlow: Flow<Long?> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.PUTIO_LOCAL_LAN_CONNECTION_ID]
+    }
+
+    val putioLocalLanPathFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.PUTIO_LOCAL_LAN_PATH] ?: ""
+    }
+
     fun saveAuthToken(token: String) = secureStorage.saveAuthToken(token)
 
     fun clearAuth() = secureStorage.clearAuthToken()
@@ -100,6 +108,20 @@ class SettingsRepository @Inject constructor(
         dataStore.edit { prefs ->
             if (status == null) prefs.remove(AppSettingsKeys.DAEMON_STATUS)
             else prefs[AppSettingsKeys.DAEMON_STATUS] = status
+        }
+    }
+
+    suspend fun savePutioLocalLanConnectionId(id: Long?) {
+        dataStore.edit { prefs ->
+            if (id == null) prefs.remove(AppSettingsKeys.PUTIO_LOCAL_LAN_CONNECTION_ID)
+            else prefs[AppSettingsKeys.PUTIO_LOCAL_LAN_CONNECTION_ID] = id
+        }
+    }
+
+    suspend fun savePutioLocalLanPath(path: String) {
+        dataStore.edit { prefs ->
+            if (path.isBlank()) prefs.remove(AppSettingsKeys.PUTIO_LOCAL_LAN_PATH)
+            else prefs[AppSettingsKeys.PUTIO_LOCAL_LAN_PATH] = path.trim()
         }
     }
 }

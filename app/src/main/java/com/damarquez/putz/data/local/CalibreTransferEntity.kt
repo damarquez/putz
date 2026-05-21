@@ -40,6 +40,9 @@ data class CalibreTransferEntity(
     /** JSON array of local SAF URIs (in file order) for UPLOADING transfers, so the upload
      *  can be restarted if the app is killed mid-upload. */
     val localUrisJson: String? = null,
+
+    /** Newline-separated warnings reported by the daemon on a COMPLETED transfer. */
+    val warnings: String? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 

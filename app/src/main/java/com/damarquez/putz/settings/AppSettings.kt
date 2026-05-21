@@ -18,4 +18,7 @@ object AppSettingsKeys {
     val LIBRARY_HAS_UPDATES = booleanPreferencesKey("library_has_updates")
     val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
     val DAEMON_STATUS = stringPreferencesKey("daemon_status")
+    // put.io local sync — which LAN connection hosts the local repository and at what path
+    val PUTIO_LOCAL_LAN_CONNECTION_ID = longPreferencesKey("putio_local_lan_connection_id")
+    val PUTIO_LOCAL_LAN_PATH = stringPreferencesKey("putio_local_lan_path")
 }
