@@ -449,7 +449,7 @@ class ArchiveViewModel @Inject constructor(
                         fileName = entry.name,
                         download_url = downloadUrl,
                     )
-                    calibreRepository.appendToAssembly(
+                    val added = calibreRepository.appendToAssembly(
                         assemblyFileId = assemblyFileId,
                         title = title,
                         author = author,
@@ -457,7 +457,8 @@ class ArchiveViewModel @Inject constructor(
                         newFileIds = listOf(uploadedId),
                     )
                     calibreRepository.removeTransfer(tempId)
-                    _snackbarMessage.value = "Added to assembly: $title"
+                    _snackbarMessage.value = if (added) "Added to assembly: $title"
+                        else "\"${entry.name}\" is already in this assembly"
                 } else if (assembleBook) {
                     calibreRepository.removeTransfer(tempId)
                     calibreRepository.addTransfer(

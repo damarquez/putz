@@ -389,15 +389,24 @@ class CalibreRepository @Inject constructor(
         author: String,
         newItem: CalibreBatchItem,
         newFileIds: List<Long>,
-    ) {
-        val transfer = calibreTransferDao.getTransferById(assemblyFileId) ?: return
+    ): Boolean {
+        val transfer = calibreTransferDao.getTransferById(assemblyFileId) ?: return false
         val currentItems = transfer.batchData?.let {
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: emptyList()
-        
+
+        val existingFileNames = currentItems.flatMap { item ->
+            if (item.type == "PACK") item.files?.map { it.fileName } ?: listOf(item.fileName)
+            else listOf(item.fileName)
+        }.toSet()
+        val incomingFileNames = if (newItem.type == "PACK")
+            newItem.files?.map { it.fileName } ?: listOf(newItem.fileName)
+        else listOf(newItem.fileName)
+        if (incomingFileNames.any { it in existingFileNames }) return false
+
         val updatedItems = currentItems + newItem
         val updatedIds = (transfer.parsedFileIds() + newFileIds).distinct()
-        
+
         calibreTransferDao.updateTransfer(transfer.copy(
             title = title,
             author = author,
@@ -406,6 +415,7 @@ class CalibreRepository @Inject constructor(
             lastUpdatedAt = System.currentTimeMillis(),
             errorMessage = null,
         ))
+        return true
     }
 
     suspend fun setTransferErrorMessage(fileId: Long, message: String?) {
@@ -816,7 +826,7 @@ class CalibreRepository @Inject constructor(
                 status = CalibreTransferStatus.REQUESTED,
                 gdriveRequestId = gDriveId,
                 lastUpdatedAt = System.currentTimeMillis(),
-                retryCount = transfer.retryCount + 1,
+                retryCount = if (transfer.status == CalibreTransferStatus.FAILED) transfer.retryCount + 1 else transfer.retryCount,
                 errorMessage = null,
                 lastRequestPayload = payload
             ))

@@ -734,14 +734,15 @@ class FilesViewModel @Inject constructor(
                 archiveMode = archiveMode
             )
 
-            calibreRepository.appendToAssembly(
+            val added = calibreRepository.appendToAssembly(
                 assemblyFileId = assemblyFileId,
                 title = title,
                 author = author,
                 newItem = newItem,
                 newFileIds = listOf(targetFileId)
             )
-            _snackbarMessage.value = "File added to assembly: $title"
+            _snackbarMessage.value = if (added) "File added to assembly: $title"
+                else "\"$targetFileName\" is already in this assembly"
         }
     }
 
@@ -781,14 +782,15 @@ class FilesViewModel @Inject constructor(
                 files = audioFiles
             )
 
-            calibreRepository.appendToAssembly(
+            val added = calibreRepository.appendToAssembly(
                 assemblyFileId = assemblyFileId,
                 title = title,
                 author = author,
                 newItem = newItem,
                 newFileIds = resolvedIds,
             )
-            _snackbarMessage.value = "Audiobook pack added to assembly: $title"
+            _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
+                else "\"$fileName\" is already in this assembly"
         }
     }
 
