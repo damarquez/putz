@@ -392,20 +392,20 @@ class FilesViewModel @Inject constructor(
         totalFiles: Int = 1,
         clearProgressOnSuccess: Boolean = true,
     ): Long? {
-        if (!file.isLocal && !file.isLan) {
+        if (file.isLan) {
+            // LAN files must be handled via SMB path before reaching this function.
+            android.util.Log.e("FilesViewModel", "uploadLocalFileIfNecessary called with LAN file ${file.name} — this is a bug")
+            return null
+        }
+        if (!file.isLocal) {
             android.util.Log.d("FilesViewModel", "File ${file.name} is remote, skipping upload.")
             return file.id
         }
-        if (file.isLocal && file.localUri == null) return null
-        if (file.isLan && (file.lanConnectionId == null || file.lanPath == null)) return null
+        if (file.localUri == null) return null
 
-        val localSize: Long = when {
-            file.isLocal -> withContext(Dispatchers.IO) {
-                val uri = android.net.Uri.parse(file.localUri!!)
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
-            }
-            file.isLan -> file.size
-            else -> -1L
+        val localSize: Long = withContext(Dispatchers.IO) {
+            val uri = android.net.Uri.parse(file.localUri!!)
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
         }
 
         // 1. Find or create .putz_attachments
@@ -460,17 +460,10 @@ class FilesViewModel @Inject constructor(
                             calibreRepository.updateUploadProgress(progressKey, "$fileIndex/$totalFiles · $pct%")
                         }
                     }
-                    if (file.isLan) {
-                        val inputStream = lanFilesRepository.openFileStream(file.lanConnectionId!!, file.lanPath!!)
-                        filesRepository.uploadFileFromStream(
-                            putioToken, tempFolderId!!, file.name, inputStream, localSize, progressCallback
-                        )
-                    } else {
-                        val uri = android.net.Uri.parse(file.localUri!!)
-                        filesRepository.uploadFile(
-                            putioToken, tempFolderId!!, file.name, uri, context.contentResolver, progressCallback
-                        )
-                    }
+                    val uri = android.net.Uri.parse(file.localUri!!)
+                    filesRepository.uploadFile(
+                        putioToken, tempFolderId!!, file.name, uri, context.contentResolver, progressCallback
+                    )
                 }
             } catch (e: TimeoutCancellationException) {
                 android.util.Log.w("FilesViewModel", "Upload attempt $attempt timed out for ${file.name}")
@@ -535,7 +528,31 @@ class FilesViewModel @Inject constructor(
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
                 return@launch
-            } else if (file.isLocal || file.isLan) {
+            } else if (file.isLan) {
+                val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                if (conn == null || file.lanPath == null) {
+                    _snackbarMessage.value = "LAN connection info missing"
+                    return@launch
+                }
+                val targetFileName = if (isAltVersion) {
+                    val ext = file.name.substringAfterLast('.', "")
+                    if (ext.isNotEmpty()) file.name.substringBeforeLast('.') + "." + ext + "_bkp" else file.name
+                } else file.name
+                calibreRepository.addTransfer(
+                    putioFileId = file.id,
+                    fileName = targetFileName,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    downloadUrl = null,
+                    archiveMode = archiveMode,
+                    isTempUpload = false,
+                    assembleBook = assembleBook,
+                    calibreBookUuid = calibreBookUuid,
+                    smbPath = buildUncPath(conn.host, conn.shareName, file.lanPath),
+                )
+                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
+            } else if (file.isLocal) {
                 calibreRepository.addTransfer(
                     putioFileId = file.id,
                     fileName = file.name,
@@ -652,12 +669,37 @@ class FilesViewModel @Inject constructor(
             val putioToken = settingsRepository.authTokenFlow.first()
             val tempId = files.first().id
             
-            val anyLocal = files.any { it.isLocal || it.isLan }
+            val allLan = files.all { it.isLan }
+            val anyDeviceLocal = files.any { it.isLocal }
+            if (allLan && !anyDeviceLocal) {
+                // All files on NAS — use SMB paths directly, no upload needed
+                val audioFilePairs = files.mapNotNull { file ->
+                    val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                    if (conn == null || file.lanPath == null) {
+                        _snackbarMessage.value = "LAN connection info missing for ${file.name}"
+                        return@launch
+                    }
+                    file to AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath))
+                }
+                calibreRepository.addAudiobookPackTransfer(
+                    files = audioFilePairs,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    assembleBook = assembleBook,
+                    customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
+                    calibreBookUuid = calibreBookUuid,
+                )
+                _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
+                return@launch
+            }
+
+            val anyLocal = anyDeviceLocal || files.any { it.isLan }
             if (anyLocal) {
                 // Create placeholder — store local URIs so the upload can be restarted if the app is killed
                 val localUrisJson = org.json.JSONArray(files.mapNotNull { it.localUri }).toString()
                 calibreRepository.addAudiobookPackTransfer(
-                    files = files.map { it to null },
+                    files = files.map { it to AudiobookFile(it.id, it.name) },
                     title = title,
                     author = author,
                     googleAccount = googleAccount,
@@ -668,46 +710,54 @@ class FilesViewModel @Inject constructor(
                     localUrisJson = localUrisJson,
                 )
 
-                // Triple: (put.io file ID after upload, download URL, original local file name)
-                val uploadedFiles = mutableListOf<Triple<Long, String, String>>()
-                android.util.Log.d("FilesViewModel", "Starting pack upload for ${files.size} files")
+                // Resolve each file: LAN files use SMB path directly; device-local files are uploaded.
+                val resolvedAudioFiles = mutableListOf<AudiobookFile>()
+                android.util.Log.d("FilesViewModel", "Starting pack resolution for ${files.size} files")
                 for ((index, file) in files.withIndex()) {
                     android.util.Log.d("FilesViewModel", "Processing file ${index + 1}/${files.size}: ${file.name}")
-                    // clearProgressOnSuccess=false keeps the key in the map between files so the
-                    // orphan detector doesn't mistake the inter-file gap for a dead upload.
-                    val id = uploadLocalFileIfNecessary(
-                        file, putioToken,
-                        progressKey = tempId,
-                        fileIndex = index + 1,
-                        totalFiles = files.size,
-                        clearProgressOnSuccess = false,
-                    )
-                    if (id != null) {
-                        val url = filesRepository.getDownloadUrl(putioToken, id)
-                        uploadedFiles.add(Triple(id, url, file.name))
-                        android.util.Log.d("FilesViewModel", "Upload successful for ${file.name}, ID: $id")
+                    if (file.isLan) {
+                        val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                        if (conn == null || file.lanPath == null) {
+                            calibreRepository.updateUploadProgress(tempId, null)
+                            calibreRepository.markPackUploadFailed(tempId, "LAN connection missing for ${file.name}")
+                            _snackbarMessage.value = "LAN connection missing for ${file.name}"
+                            return@launch
+                        }
+                        resolvedAudioFiles.add(AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath)))
+                        android.util.Log.d("FilesViewModel", "LAN file resolved via SMB: ${file.name}")
                     } else {
-                        android.util.Log.e("FilesViewModel", "Upload failed for ${file.name}")
-                        // Clear progress and leave the transfer visible as FAILED so the user
-                        // knows what happened and the orphan detector can restart it.
-                        calibreRepository.updateUploadProgress(tempId, null)
-                        calibreRepository.markPackUploadFailed(tempId, "Upload failed for ${file.name}")
-                        _snackbarMessage.value = "Upload failed for ${file.name}"
-                        return@launch
+                        // clearProgressOnSuccess=false keeps the key in the map between files so the
+                        // orphan detector doesn't mistake the inter-file gap for a dead upload.
+                        val id = uploadLocalFileIfNecessary(
+                            file, putioToken,
+                            progressKey = tempId,
+                            fileIndex = index + 1,
+                            totalFiles = files.size,
+                            clearProgressOnSuccess = false,
+                        )
+                        if (id != null) {
+                            val url = filesRepository.getDownloadUrl(putioToken, id)
+                            resolvedAudioFiles.add(AudiobookFile(id, file.name, url))
+                            android.util.Log.d("FilesViewModel", "Upload successful for ${file.name}, ID: $id")
+                        } else {
+                            android.util.Log.e("FilesViewModel", "Upload failed for ${file.name}")
+                            // Clear progress and leave the transfer visible as FAILED so the user
+                            // knows what happened and the orphan detector can restart it.
+                            calibreRepository.updateUploadProgress(tempId, null)
+                            calibreRepository.markPackUploadFailed(tempId, "Upload failed for ${file.name}")
+                            _snackbarMessage.value = "Upload failed for ${file.name}"
+                            return@launch
+                        }
                     }
                 }
-                // All files uploaded — clear the progress key before finishing.
+                // All files resolved — clear the progress key before finishing.
                 calibreRepository.updateUploadProgress(tempId, null)
-                android.util.Log.d("FilesViewModel", "All ${files.size} files uploaded successfully")
+                android.util.Log.d("FilesViewModel", "All ${files.size} files resolved successfully")
 
                 if (assembleBook) {
                     calibreRepository.removeTransfer(tempId)
-                    // Pair each original PutioFile (correct name) with its uploaded put.io ID and URL
-                    val uploadedPutioFiles = files.zip(uploadedFiles).map { (originalFile, triple) ->
-                        originalFile.copy(id = triple.first) to triple.second
-                    }
                     calibreRepository.addAudiobookPackTransfer(
-                        files = uploadedPutioFiles,
+                        files = files.zip(resolvedAudioFiles).map { (f, af) -> f to af },
                         title = title,
                         author = author,
                         googleAccount = googleAccount,
@@ -716,17 +766,17 @@ class FilesViewModel @Inject constructor(
                         calibreBookUuid = calibreBookUuid
                     )
                 } else {
-                    calibreRepository.updateAudiobookAfterUpload(tempId, uploadedFiles, googleAccount)
+                    calibreRepository.updateAudiobookAfterUpload(tempId, resolvedAudioFiles, googleAccount)
                 }
                 _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
             } else {
                 // Standard remote path
-                val filesWithUrls = files.map { file ->
-                    file to filesRepository.getDownloadUrl(putioToken, file.id)
+                val filesWithAudio = files.map { file ->
+                    file to AudiobookFile(file.id, file.name, filesRepository.getDownloadUrl(putioToken, file.id))
                 }
 
                 calibreRepository.addAudiobookPackTransfer(
-                    files = filesWithUrls,
+                    files = filesWithAudio,
                     title = title,
                     author = author,
                     googleAccount = googleAccount,
@@ -742,6 +792,60 @@ class FilesViewModel @Inject constructor(
     fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             val putioToken = settingsRepository.authTokenFlow.first()
+
+            if (file.isSynced) {
+                val targetFileName = if (isAltVersion) {
+                    val ext = file.displayName.substringAfterLast('.', "")
+                    if (ext.isNotEmpty()) file.displayName.substringBeforeLast('.') + "." + ext + "_bkp" else file.displayName
+                } else file.displayName
+                val newItem = CalibreBatchItem(
+                    type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
+                    putio_file_id = file.id,
+                    fileName = targetFileName,
+                    archiveMode = archiveMode,
+                    use_local = true,
+                )
+                val added = calibreRepository.appendToAssembly(
+                    assemblyFileId = assemblyFileId,
+                    title = title,
+                    author = author,
+                    newItem = newItem,
+                    newFileIds = listOf(file.id),
+                )
+                _snackbarMessage.value = if (added) "File added to assembly: $title"
+                    else "\"$targetFileName\" is already in this assembly"
+                return@launch
+            }
+
+            if (file.isLan) {
+                val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                if (conn == null || file.lanPath == null) {
+                    _snackbarMessage.value = "LAN connection info missing"
+                    return@launch
+                }
+                val targetFileName = if (isAltVersion) {
+                    val ext = file.name.substringAfterLast('.', "")
+                    if (ext.isNotEmpty()) file.name.substringBeforeLast('.') + "." + ext + "_bkp" else file.name
+                } else file.name
+                val newItem = CalibreBatchItem(
+                    type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
+                    putio_file_id = file.id,
+                    fileName = targetFileName,
+                    smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath),
+                    archiveMode = archiveMode,
+                )
+                val added = calibreRepository.appendToAssembly(
+                    assemblyFileId = assemblyFileId,
+                    title = title,
+                    author = author,
+                    newItem = newItem,
+                    newFileIds = listOf(file.id),
+                )
+                _snackbarMessage.value = if (added) "File added to assembly: $title"
+                    else "\"$targetFileName\" is already in this assembly"
+                return@launch
+            }
+
             var targetFileId = uploadLocalFileIfNecessary(file, putioToken, progressKey = assemblyFileId) ?: return@launch
             var targetFileName = file.name
 
@@ -785,36 +889,95 @@ class FilesViewModel @Inject constructor(
         viewModelScope.launch {
             val putioToken = settingsRepository.authTokenFlow.first()
 
-            // Upload Local/LAN files to put.io first; remote files resolve immediately.
-            val resolvedIds = mutableListOf<Long>()
-            val resolvedUrls = mutableListOf<String>()
+            if (files.all { it.isSynced }) {
+                // All files already synced locally — use local copies directly
+                val audioFiles = files.map { file ->
+                    AudiobookFile(file.id, file.displayName, use_local = true)
+                }
+                val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
+                val newItem = CalibreBatchItem(
+                    type = "PACK",
+                    putio_file_id = files.first().id,
+                    fileName = fileName,
+                    files = audioFiles,
+                )
+                val added = calibreRepository.appendToAssembly(
+                    assemblyFileId = assemblyFileId,
+                    title = title,
+                    author = author,
+                    newItem = newItem,
+                    newFileIds = files.map { it.id },
+                )
+                _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
+                    else "\"$fileName\" is already in this assembly"
+                return@launch
+            }
+
+            if (files.all { it.isLan } && files.none { it.isLocal }) {
+                // All files on NAS — use SMB paths directly, no upload needed
+                val audioFiles = files.mapNotNull { file ->
+                    val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                    if (conn == null || file.lanPath == null) {
+                        _snackbarMessage.value = "LAN connection info missing for ${file.name}"
+                        return@launch
+                    }
+                    AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath))
+                }
+                val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
+                val newItem = CalibreBatchItem(
+                    type = "PACK",
+                    putio_file_id = files.first().id,
+                    fileName = fileName,
+                    files = audioFiles,
+                )
+                val added = calibreRepository.appendToAssembly(
+                    assemblyFileId = assemblyFileId,
+                    title = title,
+                    author = author,
+                    newItem = newItem,
+                    newFileIds = files.map { it.id },
+                )
+                _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
+                    else "\"$fileName\" is already in this assembly"
+                return@launch
+            }
+
+            // Resolve each file: synced → use_local, LAN → SMB path, local → upload, remote → URL.
+            val resolvedAudioFiles = mutableListOf<AudiobookFile>()
             val total = files.size
             files.forEachIndexed { index, file ->
-                val uploadedId = uploadLocalFileIfNecessary(
-                    file, putioToken,
-                    progressKey = assemblyFileId,
-                    fileIndex = index + 1,
-                    totalFiles = total,
-                    clearProgressOnSuccess = index < total - 1,
-                ) ?: run {
-                    return@launch // error already shown via snackbar
+                when {
+                    file.isSynced -> resolvedAudioFiles.add(AudiobookFile(file.id, file.displayName, use_local = true))
+                    file.isLan -> {
+                        val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                        if (conn == null || file.lanPath == null) {
+                            _snackbarMessage.value = "LAN connection missing for ${file.name}"
+                            return@launch
+                        }
+                        resolvedAudioFiles.add(AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath)))
+                    }
+                    else -> {
+                        val uploadedId = uploadLocalFileIfNecessary(
+                            file, putioToken,
+                            progressKey = assemblyFileId,
+                            fileIndex = index + 1,
+                            totalFiles = total,
+                            clearProgressOnSuccess = index < total - 1,
+                        ) ?: return@launch // error already shown via snackbar
+                        resolvedAudioFiles.add(AudiobookFile(uploadedId, file.name, filesRepository.getDownloadUrl(putioToken, uploadedId)))
+                    }
                 }
-                resolvedIds.add(uploadedId)
-                resolvedUrls.add(filesRepository.getDownloadUrl(putioToken, uploadedId))
             }
-            if (files.any { it.isLocal || it.isLan }) {
+            if (files.any { it.isLocal }) {
                 calibreRepository.updateUploadProgress(assemblyFileId, null)
             }
 
-            val audioFiles = files.zip(resolvedIds.zip(resolvedUrls)).map { (file, idAndUrl) ->
-                AudiobookFile(idAndUrl.first, file.name, idAndUrl.second)
-            }
             val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
             val newItem = CalibreBatchItem(
                 type = "PACK",
-                putio_file_id = resolvedIds.first(),
+                putio_file_id = resolvedAudioFiles.first().putio_file_id,
                 fileName = fileName,
-                files = audioFiles
+                files = resolvedAudioFiles,
             )
 
             val added = calibreRepository.appendToAssembly(
@@ -822,7 +985,7 @@ class FilesViewModel @Inject constructor(
                 title = title,
                 author = author,
                 newItem = newItem,
-                newFileIds = resolvedIds,
+                newFileIds = resolvedAudioFiles.map { it.putio_file_id },
             )
             _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
                 else "\"$fileName\" is already in this assembly"
@@ -1021,6 +1184,11 @@ class FilesViewModel @Inject constructor(
     }
 
     fun signOut() = settingsRepository.clearAuth()
+
+    private fun buildUncPath(host: String, shareName: String, lanPath: String): String {
+        val normalized = lanPath.replace('/', '\\').trimStart('\\')
+        return "\\\\$host\\$shareName\\$normalized"
+    }
 
     fun onHighlightHandled() {
         // We can't easily modify SavedStateHandle once read, 

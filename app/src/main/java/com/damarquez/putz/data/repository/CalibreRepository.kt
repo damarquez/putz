@@ -40,6 +40,7 @@ data class CalibreBatchItem(
     val files: List<AudiobookFile>? = null, // For PACK
     val archiveMode: String? = null, // For ARCHIVE
     val use_local: Boolean? = null,  // When true the daemon uses the local synced copy; no download needed
+    val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
 )
 @Serializable
 data class CalibreBatchRequest(
@@ -60,6 +61,8 @@ data class AudiobookFile(
     val putio_file_id: Long,
     val fileName: String,
     val download_url: String? = null,
+    val smb_path: String? = null,
+    val use_local: Boolean? = null,
 )
 
 @Serializable
@@ -185,6 +188,7 @@ class CalibreRepository @Inject constructor(
         isUploading: Boolean = false,
         localUrisJson: String? = null,
         useLocal: Boolean = false,
+        smbPath: String? = null,
     ) {
         val initialItem = CalibreBatchItem(
             type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
@@ -193,6 +197,7 @@ class CalibreRepository @Inject constructor(
             download_url = downloadUrl,
             archiveMode = archiveMode,
             use_local = if (useLocal) true else null,
+            smb_path = smbPath,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -215,8 +220,8 @@ class CalibreRepository @Inject constructor(
         )
         calibreTransferDao.insertTransfer(transfer)
 
-        // useLocal=true means we can dispatch immediately without a download URL
-        if (assembleBook || isUploading || (downloadUrl == null && !useLocal)) return
+        // useLocal/smbPath means we can dispatch immediately without a download URL
+        if (assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null)) return
 
         // Immediately try to upload request
         val request = CalibreBatchRequest(
@@ -281,7 +286,7 @@ class CalibreRepository @Inject constructor(
     }
 
     suspend fun addAudiobookPackTransfer(
-        files: List<Pair<PutioFile, String?>>,
+        files: List<Pair<PutioFile, AudiobookFile>>,
         title: String,
         author: String,
         googleAccount: String,
@@ -292,9 +297,7 @@ class CalibreRepository @Inject constructor(
         localUrisJson: String? = null,
     ) {
         val primaryFileId = files.first().first.id
-        val audioFiles = files.map { (file, url) ->
-            AudiobookFile(file.id, file.name, url)
-        }
+        val audioFiles = files.map { (_, audioFile) -> audioFile }
         val fileName = customFileName ?: "${files.size} MP3 files"
         val initialItem = CalibreBatchItem(
             type = "PACK",
@@ -314,14 +317,14 @@ class CalibreRepository @Inject constructor(
             },
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = files.joinToString(",") { (file, _) -> file.id.toString() },
+            allPutioFileIds = audioFiles.joinToString(",") { it.putio_file_id.toString() },
             batchData = json.encodeToString(listOf(initialItem)),
             calibreBookUuid = calibreBookUuid,
             localUrisJson = localUrisJson,
         )
         calibreTransferDao.insertTransfer(transfer)
 
-        if (assembleBook || isUploading || files.any { it.second == null }) return
+        if (assembleBook || isUploading || audioFiles.any { it.download_url == null && it.smb_path == null && it.use_local != true }) return
 
         val request = CalibreBatchRequest(
             putio_file_id = primaryFileId,
@@ -350,14 +353,10 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    suspend fun updateAudiobookAfterUpload(tempId: Long, files: List<Triple<Long, String, String>>, googleAccount: String) {
+    suspend fun updateAudiobookAfterUpload(tempId: Long, audioFiles: List<AudiobookFile>, googleAccount: String) {
         val transfer = calibreTransferDao.getTransferById(tempId) ?: return
 
-        val newPrimaryId = files.first().first
-        val audioFiles = files.map { (id, url, name) ->
-            AudiobookFile(id, name, url)
-        }
-        
+        val newPrimaryId = audioFiles.first().putio_file_id
         val items = listOf(CalibreBatchItem(
             type = "PACK",
             putio_file_id = newPrimaryId,
@@ -378,7 +377,7 @@ class CalibreRepository @Inject constructor(
         calibreTransferDao.deleteTransfer(tempId)
         calibreTransferDao.insertTransfer(transfer.copy(
             putioFileId = newPrimaryId,
-            allPutioFileIds = files.joinToString(",") { it.first.toString() },
+            allPutioFileIds = audioFiles.joinToString(",") { it.putio_file_id.toString() },
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
@@ -977,7 +976,8 @@ class CalibreRepository @Inject constructor(
             val (uploadedId, downloadUrl, _) = uploadedFiles.first()
             updateTransferAfterUpload(transfer.putioFileId, uploadedId, downloadUrl, googleAccount)
         } else {
-            updateAudiobookAfterUpload(transfer.putioFileId, uploadedFiles, googleAccount)
+            val audioFiles = uploadedFiles.map { (id, url, name) -> AudiobookFile(id, name, url) }
+            updateAudiobookAfterUpload(transfer.putioFileId, audioFiles, googleAccount)
         }
     }
 }
