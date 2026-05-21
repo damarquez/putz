@@ -82,17 +82,23 @@ class TransfersRepository @Inject constructor(
         val local = dao.getById(id) ?: return@withContext NetworkResult.Error("Transfer not found")
         val magnet = local.magnetLink ?: return@withContext NetworkResult.Error("No magnet link for resume")
 
+        // Delete the stopped record first so its infoHash doesn't trigger the duplicate guard in addTransfer.
+        dao.deleteById(id)
+
         when (val result = addTransfer(token, magnet)) {
             is NetworkResult.Success -> {
-                println("TransfersRepository: Resume add success, deleting stopped record $id")
-                dao.deleteById(id)
+                println("TransfersRepository: Resume add success")
                 NetworkResult.Success(Unit)
             }
             is NetworkResult.Error -> {
                 println("TransfersRepository: Resume add failed: ${result.message}")
+                dao.upsert(local)
                 result
             }
-            NetworkResult.Loading -> NetworkResult.Loading
+            NetworkResult.Loading -> {
+                dao.upsert(local)
+                NetworkResult.Loading
+            }
         }
     }
 

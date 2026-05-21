@@ -1,6 +1,7 @@
 package com.damarquez.putz.ui.transfers
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -160,7 +161,10 @@ fun TransfersScreen(
                     if (state.grouped.isEmpty()) {
                         EmptyTransfersView(modifier = Modifier.fillMaxSize())
                     } else {
-                        LazyColumn(Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 88.dp),
+                        ) {
                             state.grouped.forEach { (group, transfers) ->
                                 item(key = "header_${group.name}") {
                                     GroupHeader(group = group, count = transfers.size)

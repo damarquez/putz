@@ -19,6 +19,12 @@ object FileIconProvider {
         "rar"  -> R.drawable.ic_file_rar
         "rtf"  -> R.drawable.ic_file_rtf
         "zip"  -> R.drawable.ic_file_zip
+        "doc"  -> R.drawable.ic_file_docx
+        "docx"  -> R.drawable.ic_file_docx
+        "jpg"  -> R.drawable.ic_file_jpg
+        "jpeg"  -> R.drawable.ic_file_jpg
+        "pgn"  -> R.drawable.ic_file_png
+        "fb2" -> R.drawable.ic_file_fb2
         else   -> null
     }
 }
