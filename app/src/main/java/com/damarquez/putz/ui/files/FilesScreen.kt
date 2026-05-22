@@ -190,29 +190,6 @@ fun FilesScreen(
         }
     }
 
-    if (fileToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { fileToDelete = null },
-            title = { Text(if (fileToDelete!!.isLocal) "Detach from Putz" else "Delete from put.io") },
-            text = { Text("Are you sure you want to ${if (fileToDelete!!.isLocal) "detach" else "delete"} \"${fileToDelete!!.displayName}\"?" + if (fileToDelete!!.isSynced) "\n\nThe local copy will be moved to the trashcan folder." else "") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteFiles(listOf(fileToDelete!!))
-                        fileToDelete = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(if (fileToDelete!!.isLocal) "Detach" else "Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { fileToDelete = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 
     LaunchedEffect(Unit) {
         viewModel.previewIntent.collect { intent ->
@@ -561,7 +538,7 @@ fun FilesScreen(
                     if (file.isLocal) "This local attachment will be removed from Putz. Your original file will not be touched."
                     else if (file.isSynced) "The put.io stub will be deleted. The local copy will be moved to the trashcan folder."
                     else if (file.isFolder) "This folder and all its contents will be permanently deleted from put.io."
-                    else "This file will be permanently deleted from put.io."
+                    else "This file will be permanently deleted from put.io.\n\nIf the daemon is currently downloading it to the local mirror, the download will fail and may leave an incomplete file on disk."
                 )
             },
             confirmButton = {
