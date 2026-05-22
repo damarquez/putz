@@ -72,6 +72,9 @@ fun FileItem(
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
+    onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
+    onAddSubtitleToMovie: (PutioFile) -> Unit,
+    hasPendingPlexAssemblies: Boolean = false,
     onDownload: (PutioFile) -> Unit,
     onCopyLink: (PutioFile) -> Unit,
     onDelete: () -> Unit,
@@ -89,6 +92,9 @@ fun FileItem(
     val isEbook = MetadataUtils.isEbook(file.displayName)
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.displayName)
     val isVideo = fileType == PutioFileType.VIDEO || MetadataUtils.isVideo(file.displayName)
+    val isSubtitle = file.displayName.endsWith(".srt", ignoreCase = true) ||
+        file.displayName.endsWith(".ass", ignoreCase = true) ||
+        file.displayName.endsWith(".sub", ignoreCase = true)
     val isImage = fileType == PutioFileType.IMAGE
     val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
@@ -341,7 +347,27 @@ fun FileItem(
                                 },
                             )
                         }
-                        if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced)) {
+                        if (isSubtitle && file.isSynced) {
+                            if (hasPendingPlexAssemblies) {
+                                DropdownMenuItem(
+                                    text = { Text("Assemble into movie") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onAssembleSubtitleIntoPlex(file)
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Add subtitle to movie") },
+                                enabled = isGoogleSignedIn,
+                                onClick = {
+                                    showMenu = false
+                                    onAddSubtitleToMovie(file)
+                                },
+                            )
+                        }
+                        if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced)) {
                             HorizontalDivider()
                         }
                         DropdownMenuItem(

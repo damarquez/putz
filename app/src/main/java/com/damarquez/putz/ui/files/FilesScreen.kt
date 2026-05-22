@@ -246,6 +246,17 @@ fun FilesScreen(
     var plexSelectedDestPath by remember { mutableStateOf("") }
     val plexPickerState by viewModel.plexPickerState.collectAsState()
 
+    // Plex subtitle assembly flow
+    val pendingPlexAssemblies by viewModel.pendingPlexAssemblies.collectAsState()
+    var subtitleForAssembly by remember { mutableStateOf<PutioFile?>(null) }
+    var targetPlexAssembly by remember { mutableStateOf<com.damarquez.putz.data.local.CalibreTransferEntity?>(null) }
+
+    // "Add subtitle to existing movie" flow
+    var subtitleForMovie by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedMovieFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedMovieFolderPath by remember { mutableStateOf("") }
+    val movieBrowserState by viewModel.movieBrowserState.collectAsState()
+
     // Single-file Calibre send
     var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFileForCover by remember { mutableStateOf<PutioFile?>(null) }
@@ -430,8 +441,8 @@ fun FilesScreen(
                 plexSelectedDestPath = ""
             },
             onBrowse = { viewModel.openPlexFolderPicker() },
-            onConfirm = { title, year, destPath ->
-                viewModel.sendToPlex(plexFile, title, year, destPath)
+            onConfirm = { title, year, destPath, assembleMode ->
+                viewModel.sendToPlex(plexFile, title, year, destPath, assembleMode)
                 selectedFileForPlex = null
                 plexSelectedDestPath = ""
             },
@@ -447,6 +458,95 @@ fun FilesScreen(
             onSelect = { relativePath ->
                 plexSelectedDestPath = relativePath
                 viewModel.dismissPlexPicker()
+            },
+        )
+    }
+
+    // Plex assembly picker for subtitles
+    if (subtitleForAssembly != null && targetPlexAssembly == null) {
+        AlertDialog(
+            onDismissRequest = { subtitleForAssembly = null },
+            title = { Text("Add to movie assembly") },
+            text = {
+                Column {
+                    if (pendingPlexAssemblies.isEmpty()) {
+                        Text("No pending movie assemblies found.")
+                    } else {
+                        pendingPlexAssemblies.forEach { assembly ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
+                                        Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = { targetPlexAssembly = assembly }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { subtitleForAssembly = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (subtitleForAssembly != null && targetPlexAssembly != null) {
+        val assembly = targetPlexAssembly!!
+        val usedLanguages = remember(assembly.batchData) {
+            try {
+                com.damarquez.putz.data.repository.PlexBatchData.fromJson(assembly.batchData ?: "")
+                    ?.items?.filter { it.item_type == "SUBTITLE" }?.mapNotNull { it.language }?.toSet()
+                    ?: emptySet()
+            } catch (_: Exception) { emptySet() }
+        }
+        PlexLanguagePicker(
+            disabledLanguages = usedLanguages,
+            onDismiss = {
+                subtitleForAssembly = null
+                targetPlexAssembly = null
+            },
+            onConfirm = { lang ->
+                viewModel.appendSubtitleToPlexAssembly(assembly.putioFileId, subtitleForAssembly!!, lang)
+                subtitleForAssembly = null
+                targetPlexAssembly = null
+            },
+        )
+    }
+
+    // "Add subtitle to movie" browser
+    movieBrowserState?.let { browserState ->
+        PlexFolderPickerSheet(
+            state = browserState,
+            onDismiss = { viewModel.dismissMovieBrowser() },
+            onNavigateUp = { viewModel.movieBrowserNavigateUp() },
+            onNavigateInto = { folder -> viewModel.browseMovieBrowserFolder(folder) },
+            onSelect = { _ -> },
+            onFileSelected = { file ->
+                val folderPath = browserState.currentPath
+                    .let { if (browserState.rootPath.isEmpty()) it else it.removePrefix(browserState.rootPath).trimStart('/') }
+                selectedMovieFile = file
+                selectedMovieFolderPath = folderPath
+                viewModel.dismissMovieBrowser()
+            },
+        )
+    }
+
+    if (subtitleForMovie != null && selectedMovieFile != null) {
+        PlexLanguagePicker(
+            title = "Subtitle language for ${selectedMovieFile!!.name}",
+            onDismiss = {
+                subtitleForMovie = null
+                selectedMovieFile = null
+                selectedMovieFolderPath = ""
+            },
+            onConfirm = { lang ->
+                viewModel.sendAddSubtitleToMovie(subtitleForMovie!!, lang, selectedMovieFolderPath, selectedMovieFile!!.name)
+                subtitleForMovie = null
+                selectedMovieFile = null
+                selectedMovieFolderPath = ""
             },
         )
     }
@@ -789,6 +889,14 @@ fun FilesScreen(
                                             plexSelectedDestPath = ""
                                             selectedFileForPlex = it
                                         },
+                                        onAssembleSubtitleIntoPlex = { subtitleForAssembly = it },
+                                        onAddSubtitleToMovie = {
+                                            subtitleForMovie = it
+                                            selectedMovieFile = null
+                                            selectedMovieFolderPath = ""
+                                            viewModel.openMovieBrowser()
+                                        },
+                                        hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },
                                         onDelete = { fileToDelete = file },

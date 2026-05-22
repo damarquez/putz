@@ -84,10 +84,25 @@ data class CalibreBookMatch(
 )
 
 @Serializable
-data class PlexTransferItem(
+data class PlexAssemblyItem(
     val putio_file_id: Long,
     val fileName: String,
+    val item_type: String = "MOVIE", // "MOVIE" or "SUBTITLE"
+    val language: String? = null,
 )
+
+@Serializable
+data class PlexBatchData(
+    val movie_title: String,
+    val year: String,
+    val dest_path: String,
+    val items: List<PlexAssemblyItem>,
+) {
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true }
+        fun fromJson(s: String): PlexBatchData? = try { json.decodeFromString(s) } catch (_: Exception) { null }
+    }
+}
 
 @Serializable
 data class PlexTransferRequest(
@@ -96,7 +111,16 @@ data class PlexTransferRequest(
     val movie_title: String,
     val year: String,
     val dest_path: String,
-    val items: List<PlexTransferItem>,
+    val items: List<PlexAssemblyItem>,
+)
+
+@Serializable
+data class PlexAddSubtitleRequest(
+    val action: String = "ADD_SUBTITLE_TO_MOVIE",
+    val putio_file_id: Long,
+    val language: String,
+    val movie_folder_path: String,
+    val movie_file_name: String,
 )
 
 @Singleton
@@ -589,39 +613,135 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    suspend fun sendToPlexRequest(
+    suspend fun createPlexAssembly(
         file: PutioFile,
         movieTitle: String,
         year: String,
         destPath: String,
+        assembleMode: Boolean,
         googleAccount: String,
     ) {
         val displayName = file.displayName
-        val request = PlexTransferRequest(
-            putio_file_id = file.id,
-            movie_title = movieTitle,
-            year = year,
-            dest_path = destPath,
-            items = listOf(PlexTransferItem(putio_file_id = file.id, fileName = displayName)),
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_plex_${file.id}.json", jsonStr)
-
+        val movieItem = PlexAssemblyItem(putio_file_id = file.id, fileName = displayName, item_type = "MOVIE")
+        val batchData = PlexBatchData(movie_title = movieTitle, year = year, dest_path = destPath, items = listOf(movieItem))
         val folderLabel = if (year.isNotBlank()) "$movieTitle ($year)" else movieTitle
+
         val transfer = CalibreTransferEntity(
             putioFileId = file.id,
             fileName = displayName,
             title = folderLabel,
             author = destPath.ifBlank { "Plex root" },
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            status = if (assembleMode) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = file.id.toString(),
+            transferType = "PLEX",
+            batchData = json.encodeToString(batchData),
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+        if (assembleMode) return
+
+        val request = plexRequestFromBatchData(batchData, file.id)
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_plex_${file.id}.json", jsonStr)
+        withContext(NonCancellable) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+                gdriveRequestId = gDriveId,
+                errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+                lastRequestPayload = jsonStr,
+            ))
+        }
+    }
+
+    suspend fun appendSubtitleToPlexAssembly(
+        assemblyFileId: Long,
+        subtitle: PutioFile,
+        language: String,
+    ): String? {
+        val transfer = calibreTransferDao.getTransferById(assemblyFileId) ?: return "Assembly not found"
+        if (transfer.transferType != "PLEX") return "Not a Plex assembly"
+        val batchData = transfer.batchData?.let {
+            try { json.decodeFromString<PlexBatchData>(it) } catch (e: Exception) { return "Could not parse assembly data: ${e.message}" }
+        } ?: return "No batch data"
+
+        val existingLanguages = batchData.items.filter { it.item_type == "SUBTITLE" }.mapNotNull { it.language }.toSet()
+        if (language in existingLanguages) return "This language is already in the assembly"
+
+        val newItem = PlexAssemblyItem(putio_file_id = subtitle.id, fileName = subtitle.displayName, item_type = "SUBTITLE", language = language)
+        val updated = batchData.copy(items = batchData.items + newItem)
+        val updatedIds = (transfer.parsedFileIds() + subtitle.id).distinct()
+        calibreTransferDao.updateTransfer(transfer.copy(
+            batchData = json.encodeToString(updated),
+            allPutioFileIds = updatedIds.joinToString(","),
+            lastUpdatedAt = System.currentTimeMillis(),
+        ))
+        return null
+    }
+
+    suspend fun sendAddSubtitleToMovieRequest(
+        subtitle: PutioFile,
+        language: String,
+        movieFolderPath: String,
+        movieFileName: String,
+        googleAccount: String,
+    ) {
+        val request = PlexAddSubtitleRequest(
+            putio_file_id = subtitle.id,
+            language = language,
+            movie_folder_path = movieFolderPath,
+            movie_file_name = movieFileName,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_subtitle_${subtitle.id}.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = subtitle.id,
+            fileName = subtitle.displayName,
+            title = "Add subtitle → ${movieFileName.substringBeforeLast('.')}",
+            author = movieFolderPath.ifBlank { "Plex" },
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = subtitle.id.toString(),
+            transferType = "PLEX",
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             lastRequestPayload = jsonStr,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    private fun plexRequestFromBatchData(batchData: PlexBatchData, anchorFileId: Long) = PlexTransferRequest(
+        putio_file_id = anchorFileId,
+        movie_title = batchData.movie_title,
+        year = batchData.year,
+        dest_path = batchData.dest_path,
+        items = batchData.items,
+    )
+
+    private suspend fun retryPlexTransfer(transfer: CalibreTransferEntity, googleAccount: String): NetworkResult<Unit> {
+        val payload = transfer.lastRequestPayload ?: run {
+            val batchData = transfer.batchData?.let {
+                try { json.decodeFromString<PlexBatchData>(it) } catch (e: Exception) {
+                    return NetworkResult.Error("Could not parse Plex assembly data")
+                }
+            } ?: return NetworkResult.Error("No batch data for Plex transfer")
+            json.encodeToString(plexRequestFromBatchData(batchData, transfer.putioFileId))
+        }
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_plex_${transfer.putioFileId}.json", payload)
+        return if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+                retryCount = if (transfer.status == CalibreTransferStatus.FAILED) transfer.retryCount + 1 else transfer.retryCount,
+                errorMessage = null,
+                lastRequestPayload = payload,
+            ))
+            NetworkResult.Success(Unit)
+        } else {
+            NetworkResult.Error("Could not upload Plex request to Google Drive")
+        }
     }
 
     suspend fun checkExistsByUuid(dbFile: File, uuid: String): CalibreBookMatch? = withContext(Dispatchers.IO) {
@@ -834,7 +954,9 @@ class CalibreRepository @Inject constructor(
 
     suspend fun retryTransfer(fileId: Long, googleAccount: String): NetworkResult<Unit> {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return NetworkResult.Error("Transfer not found")
-        
+
+        if (transfer.transferType == "PLEX") return retryPlexTransfer(transfer, googleAccount)
+
         val payload = transfer.lastRequestPayload ?: run {
             // Reconstruct if missing (for legacy transfers created before lastRequestPayload was added)
             val items = try {

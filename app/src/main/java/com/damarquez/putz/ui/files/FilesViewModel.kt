@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.damarquez.putz.util.MetadataUtils
 import java.io.File
 import javax.inject.Inject
 
@@ -98,7 +99,13 @@ class FilesViewModel @Inject constructor(
 
     val pendingAssemblies: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
         .map { transfers ->
-            transfers.filter { it.status == CalibreTransferStatus.ASSEMBLED }
+            transfers.filter { it.status == CalibreTransferStatus.ASSEMBLED && it.transferType == "CALIBRE" }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pendingPlexAssemblies: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
+        .map { transfers ->
+            transfers.filter { it.status == CalibreTransferStatus.ASSEMBLED && it.transferType == "PLEX" }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -1239,21 +1246,90 @@ class FilesViewModel @Inject constructor(
         _plexPickerState.value = null
     }
 
-    fun sendToPlex(file: PutioFile, movieTitle: String, year: String, destPath: String) {
+    fun sendToPlex(file: PutioFile, movieTitle: String, year: String, destPath: String, assembleMode: Boolean) {
+        viewModelScope.launch {
+            val account = googleAccount.value
+            if (account.isBlank() && !assembleMode) {
+                _snackbarMessage.value = "Google account not configured"
+                return@launch
+            }
+            calibreRepository.createPlexAssembly(
+                file = file,
+                movieTitle = movieTitle,
+                year = year,
+                destPath = destPath,
+                assembleMode = assembleMode,
+                googleAccount = account,
+            )
+            _snackbarMessage.value = if (assembleMode) "Movie assembly created — add subtitles, then tap play" else "Plex transfer request sent"
+        }
+    }
+
+    fun appendSubtitleToPlexAssembly(assemblyId: Long, file: PutioFile, language: String) {
+        viewModelScope.launch {
+            val error = calibreRepository.appendSubtitleToPlexAssembly(assemblyId, file, language)
+            _snackbarMessage.value = error ?: "Subtitle (${language.uppercase()}) added to assembly"
+        }
+    }
+
+    private val _movieBrowserState = MutableStateFlow<LanFolderPickerState?>(null)
+    val movieBrowserState: StateFlow<LanFolderPickerState?> = _movieBrowserState.asStateFlow()
+
+    fun openMovieBrowser() {
+        viewModelScope.launch {
+            val connectionId = settingsRepository.plexLibraryLanConnectionIdFlow.first()
+            val rootPath = settingsRepository.plexLibraryLanPathFlow.first()
+            if (connectionId == null) {
+                _snackbarMessage.value = "Plex library LAN connection not configured in Settings"
+                return@launch
+            }
+            _movieBrowserState.value = LanFolderPickerState(connectionId = connectionId, rootPath = rootPath, currentPath = rootPath, isLoading = true)
+            loadMovieBrowserFiles(connectionId, rootPath)
+        }
+    }
+
+    fun browseMovieBrowserFolder(folder: PutioFile) {
+        val current = _movieBrowserState.value ?: return
+        val newPath = if (current.currentPath.isEmpty()) folder.name else "${current.currentPath}/${folder.name}"
+        _movieBrowserState.value = current.copy(pathStack = current.pathStack + current.currentPath, currentPath = newPath, folders = emptyList(), files = emptyList(), isLoading = true, error = null)
+        viewModelScope.launch { loadMovieBrowserFiles(current.connectionId, newPath) }
+    }
+
+    fun movieBrowserNavigateUp() {
+        val current = _movieBrowserState.value ?: return
+        if (!current.canNavigateUp) return
+        val previousPath = current.pathStack.last()
+        _movieBrowserState.value = current.copy(pathStack = current.pathStack.dropLast(1), currentPath = previousPath, folders = emptyList(), files = emptyList(), isLoading = true, error = null)
+        viewModelScope.launch { loadMovieBrowserFiles(current.connectionId, previousPath) }
+    }
+
+    fun dismissMovieBrowser() { _movieBrowserState.value = null }
+
+    fun sendAddSubtitleToMovie(subtitle: PutioFile, language: String, movieFolderPath: String, movieFileName: String) {
         viewModelScope.launch {
             val account = googleAccount.value
             if (account.isBlank()) {
                 _snackbarMessage.value = "Google account not configured"
                 return@launch
             }
-            calibreRepository.sendToPlexRequest(
-                file = file,
-                movieTitle = movieTitle,
-                year = year,
-                destPath = destPath,
-                googleAccount = account,
+            calibreRepository.sendAddSubtitleToMovieRequest(subtitle, language, movieFolderPath, movieFileName, account)
+            _snackbarMessage.value = "Subtitle request sent"
+        }
+    }
+
+    private suspend fun loadMovieBrowserFiles(connectionId: Long, path: String) {
+        try {
+            val allFiles = lanFilesRepository.listDirectory(connectionId, path).first()
+            val current = _movieBrowserState.value ?: return
+            _movieBrowserState.value = current.copy(
+                folders = allFiles.filter { it.isFolder },
+                files = allFiles.filter { !it.isFolder && MetadataUtils.isVideo(it.name) },
+                isLoading = false,
+                error = null,
             )
-            _snackbarMessage.value = "Plex transfer request sent"
+        } catch (e: Exception) {
+            val current = _movieBrowserState.value ?: return
+            _movieBrowserState.value = current.copy(isLoading = false, error = e.message ?: "Failed to load files")
         }
     }
 
