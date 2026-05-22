@@ -5,6 +5,7 @@ object MetadataUtils {
     private val ARCHIVE_EXTENSIONS = setOf("rar", "zip", "7z", "cbz", "cbr")
     private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a")
     private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b")
+    private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "wmv", "m4v", "ts", "webm", "flv", "mpg", "mpeg", "divx")
 
     fun isArchive(fileName: String): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase()
@@ -20,6 +21,24 @@ object MetadataUtils {
     fun isMultiTrackAudio(fileName: String): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase()
         return ext in MULTI_TRACK_AUDIO_EXTENSIONS
+    }
+
+    fun isVideo(fileName: String): Boolean {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return ext in VIDEO_EXTENSIONS
+    }
+
+    /** Parse movie title and year from a video filename (e.g. "The.Matrix.1999.mkv" → "The Matrix", "1999"). */
+    fun parseMovieTitleAndYear(fileName: String): Pair<String, String> {
+        val nameWithoutExt = fileName.substringBeforeLast('.')
+        val cleaned = nameWithoutExt.replace('.', ' ').replace('_', ' ').trim()
+        val yearMatch = Regex("""\b(19|20)\d{2}\b""").find(cleaned)
+        return if (yearMatch != null) {
+            val title = cleaned.substring(0, yearMatch.range.first).trim()
+            Pair(title.ifBlank { cleaned }, yearMatch.value)
+        } else {
+            Pair(cleaned, "")
+        }
     }
 
     fun extractMetadata(fileName: String): Pair<String, String> {

@@ -21,4 +21,7 @@ object AppSettingsKeys {
     // put.io local sync — which LAN connection hosts the local repository and at what path
     val PUTIO_LOCAL_LAN_CONNECTION_ID = longPreferencesKey("putio_local_lan_connection_id")
     val PUTIO_LOCAL_LAN_PATH = stringPreferencesKey("putio_local_lan_path")
+    // Plex library — which LAN connection + root path hosts the Plex Movies library
+    val PLEX_LIBRARY_LAN_CONNECTION_ID = longPreferencesKey("plex_library_lan_connection_id")
+    val PLEX_LIBRARY_LAN_PATH = stringPreferencesKey("plex_library_lan_path")
 }

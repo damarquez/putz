@@ -241,6 +241,11 @@ fun FilesScreen(
         )
     }
 
+    // Plex flow
+    var selectedFileForPlex by remember { mutableStateOf<PutioFile?>(null) }
+    var plexSelectedDestPath by remember { mutableStateOf("") }
+    val plexPickerState by viewModel.plexPickerState.collectAsState()
+
     // Single-file Calibre send
     var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFileForCover by remember { mutableStateOf<PutioFile?>(null) }
@@ -407,6 +412,42 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (selectedFileForPlex != null) {
+        val plexFile = selectedFileForPlex!!
+        val (initialTitle, initialYear) = remember(plexFile) {
+            MetadataUtils.parseMovieTitleAndYear(plexFile.displayName)
+        }
+        PlexConfirmationSheet(
+            displayName = plexFile.displayName,
+            initialTitle = initialTitle,
+            initialYear = initialYear,
+            selectedDestPath = plexSelectedDestPath,
+            onDismiss = {
+                selectedFileForPlex = null
+                plexSelectedDestPath = ""
+            },
+            onBrowse = { viewModel.openPlexFolderPicker() },
+            onConfirm = { title, year, destPath ->
+                viewModel.sendToPlex(plexFile, title, year, destPath)
+                selectedFileForPlex = null
+                plexSelectedDestPath = ""
+            },
+        )
+    }
+
+    plexPickerState?.let { pickerState ->
+        PlexFolderPickerSheet(
+            state = pickerState,
+            onDismiss = { viewModel.dismissPlexPicker() },
+            onNavigateUp = { viewModel.plexPickerNavigateUp() },
+            onNavigateInto = { folder -> viewModel.browsePlexFolder(folder) },
+            onSelect = { relativePath ->
+                plexSelectedDestPath = relativePath
+                viewModel.dismissPlexPicker()
+            },
         )
     }
 
@@ -743,6 +784,10 @@ fun FilesScreen(
                                             if (isPack) {
                                                 audiobookPackTriggerFile = target
                                             }
+                                        },
+                                        onSendToPlex = {
+                                            plexSelectedDestPath = ""
+                                            selectedFileForPlex = it
                                         },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },

@@ -66,6 +66,14 @@ class SettingsRepository @Inject constructor(
         prefs[AppSettingsKeys.PUTIO_LOCAL_LAN_PATH] ?: ""
     }
 
+    val plexLibraryLanConnectionIdFlow: Flow<Long?> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_CONNECTION_ID]
+    }
+
+    val plexLibraryLanPathFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_PATH] ?: ""
+    }
+
     fun saveAuthToken(token: String) = secureStorage.saveAuthToken(token)
 
     fun clearAuth() = secureStorage.clearAuthToken()
@@ -122,6 +130,20 @@ class SettingsRepository @Inject constructor(
         dataStore.edit { prefs ->
             if (path.isBlank()) prefs.remove(AppSettingsKeys.PUTIO_LOCAL_LAN_PATH)
             else prefs[AppSettingsKeys.PUTIO_LOCAL_LAN_PATH] = path.trim()
+        }
+    }
+
+    suspend fun savePlexLibraryLanConnectionId(id: Long?) {
+        dataStore.edit { prefs ->
+            if (id == null) prefs.remove(AppSettingsKeys.PLEX_LIBRARY_LAN_CONNECTION_ID)
+            else prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_CONNECTION_ID] = id
+        }
+    }
+
+    suspend fun savePlexLibraryLanPath(path: String) {
+        dataStore.edit { prefs ->
+            if (path.isBlank()) prefs.remove(AppSettingsKeys.PLEX_LIBRARY_LAN_PATH)
+            else prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_PATH] = path.trim()
         }
     }
 }

@@ -81,6 +81,9 @@ class FilesViewModel @Inject constructor(
     val putioLocalLanPath: StateFlow<String> = settingsRepository.putioLocalLanPathFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    private val _plexPickerState = MutableStateFlow<LanFolderPickerState?>(null)
+    val plexPickerState: StateFlow<LanFolderPickerState?> = _plexPickerState.asStateFlow()
+
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
 
@@ -1184,6 +1187,91 @@ class FilesViewModel @Inject constructor(
     }
 
     fun signOut() = settingsRepository.clearAuth()
+
+    fun openPlexFolderPicker() {
+        viewModelScope.launch {
+            val connectionId = settingsRepository.plexLibraryLanConnectionIdFlow.first()
+            val rootPath = settingsRepository.plexLibraryLanPathFlow.first()
+            if (connectionId == null) {
+                _snackbarMessage.value = "Plex library LAN connection not configured in Settings"
+                return@launch
+            }
+            val initialState = LanFolderPickerState(
+                connectionId = connectionId,
+                rootPath = rootPath,
+                currentPath = rootPath,
+                isLoading = true,
+            )
+            _plexPickerState.value = initialState
+            loadPlexFolders(connectionId, rootPath)
+        }
+    }
+
+    fun browsePlexFolder(folder: PutioFile) {
+        val current = _plexPickerState.value ?: return
+        val newPath = if (current.currentPath.isEmpty()) folder.name
+            else "${current.currentPath}/${folder.name}"
+        _plexPickerState.value = current.copy(
+            pathStack = current.pathStack + current.currentPath,
+            currentPath = newPath,
+            folders = emptyList(),
+            isLoading = true,
+            error = null,
+        )
+        viewModelScope.launch { loadPlexFolders(current.connectionId, newPath) }
+    }
+
+    fun plexPickerNavigateUp() {
+        val current = _plexPickerState.value ?: return
+        if (!current.canNavigateUp) return
+        val previousPath = current.pathStack.last()
+        _plexPickerState.value = current.copy(
+            pathStack = current.pathStack.dropLast(1),
+            currentPath = previousPath,
+            folders = emptyList(),
+            isLoading = true,
+            error = null,
+        )
+        viewModelScope.launch { loadPlexFolders(current.connectionId, previousPath) }
+    }
+
+    fun dismissPlexPicker() {
+        _plexPickerState.value = null
+    }
+
+    fun sendToPlex(file: PutioFile, movieTitle: String, year: String, destPath: String) {
+        viewModelScope.launch {
+            val account = googleAccount.value
+            if (account.isBlank()) {
+                _snackbarMessage.value = "Google account not configured"
+                return@launch
+            }
+            calibreRepository.sendToPlexRequest(
+                file = file,
+                movieTitle = movieTitle,
+                year = year,
+                destPath = destPath,
+                googleAccount = account,
+            )
+            _snackbarMessage.value = "Plex transfer request sent"
+        }
+    }
+
+    private suspend fun loadPlexFolders(connectionId: Long, path: String) {
+        try {
+            val files = lanFilesRepository.listDirectory(connectionId, path).first()
+            val folders = files.filter { it.isFolder }
+            val current = _plexPickerState.value ?: return
+            _plexPickerState.value = current.copy(
+                folders = folders,
+                isLoading = false,
+                error = null,
+            )
+        } catch (e: Exception) {
+            val current = _plexPickerState.value ?: return
+            _plexPickerState.value = current.copy(isLoading = false, error = e.message ?: "Failed to load folders")
+        }
+    }
 
     private fun buildUncPath(host: String, shareName: String, lanPath: String): String {
         val normalized = lanPath.replace('/', '\\').trimStart('\\')

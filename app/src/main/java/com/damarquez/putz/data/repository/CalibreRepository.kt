@@ -83,6 +83,22 @@ data class CalibreBookMatch(
     val tags: String = "",
 )
 
+@Serializable
+data class PlexTransferItem(
+    val putio_file_id: Long,
+    val fileName: String,
+)
+
+@Serializable
+data class PlexTransferRequest(
+    val action: String = "SEND_TO_PLEX",
+    val putio_file_id: Long,
+    val movie_title: String,
+    val year: String,
+    val dest_path: String,
+    val items: List<PlexTransferItem>,
+)
+
 @Singleton
 class CalibreRepository @Inject constructor(
     @ApplicationContext private val context: android.content.Context,
@@ -571,6 +587,41 @@ class CalibreRepository @Inject constructor(
                 }
             }
         }
+    }
+
+    suspend fun sendToPlexRequest(
+        file: PutioFile,
+        movieTitle: String,
+        year: String,
+        destPath: String,
+        googleAccount: String,
+    ) {
+        val displayName = file.displayName
+        val request = PlexTransferRequest(
+            putio_file_id = file.id,
+            movie_title = movieTitle,
+            year = year,
+            dest_path = destPath,
+            items = listOf(PlexTransferItem(putio_file_id = file.id, fileName = displayName)),
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_plex_${file.id}.json", jsonStr)
+
+        val folderLabel = if (year.isNotBlank()) "$movieTitle ($year)" else movieTitle
+        val transfer = CalibreTransferEntity(
+            putioFileId = file.id,
+            fileName = displayName,
+            title = folderLabel,
+            author = destPath.ifBlank { "Plex root" },
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = file.id.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
     suspend fun checkExistsByUuid(dbFile: File, uuid: String): CalibreBookMatch? = withContext(Dispatchers.IO) {

@@ -71,6 +71,7 @@ fun FileItem(
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
+    onSendToPlex: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
     onCopyLink: (PutioFile) -> Unit,
     onDelete: () -> Unit,
@@ -87,6 +88,7 @@ fun FileItem(
     // Use displayName for all labelling so .sk_synced is hidden
     val isEbook = MetadataUtils.isEbook(file.displayName)
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.displayName)
+    val isVideo = fileType == PutioFileType.VIDEO || MetadataUtils.isVideo(file.displayName)
     val isImage = fileType == PutioFileType.IMAGE
     val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
@@ -329,7 +331,17 @@ fun FileItem(
                                 )
                             }
                         }
-                        if (isEbook || isMultiTrackAudio) {
+                        if (isVideo && file.isSynced) {
+                            DropdownMenuItem(
+                                text = { Text("Send to Plex") },
+                                enabled = isGoogleSignedIn,
+                                onClick = {
+                                    showMenu = false
+                                    onSendToPlex(file)
+                                },
+                            )
+                        }
+                        if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced)) {
                             HorizontalDivider()
                         }
                         DropdownMenuItem(

@@ -61,9 +61,13 @@ fun SettingsScreen(
     val googleWebClientId by viewModel.googleWebClientId.collectAsState()
     val putioLocalLanConnectionId by viewModel.putioLocalLanConnectionId.collectAsState()
     val putioLocalLanPath by viewModel.putioLocalLanPath.collectAsState()
+    val plexLibraryLanConnectionId by viewModel.plexLibraryLanConnectionId.collectAsState()
+    val plexLibraryLanPath by viewModel.plexLibraryLanPath.collectAsState()
     val lanConnections by viewModel.lanConnections.collectAsState()
     var showLanConnectionPicker by remember { mutableStateOf(false) }
     var editingLanPath by remember { mutableStateOf<String?>(null) }
+    var showPlexLanConnectionPicker by remember { mutableStateOf(false) }
+    val plexRootPickerState by viewModel.plexRootPickerState.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showGoogleSignOutConfirm by remember { mutableStateOf(false) }
@@ -291,6 +295,72 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            SettingsSectionHeader("Plex Library")
+            val selectedPlexConn = lanConnections.find { it.id == plexLibraryLanConnectionId }
+            ButtonRow(
+                label = if (selectedPlexConn != null) "LAN connection: ${selectedPlexConn.label}" else "Select LAN connection…",
+                onClick = { showPlexLanConnectionPicker = true }
+            )
+            if (selectedPlexConn != null) {
+                ButtonRow(
+                    label = if (plexLibraryLanPath.isNotBlank()) "Library root: /${plexLibraryLanPath}" else "Browse for library root…",
+                    onClick = { viewModel.openPlexRootPicker() }
+                )
+                ButtonRow(
+                    label = "Remove Plex library",
+                    onClick = {
+                        viewModel.setPlexLibraryLanConnection(null)
+                        viewModel.setPlexLibraryLanPath("")
+                    },
+                    isError = true
+                )
+            }
+
+            if (showPlexLanConnectionPicker) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showPlexLanConnectionPicker = false },
+                    title = { Text("Select LAN connection for Plex") },
+                    text = {
+                        Column {
+                            if (lanConnections.isEmpty()) {
+                                Text("No LAN connections configured. Add one in LAN Files settings first.")
+                            } else {
+                                lanConnections.forEach { conn ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.setPlexLibraryLanConnection(conn.id)
+                                                showPlexLanConnectionPicker = false
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(
+                                            selected = conn.id == plexLibraryLanConnectionId,
+                                            onClick = {
+                                                viewModel.setPlexLibraryLanConnection(conn.id)
+                                                showPlexLanConnectionPicker = false
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(conn.label, style = MaterialTheme.typography.bodyLarge)
+                                            Text("\\\\${conn.host}\\${conn.shareName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showPlexLanConnectionPicker = false }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
             SettingsSectionHeader("Google Account")
             
             if (googleAccount.isBlank()) {
@@ -314,6 +384,16 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    plexRootPickerState?.let { pickerState ->
+        com.damarquez.putz.ui.files.PlexFolderPickerSheet(
+            state = pickerState,
+            onDismiss = { viewModel.dismissPlexRootPicker() },
+            onNavigateUp = { viewModel.plexRootPickerNavigateUp() },
+            onNavigateInto = { folder -> viewModel.browsePlexRootFolder(folder) },
+            onSelect = { path -> viewModel.selectPlexRootPath(path) },
+        )
     }
 }
 
