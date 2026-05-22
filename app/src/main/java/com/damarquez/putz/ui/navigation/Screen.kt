@@ -31,7 +31,7 @@ sealed class Screen(val route: String) {
         const val ARG_LAN_PATH = "lanPath"
     }
 
-    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}") {
+    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}&putioIsSynced={putioIsSynced}") {
         fun createRoute(
             archiveName: String,
             localUri: String? = null,
@@ -41,6 +41,7 @@ sealed class Screen(val route: String) {
             putioDownloadUrl: String? = null,
             putioFileSize: Long? = null,
             putioParentFolderId: Long? = null,
+            putioIsSynced: Boolean = false,
         ): String {
             var route = "archive/${Uri.encode(archiveName)}"
             val params = mutableListOf<String>()
@@ -51,6 +52,7 @@ sealed class Screen(val route: String) {
             if (putioDownloadUrl != null) params.add("putioDownloadUrl=${Uri.encode(putioDownloadUrl)}")
             if (putioFileSize != null) params.add("putioFileSize=$putioFileSize")
             if (putioParentFolderId != null) params.add("putioParentFolderId=$putioParentFolderId")
+            if (putioIsSynced) params.add("putioIsSynced=true")
             if (params.isNotEmpty()) route += "?" + params.joinToString("&")
             return route
         }
@@ -62,6 +64,7 @@ sealed class Screen(val route: String) {
         const val ARG_PUTIO_DOWNLOAD_URL = "putioDownloadUrl"
         const val ARG_PUTIO_FILE_SIZE = "putioFileSize"
         const val ARG_PUTIO_PARENT_FOLDER_ID = "putioParentFolderId"
+        const val ARG_PUTIO_IS_SYNCED = "putioIsSynced"
     }
 
     data object Transfers : Screen("transfers")

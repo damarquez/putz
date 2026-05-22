@@ -33,7 +33,7 @@ import javax.inject.Singleton
 import kotlin.random.Random
 @Serializable
 data class CalibreBatchItem(
-    val type: String, // "SINGLE", "PACK", "ARCHIVE"
+    val type: String, // "SINGLE", "PACK", "ARCHIVE", "ARCHIVE_ENTRY"
     val putio_file_id: Long,
     val fileName: String,
     val download_url: String? = null,
@@ -41,6 +41,7 @@ data class CalibreBatchItem(
     val archiveMode: String? = null, // For ARCHIVE
     val use_local: Boolean? = null,  // When true the daemon uses the local synced copy; no download needed
     val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
+    val archive_entry: String? = null, // For ARCHIVE_ENTRY: path of the entry within the archive file
 )
 @Serializable
 data class CalibreBatchRequest(
@@ -229,15 +230,21 @@ class CalibreRepository @Inject constructor(
         localUrisJson: String? = null,
         useLocal: Boolean = false,
         smbPath: String? = null,
+        archiveEntry: String? = null,
     ) {
         val initialItem = CalibreBatchItem(
-            type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
+            type = when {
+                archiveEntry != null -> "ARCHIVE_ENTRY"
+                archiveMode != null -> "ARCHIVE"
+                else -> "SINGLE"
+            },
             putio_file_id = putioFileId,
             fileName = fileName,
             download_url = downloadUrl,
             archiveMode = archiveMode,
             use_local = if (useLocal) true else null,
             smb_path = smbPath,
+            archive_entry = archiveEntry,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,

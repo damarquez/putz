@@ -233,7 +233,7 @@ fun AppNavGraph(
                             )
                         )
                     },
-                    onNavigateToPutioArchive = { fileId, fileName, downloadUrl, fileSize, parentFolderId ->
+                    onNavigateToPutioArchive = { fileId, fileName, downloadUrl, fileSize, parentFolderId, isSynced ->
                         navController.navigate(
                             Screen.Archive.createRoute(
                                 fileName,
@@ -241,6 +241,7 @@ fun AppNavGraph(
                                 putioDownloadUrl = downloadUrl,
                                 putioFileSize = fileSize,
                                 putioParentFolderId = parentFolderId,
+                                putioIsSynced = isSynced,
                             )
                         )
                     },
@@ -297,6 +298,10 @@ fun AppNavGraph(
                     navArgument(Screen.Archive.ARG_PUTIO_PARENT_FOLDER_ID) {
                         type = NavType.LongType
                         defaultValue = 0L
+                    },
+                    navArgument(Screen.Archive.ARG_PUTIO_IS_SYNCED) {
+                        type = NavType.BoolType
+                        defaultValue = false
                     },
                 ),
             ) {

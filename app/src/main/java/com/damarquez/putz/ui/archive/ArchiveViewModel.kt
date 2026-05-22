@@ -93,6 +93,7 @@ class ArchiveViewModel @Inject constructor(
     private val putioDownloadUrl: String? = savedStateHandle[Screen.Archive.ARG_PUTIO_DOWNLOAD_URL]
     private val putioFileSize: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_FILE_SIZE] ?: 0L
     val putioParentFolderId: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_PARENT_FOLDER_ID] ?: 0L
+    private val putioIsSynced: Boolean = savedStateHandle[Screen.Archive.ARG_PUTIO_IS_SYNCED] ?: false
 
     val source: ArchiveSource = when {
         localUri != null -> ArchiveSource.Local(localUri)
@@ -364,7 +365,10 @@ class ArchiveViewModel @Inject constructor(
         assemblyFileId: Long? = null,
         calibreBookUuid: String? = null,
     ) {
-        if (source is ArchiveSource.Putio && entry.size > CALIBRE_PUTIO_MAX_ENTRY_BYTES) {
+        val useDaemonLocal = source is ArchiveSource.Lan ||
+            (source is ArchiveSource.Putio && putioIsSynced)
+
+        if (!useDaemonLocal && source is ArchiveSource.Putio && entry.size > CALIBRE_PUTIO_MAX_ENTRY_BYTES) {
             _snackbarMessage.value = "File exceeds 50 MB — extract it first, then send to Calibre"
             return
         }
@@ -375,6 +379,12 @@ class ArchiveViewModel @Inject constructor(
                 _snackbarMessage.value = "Link your Google account in Settings first"
                 return@launch
             }
+
+            if (useDaemonLocal) {
+                sendEntryToCalibreViaDaemon(entry, title, author, assembleBook, assemblyFileId, calibreBookUuid, googleAccount)
+                return@launch
+            }
+
             val putioToken = settingsRepository.authTokenFlow.first()
             val tempId = System.currentTimeMillis()
             var tempFile: java.io.File? = null
@@ -490,6 +500,77 @@ class ArchiveViewModel @Inject constructor(
                 tempFile?.delete()
             }
         }
+    }
+
+    private suspend fun sendEntryToCalibreViaDaemon(
+        entry: ArchiveEntry,
+        title: String,
+        author: String,
+        assembleBook: Boolean,
+        assemblyFileId: Long?,
+        calibreBookUuid: String?,
+        googleAccount: String,
+    ) {
+        try {
+            _calibreSendStatus.value = CalibreSendStatus.Working("Sending to Calibre…")
+
+            val (fileId, smbPath, useLocal) = when (source) {
+                is ArchiveSource.Lan -> {
+                    val conn = lanFilesRepository.getConnectionById(source.connectionId)
+                        ?: throw java.io.IOException("LAN connection not found")
+                    val uncPath = buildUncPath(conn.host, conn.shareName, source.path)
+                    Triple(System.currentTimeMillis(), uncPath, false)
+                }
+                is ArchiveSource.Putio -> Triple(source.fileId, null, true)
+                else -> throw IllegalStateException("Unexpected source for daemon path")
+            }
+
+            if (assemblyFileId != null) {
+                val newItem = CalibreBatchItem(
+                    type = "ARCHIVE_ENTRY",
+                    putio_file_id = fileId,
+                    fileName = entry.name,
+                    use_local = if (useLocal) true else null,
+                    smb_path = smbPath,
+                    archive_entry = entry.path,
+                )
+                val added = calibreRepository.appendToAssembly(
+                    assemblyFileId = assemblyFileId,
+                    title = title,
+                    author = author,
+                    newItem = newItem,
+                    newFileIds = listOf(fileId),
+                )
+                _snackbarMessage.value = if (added) "Added to assembly: $title"
+                    else "\"${entry.name}\" is already in this assembly"
+            } else {
+                calibreRepository.addTransfer(
+                    putioFileId = fileId,
+                    fileName = entry.name,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    downloadUrl = null,
+                    useLocal = useLocal,
+                    smbPath = smbPath,
+                    assembleBook = assembleBook,
+                    calibreBookUuid = calibreBookUuid,
+                    archiveEntry = entry.path,
+                )
+                _snackbarMessage.value = "Transfer requested for $title"
+            }
+
+            _calibreSendStatus.value = CalibreSendStatus.Done
+        } catch (e: Exception) {
+            val msg = e.message ?: "Unknown error"
+            _snackbarMessage.value = "Failed: $msg"
+            _calibreSendStatus.value = CalibreSendStatus.Error(msg)
+        }
+    }
+
+    private fun buildUncPath(host: String, shareName: String, path: String): String {
+        val normalized = path.replace('/', '\\').trimStart('\\')
+        return "\\\\$host\\$shareName\\$normalized"
     }
 
     private fun directChildren(dir: String, all: List<ArchiveEntry>): List<ArchiveEntry> {

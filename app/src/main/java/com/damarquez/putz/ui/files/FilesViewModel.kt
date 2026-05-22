@@ -121,7 +121,7 @@ class FilesViewModel @Inject constructor(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
-    data class PutioArchiveEvent(val fileId: Long, val fileName: String, val downloadUrl: String, val fileSize: Long, val parentFolderId: Long)
+    data class PutioArchiveEvent(val fileId: Long, val fileName: String, val downloadUrl: String, val fileSize: Long, val parentFolderId: Long, val isSynced: Boolean)
     private val _putioArchiveEvent = MutableSharedFlow<PutioArchiveEvent>()
     val putioArchiveEvent: SharedFlow<PutioArchiveEvent> = _putioArchiveEvent.asSharedFlow()
 
@@ -1003,15 +1003,10 @@ class FilesViewModel @Inject constructor(
     }
 
     fun openPutioArchive(file: PutioFile) {
-        if (file.isSynced) {
-            // The put.io file is now a JSON stub — open archives via the "put.io Local" folder instead
-            _snackbarMessage.value = "Open archives through the \"put.io Local\" folder"
-            return
-        }
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val url = filesRepository.getDownloadUrl(token, file.id)
-            _putioArchiveEvent.emit(PutioArchiveEvent(file.id, file.name, url, file.size, file.parentId))
+            _putioArchiveEvent.emit(PutioArchiveEvent(file.id, file.displayName, url, file.size, file.parentId, file.isSynced))
         }
     }
 
@@ -1319,7 +1314,7 @@ class FilesViewModel @Inject constructor(
 
     private suspend fun loadMovieBrowserFiles(connectionId: Long, path: String) {
         try {
-            val allFiles = lanFilesRepository.listDirectory(connectionId, path).first()
+            val allFiles = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = true).first()
             val current = _movieBrowserState.value ?: return
             _movieBrowserState.value = current.copy(
                 folders = allFiles.filter { it.isFolder },

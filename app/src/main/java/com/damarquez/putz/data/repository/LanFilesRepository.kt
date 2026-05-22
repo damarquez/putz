@@ -129,7 +129,7 @@ class LanFilesRepository @Inject constructor(
         }
     }
 
-    fun listDirectory(connectionId: Long, lanPath: String): Flow<List<PutioFile>> = flow {
+    fun listDirectory(connectionId: Long, lanPath: String, includeAllFiles: Boolean = false): Flow<List<PutioFile>> = flow {
         val conn = dao.getById(connectionId) ?: run {
             emit(emptyList())
             return@flow
@@ -156,7 +156,7 @@ class LanFilesRepository @Inject constructor(
                             val isDir = (entry.fileAttributes and FILE_ATTRIBUTE_DIRECTORY) != 0L
                             val entryPath = if (lanPath.isEmpty()) fileName else "$lanPath/$fileName"
 
-                            if (isDir || MetadataUtils.isEbook(fileName)) {
+                            if (isDir || MetadataUtils.isEbook(fileName) || includeAllFiles) {
                                 results.add(
                                     PutioFile(
                                         id = lanFileId(connectionId, entryPath),

@@ -95,7 +95,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
-    onNavigateToPutioArchive: (fileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long) -> Unit,
+    onNavigateToPutioArchive: (fileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -222,7 +222,7 @@ fun FilesScreen(
 
     LaunchedEffect(Unit) {
         viewModel.putioArchiveEvent.collect { event ->
-            onNavigateToPutioArchive(event.fileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId)
+            onNavigateToPutioArchive(event.fileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId, event.isSynced)
         }
     }
 
@@ -863,14 +863,14 @@ fun FilesScreen(
                                                     file.lanConnectionId ?: -1L,
                                                     file.lanPath,
                                                 )
-                                            } else if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.name)) {
+                                            } else if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.displayName)) {
                                                 onNavigateToArchive(
                                                     file.localUri,
                                                     file.lanConnectionId ?: -1L,
                                                     file.lanPath,
-                                                    file.name,
+                                                    file.displayName,
                                                 )
-                                            } else if (!file.isLocal && !file.isLan && MetadataUtils.isArchive(file.name)) {
+                                            } else if (!file.isLocal && !file.isLan && MetadataUtils.isArchive(file.displayName)) {
                                                 viewModel.openPutioArchive(file)
                                             }
                                         },
