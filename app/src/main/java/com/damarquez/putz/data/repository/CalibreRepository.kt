@@ -124,6 +124,12 @@ data class PlexAddSubtitleRequest(
     val movie_file_name: String,
 )
 
+@Serializable
+data class PrioritySyncRequest(
+    val action: String = "PRIORITY_PUTIO_SYNC",
+    val putio_file_id: Long,
+)
+
 @Singleton
 class CalibreRepository @Inject constructor(
     @ApplicationContext private val context: android.content.Context,
@@ -205,6 +211,13 @@ class CalibreRepository @Inject constructor(
         // NonCancellable: the GDrive upload already completed; the DB record must always
         // be written so the transfer is visible even if the calling scope navigates away.
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    suspend fun sendPrioritySyncRequest(file: PutioFile, googleAccount: String): Boolean {
+        val request = PrioritySyncRequest(putio_file_id = file.id)
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_priority_${file.id}.json", jsonStr)
+        return gDriveId != null
     }
 
     suspend fun sendGlobalStatusProbe(googleAccount: String): Boolean {

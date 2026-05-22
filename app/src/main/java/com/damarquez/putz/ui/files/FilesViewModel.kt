@@ -373,6 +373,21 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun requestPrioritySync(file: PutioFile) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+            val success = calibreRepository.sendPrioritySyncRequest(file, googleAccount)
+            _snackbarMessage.value = if (success)
+                "Priority sync requested for ${file.displayName}"
+            else
+                "Failed to send priority sync request"
+        }
+    }
+
     fun copyDownloadLink(file: PutioFile) {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()

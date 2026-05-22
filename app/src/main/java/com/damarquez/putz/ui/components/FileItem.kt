@@ -75,6 +75,7 @@ fun FileItem(
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
+    onRequestPrioritySync: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
     onCopyLink: (PutioFile) -> Unit,
     onDelete: () -> Unit,
@@ -260,7 +261,7 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
-                        if (!file.isFolder && !file.isTrash) {
+                        if (!file.isFolder && !file.isTrash && !isRegularRemote) {
                             DropdownMenuItem(
                                 text = { Text("Preview") },
                                 onClick = {
@@ -285,90 +286,101 @@ fun FileItem(
                                     onCopyLink(file)
                                 },
                             )
+                            if (isRegularRemote) {
+                                DropdownMenuItem(
+                                    text = { Text("Priority sync") },
+                                    onClick = {
+                                        showMenu = false
+                                        onRequestPrioritySync(file)
+                                    },
+                                )
+                            }
                             HorizontalDivider()
                         }
-                        if (isEbook) {
-                            DropdownMenuItem(
-                                text = { Text("Send to Calibre") },
-                                enabled = isGoogleSignedIn,
-                                onClick = {
-                                    showMenu = false
-                                    onSendToCalibre(file)
-                                },
-                            )
-                            if (hasPendingAssemblies) {
+                        if (!isRegularRemote) {
+                            if (isEbook) {
                                 DropdownMenuItem(
-                                    text = { Text("Assemble into book") },
+                                    text = { Text("Send to Calibre") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
-                                        onAssembleToCalibre(file, false)
+                                        onSendToCalibre(file)
                                     },
                                 )
+                                if (hasPendingAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into book") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleToCalibre(file, false)
+                                        },
+                                    )
+                                }
                             }
-                        }
-                        if (isImage) {
-                            DropdownMenuItem(
-                                text = { Text("Replace book cover") },
-                                enabled = isGoogleSignedIn,
-                                onClick = {
-                                    showMenu = false
-                                    onReplaceCover(file)
-                                },
-                            )
-                        }
-                        if (isMultiTrackAudio) {
-                            DropdownMenuItem(
-                                text = { Text("Send to Calibre as M4B") },
-                                enabled = isGoogleSignedIn,
-                                onClick = {
-                                    showMenu = false
-                                    onSendAsAudiobookPack(file)
-                                },
-                            )
-                            if (hasPendingAssemblies) {
+                            if (isImage) {
                                 DropdownMenuItem(
-                                    text = { Text("Assemble into M4B") },
+                                    text = { Text("Replace book cover") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
-                                        onAssembleToCalibre(file, true)
+                                        onReplaceCover(file)
                                     },
                                 )
                             }
-                        }
-                        if (isVideo && file.isSynced) {
-                            DropdownMenuItem(
-                                text = { Text("Send to Plex") },
-                                enabled = isGoogleSignedIn,
-                                onClick = {
-                                    showMenu = false
-                                    onSendToPlex(file)
-                                },
-                            )
-                        }
-                        if (isSubtitle && file.isSynced) {
-                            if (hasPendingPlexAssemblies) {
+                            if (isMultiTrackAudio) {
                                 DropdownMenuItem(
-                                    text = { Text("Assemble into movie") },
+                                    text = { Text("Send to Calibre as M4B") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
-                                        onAssembleSubtitleIntoPlex(file)
+                                        onSendAsAudiobookPack(file)
+                                    },
+                                )
+                                if (hasPendingAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into M4B") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleToCalibre(file, true)
+                                        },
+                                    )
+                                }
+                            }
+                            if (isVideo && file.isSynced) {
+                                DropdownMenuItem(
+                                    text = { Text("Send to Plex") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendToPlex(file)
                                     },
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text("Add subtitle to movie") },
-                                enabled = isGoogleSignedIn,
-                                onClick = {
-                                    showMenu = false
-                                    onAddSubtitleToMovie(file)
-                                },
-                            )
-                        }
-                        if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced)) {
-                            HorizontalDivider()
+                            if (isSubtitle && file.isSynced) {
+                                if (hasPendingPlexAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into movie") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleSubtitleIntoPlex(file)
+                                        },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Add subtitle to movie") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onAddSubtitleToMovie(file)
+                                    },
+                                )
+                            }
+                            if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced)) {
+                                HorizontalDivider()
+                            }
                         }
                         DropdownMenuItem(
                             text = { Text("Copy name") },

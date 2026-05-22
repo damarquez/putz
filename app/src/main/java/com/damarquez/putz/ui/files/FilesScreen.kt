@@ -897,6 +897,7 @@ fun FilesScreen(
                                             viewModel.openMovieBrowser()
                                         },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),
+                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },
                                         onDelete = { fileToDelete = file },
