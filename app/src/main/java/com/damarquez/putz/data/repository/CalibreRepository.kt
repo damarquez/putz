@@ -31,6 +31,7 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
+// CONTRACT: ADD_BOOK_BATCH
 @Serializable
 data class CalibreBatchItem(
     val type: String, // "SINGLE", "PACK", "ARCHIVE", "ARCHIVE_ENTRY"
@@ -43,6 +44,7 @@ data class CalibreBatchItem(
     val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
     val archive_entry: String? = null, // For ARCHIVE_ENTRY: path of the entry within the archive file
 )
+// CONTRACT: ADD_BOOK_BATCH, probe pattern
 @Serializable
 data class CalibreBatchRequest(
     val action: String = "ADD_BOOK_BATCH",
@@ -57,6 +59,7 @@ data class CalibreBatchRequest(
     val tags: String? = null, // For UPDATE_COMMENTS
 )
 
+// CONTRACT: ADD_BOOK_BATCH
 @Serializable
 data class AudiobookFile(
     val putio_file_id: Long,
@@ -66,6 +69,7 @@ data class AudiobookFile(
     val use_local: Boolean? = null,
 )
 
+// CONTRACT: response schema, GLOBAL_STATUS_PROBE
 @Serializable
 data class CalibreResponse(
     val action: String,
@@ -84,6 +88,7 @@ data class CalibreBookMatch(
     val tags: String = "",
 )
 
+// CONTRACT: SEND_TO_PLEX
 @Serializable
 data class PlexAssemblyItem(
     val putio_file_id: Long,
@@ -105,6 +110,7 @@ data class PlexBatchData(
     }
 }
 
+// CONTRACT: SEND_TO_PLEX
 @Serializable
 data class PlexTransferRequest(
     val action: String = "SEND_TO_PLEX",
@@ -115,6 +121,7 @@ data class PlexTransferRequest(
     val items: List<PlexAssemblyItem>,
 )
 
+// CONTRACT: ADD_SUBTITLE_TO_MOVIE
 @Serializable
 data class PlexAddSubtitleRequest(
     val action: String = "ADD_SUBTITLE_TO_MOVIE",
@@ -124,6 +131,7 @@ data class PlexAddSubtitleRequest(
     val movie_file_name: String,
 )
 
+// CONTRACT: PRIORITY_PUTIO_SYNC
 @Serializable
 data class PrioritySyncRequest(
     val action: String = "PRIORITY_PUTIO_SYNC",
@@ -168,6 +176,7 @@ class CalibreRepository @Inject constructor(
     }
     fun getTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
 
+    // CONTRACT: UPDATE_COMMENTS
     suspend fun sendUpdateCommentsRequest(
         title: String,
         author: String,
@@ -213,6 +222,7 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
+    // CONTRACT: PRIORITY_PUTIO_SYNC
     suspend fun sendPrioritySyncRequest(file: PutioFile, googleAccount: String): Boolean {
         val request = PrioritySyncRequest(putio_file_id = file.id)
         val jsonStr = json.encodeToString(request)

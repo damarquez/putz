@@ -373,6 +373,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    // CONTRACT: PRIORITY_PUTIO_SYNC
     fun requestPrioritySync(file: PutioFile) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()

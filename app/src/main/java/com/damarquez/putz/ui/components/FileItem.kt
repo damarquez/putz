@@ -100,7 +100,7 @@ fun FileItem(
     val clipboard = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
-    // Regular put.io files (not yet synced, not a folder, not a virtual root) appear dimmed
+    // CONTRACT: Putz file state — drives menu visibility; see CONTRACTS.md §19
     val isRegularRemote = !file.isLocal && !file.isLan && !file.isTrash && !file.isFolder
         && !file.isSpecialRootFolder && !file.isSynced && !file.isPutzAttachments
 

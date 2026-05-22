@@ -106,6 +106,7 @@ class GDriveManager @Inject constructor(
         }
     }
 
+    // CONTRACT: IPC transport
     suspend fun uploadRequest(accountName: String, fileName: String, content: String): String? = withContext(Dispatchers.IO) {
         try {
             Log.d("GDriveManager", "Uploading request $fileName for $accountName")
@@ -182,6 +183,7 @@ class GDriveManager @Inject constructor(
         }
     }
 
+    // CONTRACT: IPC transport
     suspend fun listResponses(accountName: String): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)
