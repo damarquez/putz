@@ -385,7 +385,7 @@ fun FilesScreen(
     if (audiobookPackTriggerFile != null && selectedPackFiles == null && selectedPackFilesForAssembly == null) {
         val audioFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isMultiTrackAudio(it.name) }
+                ?.filter { MetadataUtils.isMultiTrackAudio(it.displayName) }
                 ?: emptyList()
         }
         AudiobookPackSheet(
