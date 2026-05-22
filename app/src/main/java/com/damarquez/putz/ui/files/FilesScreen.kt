@@ -383,6 +383,7 @@ fun FilesScreen(
     }
 
     if (audiobookPackTriggerFile != null && selectedPackFiles == null && selectedPackFilesForAssembly == null) {
+        // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
         val audioFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isMultiTrackAudio(it.displayName) }

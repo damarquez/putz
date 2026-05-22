@@ -94,9 +94,10 @@ The daemon picks them up within 15 s, processes them, and writes a response to
 | `data/model/PutioFile.kt` | File state flags (`isSynced`, `isRegularRemote`, `displayName`) |
 | `data/repository/CalibreRepository.kt` | All request data classes and send functions |
 | `data/remote/GDriveManager.kt` | Drive upload/download primitives |
-| `ui/components/FileItem.kt` | Per-file menu (menu visibility rules gated on file state) |
+| `ui/components/FileItem.kt` | Per-file menu; visibility of every item is gated on file state — see `CONTRACTS.md §19` |
 | `ui/files/FilesViewModel.kt` | Business logic for all file actions |
-| `ui/files/FilesScreen.kt` | Screen composition and audiobook sheet |
-| `util/MetadataUtils.kt` | Extension-based file type checks (use `displayName`) |
+| `ui/files/FilesScreen.kt` | Screen composition; contains the audiobook file filter — **must use `it.displayName`**, not `it.name` (stubs end in `.sk_synced`; see `CONTRACTS.md §2`) |
+| `ui/files/AudiobookPackSheet.kt` | "Select files for audiobook" dialog; receives the pre-filtered list from `FilesScreen.kt` |
+| `util/MetadataUtils.kt` | Extension-based file type checks — **all callers must pass `file.displayName`, never `file.name`** |
 
 Search for `// CONTRACT:` in the source to find every integration boundary.
