@@ -78,14 +78,14 @@ class SmartDaemonTransport @Inject constructor(
 
     override suspend fun getHeartbeat(googleAccount: String): HeartbeatData? {
         if (lanEnabled() && lan.isReachable()) {
-            runCatching { lan.getHeartbeat(googleAccount) }?.let { return it }
+            runCatching { lan.getHeartbeat(googleAccount) }.getOrNull()?.let { return it }
         }
         return drive.getHeartbeat(googleAccount)
     }
 
     override suspend fun getLibraryVersion(googleAccount: String): Long? {
         if (lanEnabled() && lan.isReachable()) {
-            runCatching { lan.getLibraryVersion(googleAccount) }?.let { return it }
+            runCatching { lan.getLibraryVersion(googleAccount) }.getOrNull()?.let { return it }
         }
         return drive.getLibraryVersion(googleAccount)
     }

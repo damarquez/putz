@@ -10,6 +10,7 @@ import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
+import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -32,6 +33,7 @@ class CalibreTransfersViewModel @Inject constructor(
     private val filesRepository: FilesRepository,
     private val localFilesRepository: com.damarquez.putz.data.repository.LocalFilesRepository,
     private val settingsRepository: SettingsRepository,
+    private val lanDaemonTransport: LanDaemonTransport,
 ) : ViewModel() {
 
     val transfers: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
@@ -213,13 +215,18 @@ class CalibreTransfersViewModel @Inject constructor(
                 _isSyncing.value = true
                 try {
                     _snackbarMessage.value = "Refreshing Calibre metadata..."
+                    val lanEnabled = settingsRepository.lanEnabledFlow.first()
+                    val lanReachable = lanEnabled && lanDaemonTransport.isReachable()
                     calibreRepository.sendGlobalStatusProbe(account)
                     val dbFile = File(context.filesDir, "metadata.db")
                     val result = calibreRepository.syncMetadataDb(account, dbFile)
                     calibreRepository.pollHeartbeat(account)
-                    
+
                     _snackbarMessage.value = when (result) {
-                        is NetworkResult.Success -> "Calibre metadata refreshed"
+                        is NetworkResult.Success -> if (lanEnabled && !lanReachable)
+                            "Calibre metadata refreshed via Google Drive (daemon unreachable on local network)"
+                        else
+                            "Calibre metadata refreshed"
                         is NetworkResult.Error -> "Sync failed: ${result.message}"
                         else -> "Could not refresh Calibre metadata"
                     }
