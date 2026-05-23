@@ -17,3 +17,5 @@ local.properties
 # OS noise
 .DS_Store
 Thumbs.db
+
+xchange/
