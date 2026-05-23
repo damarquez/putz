@@ -74,6 +74,22 @@ class SettingsRepository @Inject constructor(
         prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_PATH] ?: ""
     }
 
+    val lanEnabledFlow: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.LAN_ENABLED] ?: false
+    }
+
+    val lanHostFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.LAN_HOST] ?: ""
+    }
+
+    val lanPortFlow: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.LAN_PORT] ?: 9090
+    }
+
+    val lanApiKeyFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.LAN_API_KEY] ?: ""
+    }
+
     fun saveAuthToken(token: String) = secureStorage.saveAuthToken(token)
 
     fun clearAuth() = secureStorage.clearAuthToken()
@@ -144,6 +160,28 @@ class SettingsRepository @Inject constructor(
         dataStore.edit { prefs ->
             if (path.isBlank()) prefs.remove(AppSettingsKeys.PLEX_LIBRARY_LAN_PATH)
             else prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_PATH] = path.trim()
+        }
+    }
+
+    suspend fun saveLanEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[AppSettingsKeys.LAN_ENABLED] = enabled }
+    }
+
+    suspend fun saveLanHost(host: String) {
+        dataStore.edit { prefs ->
+            if (host.isBlank()) prefs.remove(AppSettingsKeys.LAN_HOST)
+            else prefs[AppSettingsKeys.LAN_HOST] = host.trim()
+        }
+    }
+
+    suspend fun saveLanPort(port: Int) {
+        dataStore.edit { prefs -> prefs[AppSettingsKeys.LAN_PORT] = port }
+    }
+
+    suspend fun saveLanApiKey(key: String) {
+        dataStore.edit { prefs ->
+            if (key.isBlank()) prefs.remove(AppSettingsKeys.LAN_API_KEY)
+            else prefs[AppSettingsKeys.LAN_API_KEY] = key.trim()
         }
     }
 }

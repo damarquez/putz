@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.repository.LanFilesRepository
+import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.files.LanFolderPickerState
 import com.damarquez.putz.ui.theme.AppCategory
@@ -23,6 +24,7 @@ class SettingsViewModel @Inject constructor(
     application: Application,
     private val settingsRepository: SettingsRepository,
     private val lanFilesRepository: LanFilesRepository,
+    private val lanDaemonTransport: LanDaemonTransport,
 ) : AndroidViewModel(application) {
 
     val appCategory = settingsRepository.appCategoryFlow
@@ -51,6 +53,57 @@ class SettingsViewModel @Inject constructor(
 
     val lanConnections = lanFilesRepository.getConnections()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val daemonLanEnabled = settingsRepository.lanEnabledFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val daemonLanHost = settingsRepository.lanHostFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+    val daemonLanPort = settingsRepository.lanPortFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 9090)
+    val daemonLanApiKey = settingsRepository.lanApiKeyFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    private val _daemonLanHost = MutableStateFlow("")
+    val daemonLanHostEdit: StateFlow<String> = _daemonLanHost.asStateFlow()
+    private val _daemonLanPort = MutableStateFlow("9090")
+    val daemonLanPortEdit: StateFlow<String> = _daemonLanPort.asStateFlow()
+    private val _daemonLanApiKey = MutableStateFlow("")
+    val daemonLanApiKeyEdit: StateFlow<String> = _daemonLanApiKey.asStateFlow()
+    private val _daemonLanReachable = MutableStateFlow<Boolean?>(null)
+    val daemonLanReachable: StateFlow<Boolean?> = _daemonLanReachable.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _daemonLanHost.value = settingsRepository.lanHostFlow.first()
+            _daemonLanPort.value = settingsRepository.lanPortFlow.first().toString()
+            _daemonLanApiKey.value = settingsRepository.lanApiKeyFlow.first()
+        }
+    }
+
+    fun setDaemonLanEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.saveLanEnabled(enabled) }
+    }
+    fun onDaemonLanHostChange(v: String) { _daemonLanHost.value = v }
+    fun onDaemonLanPortChange(v: String) { _daemonLanPort.value = v.filter { it.isDigit() }.take(5) }
+    fun onDaemonLanApiKeyChange(v: String) { _daemonLanApiKey.value = v }
+
+    fun saveDaemonLanSettings() {
+        viewModelScope.launch {
+            settingsRepository.saveLanHost(_daemonLanHost.value)
+            val port = _daemonLanPort.value.toIntOrNull() ?: 9090
+            settingsRepository.saveLanPort(port)
+            _daemonLanPort.value = port.toString()
+            settingsRepository.saveLanApiKey(_daemonLanApiKey.value)
+            _snackbarMessage.value = "Daemon LAN settings saved"
+        }
+    }
+
+    fun checkDaemonLanReachability() {
+        viewModelScope.launch {
+            _daemonLanReachable.value = null
+            _daemonLanReachable.value = lanDaemonTransport.isReachable()
+        }
+    }
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()

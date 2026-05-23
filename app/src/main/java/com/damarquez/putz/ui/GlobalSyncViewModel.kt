@@ -65,7 +65,8 @@ class GlobalSyncViewModel @Inject constructor(
                         }
                     }
                 }
-                delay(60_000) // Poll every 60 seconds
+                val interval = if (settingsRepository.lanEnabledFlow.first()) 10_000L else 60_000L
+                delay(interval)
             }
         }
     }

@@ -6,6 +6,8 @@ import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.remote.GDriveManager
+import com.damarquez.putz.data.transport.DaemonTransport
+import com.damarquez.putz.data.transport.ResponseEnvelope
 import com.damarquez.putz.data.remote.PutioApiClient
 import com.damarquez.putz.security.SecureStorage
 import com.damarquez.putz.util.MetadataUtils
@@ -25,8 +27,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -143,6 +143,7 @@ class CalibreRepository @Inject constructor(
     @ApplicationContext private val context: android.content.Context,
     private val calibreTransferDao: CalibreTransferDao,
     private val gDriveManager: GDriveManager,
+    private val daemonTransport: DaemonTransport,
     private val putioApiClient: PutioApiClient,
     private val secureStorage: SecureStorage,
     private val settingsRepository: com.damarquez.putz.settings.SettingsRepository,
@@ -200,7 +201,7 @@ class CalibreRepository @Inject constructor(
             tags = tags,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_comments_$putioFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_comments_$putioFileId.json", jsonStr)
 
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -226,14 +227,14 @@ class CalibreRepository @Inject constructor(
     suspend fun sendPrioritySyncRequest(file: PutioFile, googleAccount: String): Boolean {
         val request = PrioritySyncRequest(putio_file_id = file.id)
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_priority_${file.id}.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_priority_${file.id}.json", jsonStr)
         return gDriveId != null
     }
 
     suspend fun sendGlobalStatusProbe(googleAccount: String): Boolean {
         val request = mapOf("action" to "GLOBAL_STATUS_PROBE")
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_global_status.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_global_status.json", jsonStr)
         return gDriveId != null
     }
 
@@ -302,7 +303,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$putioFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$putioFileId.json", jsonStr)
 
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -340,7 +341,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$newPutioFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPutioFileId.json", jsonStr)
 
         calibreTransferDao.deleteTransfer(fileId) // Remove temp placeholder
         calibreTransferDao.insertTransfer(transfer.copy(
@@ -404,7 +405,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$primaryFileId.json", jsonStr)
 
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -442,7 +443,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_$newPrimaryId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPrimaryId.json", jsonStr)
 
         calibreTransferDao.deleteTransfer(tempId)
         calibreTransferDao.insertTransfer(transfer.copy(
@@ -504,25 +505,20 @@ class CalibreRepository @Inject constructor(
     }
 
     suspend fun syncMetadataDb(googleAccount: String, destination: File): NetworkResult<Unit> {
-        val result = gDriveManager.downloadMetadataDb(googleAccount, destination)
-        if (result is NetworkResult.Success) {
-            // Update the baseline timestamp after a manual or automatic sync
-            gDriveManager.getFileMetadata(googleAccount, "assets.db")?.let { metadata ->
-                val timestamp = metadata.second
+        val success = daemonTransport.downloadMetadataDb(googleAccount, destination)
+        if (success) {
+            daemonTransport.getLibraryVersion(googleAccount)?.let { timestamp ->
                 settingsRepository.saveLastSyncTimestamp(timestamp)
                 settingsRepository.saveLibraryHasUpdates(false)
             }
         }
-        return result
+        return if (success) NetworkResult.Success(Unit) else NetworkResult.Error("Download failed")
     }
 
     suspend fun pollLibraryUpdates(googleAccount: String) {
-        val metadata = gDriveManager.getFileMetadata(googleAccount, "assets.db") ?: return
-        val remoteTimestamp = metadata.second
+        val remoteTimestamp = daemonTransport.getLibraryVersion(googleAccount) ?: return
         val localTimestamp = settingsRepository.lastSyncTimestampFlow.first()
-        
         if (localTimestamp == 0L) {
-            // First time: set baseline
             settingsRepository.saveLastSyncTimestamp(remoteTimestamp)
         } else if (remoteTimestamp != localTimestamp) {
             settingsRepository.saveLibraryHasUpdates(true)
@@ -530,115 +526,68 @@ class CalibreRepository @Inject constructor(
     }
 
     suspend fun pollHeartbeat(googleAccount: String) {
-        // The current sidekick writes heartbeat.json at the Calibre Drive root. Older
-        // Putz integration builds used .calibre_integration, so keep that fallback.
-        val fileId = try {
-            withContext(Dispatchers.IO) {
-                val service = gDriveManager.getDriveService(googleAccount)
-                val libFolderId = gDriveManager.getLibraryFolderId(service) ?: return@withContext null
-
-                val rootHeartbeat = service.files().list()
-                    .setQ("name = 'heartbeat.json' and '$libFolderId' in parents and trashed = false")
-                    .setFields("files(id)")
-                    .execute()
-                    .files
-                    ?.firstOrNull()
-                    ?.id
-
-                rootHeartbeat ?: run {
-                    val integrationId = gDriveManager.findFolder(service, ".calibre_integration", libFolderId)
-                        ?: return@withContext null
-                    service.files().list()
-                    .setQ("name = 'heartbeat.json' and '$integrationId' in parents and trashed = false")
-                    .setFields("files(id)")
-                    .execute()
-                    .files
-                    ?.firstOrNull()
-                    ?.id
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        } ?: return
-        val content = gDriveManager.downloadFileContent(googleAccount, fileId) ?: return
-        
-        try {
-            val heartbeat = json.parseToJsonElement(content).jsonObject
-            val status = heartbeat["status"]?.jsonPrimitive?.content
-                ?.uppercase()
-                ?: return
-            _daemonStatus.value = status
-            settingsRepository.saveDaemonStatus(status)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        val heartbeat = daemonTransport.getHeartbeat(googleAccount) ?: return
+        _daemonStatus.value = heartbeat.status
+        settingsRepository.saveDaemonStatus(heartbeat.status)
     }
 
     suspend fun pollResponses(googleAccount: String) {
-        val responses = gDriveManager.listResponses(googleAccount)
-        responses.forEach { file ->
-            val content = gDriveManager.downloadFileContent(googleAccount, file.id)
-            if (content != null) {
-                try {
-                    val response = json.decodeFromString<CalibreResponse>(content)
-                    
-                    if (response.action == "GLOBAL_STATUS_PROBE") {
-                        _daemonStatus.value = response.daemon_status
-                        settingsRepository.saveDaemonStatus(response.daemon_status)
-                    } else if (response.putio_file_id != null) {
-                        val transfer = calibreTransferDao.getTransferById(response.putio_file_id)
-                        if (transfer != null) {
-                            val newStatus = when (response.status.uppercase()) {
-                                "PROCESSING" -> CalibreTransferStatus.PROCESSING
-                                "COMPLETED" -> CalibreTransferStatus.COMPLETED
-                                "FAILED" -> CalibreTransferStatus.FAILED
-                                else -> transfer.status
-                            }
-                            
-                            val isNewerStatus = newStatus.ordinal > transfer.status.ordinal
-                            val isSameStatusFailure = newStatus == CalibreTransferStatus.FAILED && transfer.status == CalibreTransferStatus.FAILED
-                            
-                            if (isNewerStatus || isSameStatusFailure) {
-                                calibreTransferDao.updateTransfer(transfer.copy(
-                                    status = newStatus,
-                                    errorMessage = response.error,
-                                    calibreBookUuid = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_uuid != null) response.calibre_book_uuid else transfer.calibreBookUuid,
-                                    warnings = if (newStatus == CalibreTransferStatus.COMPLETED) response.warnings?.joinToString("\n")?.takeIf { it.isNotBlank() } else transfer.warnings,
-                                    lastUpdatedAt = System.currentTimeMillis()
-                                ))
+        val envelopes = daemonTransport.pollResponses(googleAccount)
+        envelopes.forEach { envelope ->
+            try {
+                val response = json.decodeFromString<CalibreResponse>(envelope.content)
 
-                                // Phase 3: Cleanup temporary uploads
-                                if (newStatus == CalibreTransferStatus.COMPLETED && transfer.isTempUpload) {
-                                    val token = secureStorage.authTokenFlow.value
-                                    if (token.isNotBlank()) {
-                                        deleteFileFromPutio(token, transfer.putioFileId)
+                if (response.action == "GLOBAL_STATUS_PROBE") {
+                    _daemonStatus.value = response.daemon_status
+                    settingsRepository.saveDaemonStatus(response.daemon_status)
+                } else if (response.putio_file_id != null) {
+                    val transfer = calibreTransferDao.getTransferById(response.putio_file_id)
+                    if (transfer != null) {
+                        val newStatus = when (response.status.uppercase()) {
+                            "PROCESSING" -> CalibreTransferStatus.PROCESSING
+                            "COMPLETED" -> CalibreTransferStatus.COMPLETED
+                            "FAILED" -> CalibreTransferStatus.FAILED
+                            else -> transfer.status
+                        }
+
+                        val isNewerStatus = newStatus.ordinal > transfer.status.ordinal
+                        val isSameStatusFailure = newStatus == CalibreTransferStatus.FAILED && transfer.status == CalibreTransferStatus.FAILED
+
+                        if (isNewerStatus || isSameStatusFailure) {
+                            calibreTransferDao.updateTransfer(transfer.copy(
+                                status = newStatus,
+                                errorMessage = response.error,
+                                calibreBookUuid = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_uuid != null) response.calibre_book_uuid else transfer.calibreBookUuid,
+                                warnings = if (newStatus == CalibreTransferStatus.COMPLETED) response.warnings?.joinToString("\n")?.takeIf { it.isNotBlank() } else transfer.warnings,
+                                lastUpdatedAt = System.currentTimeMillis()
+                            ))
+
+                            if (newStatus == CalibreTransferStatus.COMPLETED && transfer.isTempUpload) {
+                                val token = secureStorage.authTokenFlow.value
+                                if (token.isNotBlank()) {
+                                    deleteFileFromPutio(token, transfer.putioFileId)
+                                }
+                            }
+
+                            if (newStatus == CalibreTransferStatus.FAILED && response.error?.contains("not found", ignoreCase = true) == true) {
+                                if (transfer.retryCount < 3) {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        val delayMs = Random.nextLong(2000, 60000)
+                                        delay(delayMs)
+                                        retryTransfer(transfer.putioFileId, googleAccount)
                                     }
                                 }
-
-                                // Auto-retry logic: if a response says the book wasn't found (daemon missed it), 
-                                // automatically trigger a retry. Staggered to avoid simultaneous GDrive uploads.
-                                if (newStatus == CalibreTransferStatus.FAILED && response.error?.contains("not found", ignoreCase = true) == true) {
-                                    if (transfer.retryCount < 3) {
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            val delayMs = Random.nextLong(2000, 60000)
-                                            delay(delayMs)
-                                            retryTransfer(transfer.putioFileId, googleAccount)
-                                        }
-                                    }
-                                }
-                            } else {
-                                calibreTransferDao.updateTransfer(transfer.copy(
-                                    lastUpdatedAt = System.currentTimeMillis()
-                                ))
                             }
+                        } else {
+                            calibreTransferDao.updateTransfer(transfer.copy(
+                                lastUpdatedAt = System.currentTimeMillis()
+                            ))
                         }
                     }
-                    // Delete response file once processed
-                    gDriveManager.deleteFile(googleAccount, file.id)
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
+                daemonTransport.acknowledgeResponse(googleAccount, envelope)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -673,7 +622,7 @@ class CalibreRepository @Inject constructor(
 
         val request = plexRequestFromBatchData(batchData, file.id)
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_plex_${file.id}.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_plex_${file.id}.json", jsonStr)
         withContext(NonCancellable) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
@@ -723,7 +672,7 @@ class CalibreRepository @Inject constructor(
             movie_file_name = movieFileName,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_subtitle_${subtitle.id}.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_subtitle_${subtitle.id}.json", jsonStr)
         val transfer = CalibreTransferEntity(
             putioFileId = subtitle.id,
             fileName = subtitle.displayName,
@@ -758,7 +707,7 @@ class CalibreRepository @Inject constructor(
             } ?: return NetworkResult.Error("No batch data for Plex transfer")
             json.encodeToString(plexRequestFromBatchData(batchData, transfer.putioFileId))
         }
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_plex_${transfer.putioFileId}.json", payload)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_plex_${transfer.putioFileId}.json", payload)
         return if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = CalibreTransferStatus.REQUESTED,
@@ -898,7 +847,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_cover_$putioFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_cover_$putioFileId.json", jsonStr)
 
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -972,7 +921,7 @@ class CalibreRepository @Inject constructor(
         )
 
         val jsonStr = json.encodeToString(request)
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_probe_${transfer.putioFileId}.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_probe_${transfer.putioFileId}.json", jsonStr)
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 lastUpdatedAt = System.currentTimeMillis()
@@ -1027,7 +976,7 @@ class CalibreRepository @Inject constructor(
         }
 
         android.util.Log.d("CalibreRepository", "Retrying transfer $fileId for $googleAccount")
-        val gDriveId = gDriveManager.uploadRequest(googleAccount, "req_${transfer.putioFileId}.json", payload)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_${transfer.putioFileId}.json", payload)
         
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(

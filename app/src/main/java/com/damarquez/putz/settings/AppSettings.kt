@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -24,4 +25,9 @@ object AppSettingsKeys {
     // Plex library — which LAN connection + root path hosts the Plex Movies library
     val PLEX_LIBRARY_LAN_CONNECTION_ID = longPreferencesKey("plex_library_lan_connection_id")
     val PLEX_LIBRARY_LAN_PATH = stringPreferencesKey("plex_library_lan_path")
+    // Direct LAN / Tailscale daemon access
+    val LAN_ENABLED = booleanPreferencesKey("lan_enabled")
+    val LAN_HOST = stringPreferencesKey("lan_host")
+    val LAN_PORT = intPreferencesKey("lan_port")
+    val LAN_API_KEY = stringPreferencesKey("lan_api_key")
 }

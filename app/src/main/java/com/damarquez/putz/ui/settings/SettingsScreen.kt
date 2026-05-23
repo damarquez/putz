@@ -27,6 +27,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -38,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.ui.theme.AppCategory
@@ -68,6 +70,11 @@ fun SettingsScreen(
     var editingLanPath by remember { mutableStateOf<String?>(null) }
     var showPlexLanConnectionPicker by remember { mutableStateOf(false) }
     val plexRootPickerState by viewModel.plexRootPickerState.collectAsState()
+    val daemonLanEnabled by viewModel.daemonLanEnabled.collectAsState()
+    val daemonLanHostEdit by viewModel.daemonLanHostEdit.collectAsState()
+    val daemonLanPortEdit by viewModel.daemonLanPortEdit.collectAsState()
+    val daemonLanApiKeyEdit by viewModel.daemonLanApiKeyEdit.collectAsState()
+    val daemonLanReachable by viewModel.daemonLanReachable.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showGoogleSignOutConfirm by remember { mutableStateOf(false) }
@@ -357,6 +364,56 @@ fun SettingsScreen(
                         TextButton(onClick = { showPlexLanConnectionPicker = false }) { Text("Cancel") }
                     }
                 )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            SettingsSectionHeader("Sidekick Daemon (Tailscale)")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+            ) {
+                Text("Use direct LAN connection", style = MaterialTheme.typography.bodyLarge)
+                Switch(checked = daemonLanEnabled, onCheckedChange = viewModel::setDaemonLanEnabled)
+            }
+            if (daemonLanEnabled) {
+                OutlinedTextField(
+                    value = daemonLanHostEdit,
+                    onValueChange = viewModel::onDaemonLanHostChange,
+                    label = { Text("Host (Tailscale IP or hostname)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                OutlinedTextField(
+                    value = daemonLanPortEdit,
+                    onValueChange = viewModel::onDaemonLanPortChange,
+                    label = { Text("Port (default 9090)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                OutlinedTextField(
+                    value = daemonLanApiKeyEdit,
+                    onValueChange = viewModel::onDaemonLanApiKeyChange,
+                    label = { Text("API Key") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = viewModel::saveDaemonLanSettings) { Text("Save") }
+                    TextButton(onClick = viewModel::checkDaemonLanReachability) { Text("Check") }
+                    when (daemonLanReachable) {
+                        true  -> Text("Reachable", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        false -> Text("Unreachable", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        null  -> Unit
+                    }
+                }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
