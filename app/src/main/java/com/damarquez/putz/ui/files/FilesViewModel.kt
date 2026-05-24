@@ -1448,6 +1448,73 @@ class FilesViewModel @Inject constructor(
 
     fun dismissMovieBrowser() { _movieBrowserState.value = null }
 
+    private val _folderAudioPickerState = MutableStateFlow<FolderAudioPickerState?>(null)
+    val folderAudioPickerState: StateFlow<FolderAudioPickerState?> = _folderAudioPickerState.asStateFlow()
+
+    fun openFolderAudioPicker(folder: PutioFile) {
+        viewModelScope.launch {
+            _folderAudioPickerState.value = FolderAudioPickerState.Loading(folder.name)
+            try {
+                val token = settingsRepository.authTokenFlow.first()
+                val files = fetchAudioFilesRecursively(token, folder.id)
+                if (files.isEmpty()) {
+                    _folderAudioPickerState.value = FolderAudioPickerState.Error(folder.name, "No audio files found in this folder")
+                } else {
+                    _folderAudioPickerState.value = FolderAudioPickerState.Ready(folder.name, files)
+                }
+            } catch (e: Exception) {
+                val name = (_folderAudioPickerState.value as? FolderAudioPickerState.Loading)?.folderName ?: folder.name
+                _folderAudioPickerState.value = FolderAudioPickerState.Error(name, e.message ?: "Failed to scan folder")
+            }
+        }
+    }
+
+    fun dismissFolderAudioPicker() {
+        _folderAudioPickerState.value = null
+    }
+
+    private suspend fun fetchAudioFilesRecursively(token: String, rootId: Long): List<FolderAudioFile> {
+        val result = mutableListOf<FolderAudioFile>()
+        val queue = ArrayDeque<Pair<Long, String>>()
+        queue.add(rootId to "")
+        while (queue.isNotEmpty()) {
+            val (currentId, prefix) = queue.removeFirst()
+            val children = filesRepository.listFiles(token, currentId).dataOrNull()?.first ?: continue
+            for (child in children) {
+                val childPath = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+                if (child.isFolder) {
+                    queue.add(child.id to childPath)
+                } else if (MetadataUtils.isMultiTrackAudio(child.displayName)) {
+                    result.add(FolderAudioFile(child, childPath))
+                }
+            }
+        }
+        result.sortBy { it.relativePath }
+        return result
+    }
+
+    fun sendFolderAudiobookPack(selectedFiles: List<FolderAudioFile>, title: String, author: String, calibreBookUuid: String? = null) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+            val sortedFiles = selectedFiles.sortedBy { it.relativePath }
+            val filePairs = sortedFiles.map { folderFile ->
+                folderFile.file to AudiobookFile(folderFile.file.id, folderFile.file.displayName, use_local = true)
+            }
+            calibreRepository.addAudiobookPackTransfer(
+                files = filePairs,
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+                calibreBookUuid = calibreBookUuid,
+            )
+            _snackbarMessage.value = "Audiobook transfer requested for $title"
+        }
+    }
+
     fun sendAddSubtitleToMovie(subtitle: PutioFile, language: String, movieFolderPath: String, movieFileName: String) {
         viewModelScope.launch {
             val account = googleAccount.value

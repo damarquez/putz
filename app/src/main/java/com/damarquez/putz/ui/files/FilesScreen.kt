@@ -260,6 +260,11 @@ fun FilesScreen(
     var selectedPackFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
     val audiobookPackSheetState = rememberModalBottomSheetState()
 
+    // Folder audio picker flow (Create M4B from folder)
+    var folderForAudioPicker by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedFolderAudioFiles by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
+    val folderAudioPickerState by viewModel.folderAudioPickerState.collectAsState()
+
     // Assembly flow
     val pendingAssemblies by viewModel.pendingAssemblies.collectAsState()
     var selectedFileForAssembly by remember { mutableStateOf<Pair<PutioFile, Boolean>?>(null) } // File, isPack
@@ -455,6 +460,42 @@ fun FilesScreen(
                 plexSelectedDestPath = relativePath
                 viewModel.dismissPlexPicker()
             },
+        )
+    }
+
+    folderAudioPickerState?.let { pickerState ->
+        FolderAudioPickerSheet(
+            state = pickerState,
+            onDismiss = { viewModel.dismissFolderAudioPicker() },
+            onConfirm = { files ->
+                selectedFolderAudioFiles = files
+                viewModel.dismissFolderAudioPicker()
+            },
+        )
+    }
+
+    if (selectedFolderAudioFiles != null && folderForAudioPicker != null) {
+        val folder = folderForAudioPicker!!
+        val files = selectedFolderAudioFiles!!
+        val (initialTitle, initialAuthor) = remember(folder) {
+            MetadataUtils.extractMetadata(folder.name)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${files.size} audio files",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = {
+                selectedFolderAudioFiles = null
+                folderForAudioPicker = null
+            },
+            onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+                viewModel.sendFolderAudiobookPack(files, title, author, uuid)
+                selectedFolderAudioFiles = null
+                folderForAudioPicker = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
         )
     }
 
@@ -996,6 +1037,10 @@ fun FilesScreen(
                                             selectedMovieFile = null
                                             selectedMovieFolderPath = ""
                                             viewModel.openMovieBrowser()
+                                        },
+                                        onCreateM4bFromFolder = { folder ->
+                                            folderForAudioPicker = folder
+                                            viewModel.openFolderAudioPicker(folder)
                                         },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),
                                         onRequestPrioritySync = { viewModel.requestPrioritySync(it) },

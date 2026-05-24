@@ -74,6 +74,7 @@ fun FileItem(
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
+    onCreateM4bFromFolder: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
     onRequestPrioritySync: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
@@ -378,7 +379,19 @@ fun FileItem(
                                     },
                                 )
                             }
-                            if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced)) {
+                            val isPlainPutioFolder = file.isFolder && !file.isLocal && !file.isLan
+                                && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments
+                            if (isPlainPutioFolder) {
+                                DropdownMenuItem(
+                                    text = { Text("Create M4B from folder") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onCreateM4bFromFolder(file)
+                                    },
+                                )
+                            }
+                            if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || isPlainPutioFolder) {
                                 HorizontalDivider()
                             }
                         }
