@@ -63,6 +63,10 @@ enum class FilesTab {
     CLOUD, SPECIAL
 }
 
+enum class SortOrder {
+    NONE, ASCENDING, DESCENDING
+}
+
 @HiltViewModel
 class FilesViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -96,12 +100,44 @@ class FilesViewModel @Inject constructor(
     )
     val currentTab: StateFlow<FilesTab> = _currentTab.asStateFlow()
 
+    private val _nameSort = MutableStateFlow(SortOrder.NONE)
+    val nameSort: StateFlow<SortOrder> = _nameSort.asStateFlow()
+
+    private val _dateSort = MutableStateFlow(SortOrder.NONE)
+    val dateSort: StateFlow<SortOrder> = _dateSort.asStateFlow()
+
+    fun toggleNameSort() {
+        _dateSort.value = SortOrder.NONE
+        _nameSort.value = when (_nameSort.value) {
+            SortOrder.NONE -> SortOrder.ASCENDING
+            SortOrder.ASCENDING -> SortOrder.DESCENDING
+            SortOrder.DESCENDING -> SortOrder.NONE
+        }
+        refreshList()
+    }
+
+    fun toggleDateSort() {
+        _nameSort.value = SortOrder.NONE
+        _dateSort.value = when (_dateSort.value) {
+            SortOrder.NONE -> SortOrder.DESCENDING // Default to recent
+            SortOrder.DESCENDING -> SortOrder.ASCENDING
+            SortOrder.ASCENDING -> SortOrder.NONE
+        }
+        refreshList()
+    }
+
+    private fun refreshList() {
+        val current = _uiState.value
+        if (current is FilesUiState.Success) {
+            _uiState.value = current.copy(files = augmentWithLocal(rawApiFiles))
+        }
+    }
+
+    private var rawApiFiles: List<PutioFile> = emptyList()
+
     fun setTab(tab: FilesTab) {
         if (_currentTab.value == tab && parentId == 0L) return
         _currentTab.value = tab
-        // If the user switches tabs while in a subfolder, we should ideally navigate back to root.
-        // But since ViewModel is scoped to the screen, we can't easily trigger navigation here.
-        // We will handle navigation in the UI.
         if (parentId == 0L) {
             loadFiles(isRefresh = true)
         }
@@ -330,6 +366,7 @@ class FilesViewModel @Inject constructor(
                 val cached = filesRepository.getCached(parentId)
                 if (cached != null) {
                     val (files, parent) = cached
+                    rawApiFiles = files
                     _uiState.value = FilesUiState.Success(
                         files = augmentWithLocal(files),
                         parent = parent,
@@ -348,6 +385,7 @@ class FilesViewModel @Inject constructor(
             when (val result = filesRepository.listFiles(token, parentId)) {
                 is NetworkResult.Success -> {
                     val (files, parent) = result.data
+                    rawApiFiles = files
                     _uiState.value = FilesUiState.Success(files = augmentWithLocal(files), parent = parent)
                 }
                 is NetworkResult.Error -> {
@@ -401,9 +439,31 @@ class FilesViewModel @Inject constructor(
             }
         } else apiFiles
 
-        return list.sortedWith(
-            compareByDescending<PutioFile> { it.isFolder }.thenBy { it.name.lowercase() }
-        )
+        val nameSortOrder = _nameSort.value
+        val dateSortOrder = _dateSort.value
+
+        return when {
+            nameSortOrder != SortOrder.NONE -> {
+                if (nameSortOrder == SortOrder.ASCENDING) {
+                    list.sortedBy { it.name.lowercase() }
+                } else {
+                    list.sortedByDescending { it.name.lowercase() }
+                }
+            }
+            dateSortOrder != SortOrder.NONE -> {
+                if (dateSortOrder == SortOrder.ASCENDING) {
+                    list.sortedBy { it.createdAt ?: "" }
+                } else {
+                    list.sortedByDescending { it.createdAt ?: "" }
+                }
+            }
+            else -> {
+                // Default sort: Folders first, then name
+                list.sortedWith(
+                    compareByDescending<PutioFile> { it.isFolder }.thenBy { it.name.lowercase() }
+                )
+            }
+        }
     }
 
     fun downloadFile(file: PutioFile) {

@@ -135,7 +135,7 @@ fun FileItem(
                     onClick = onClick,
                     onLongClick = if (!isRegularRemote) onLongClick else { {} },
                 )
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 1.dp, vertical = 1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isSelectionMode) {
@@ -226,7 +226,7 @@ fun FileItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = file.displayName,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     color = foregroundColor ?: MaterialTheme.colorScheme.onSurface,
@@ -240,7 +240,7 @@ fun FileItem(
                                 append(formatFileSize(file.size))
                             }
                         },
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = foregroundColor?.copy(alpha = 0.7f) ?: MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

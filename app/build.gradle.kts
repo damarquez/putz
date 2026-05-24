@@ -101,6 +101,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.hilt.android)
+    implementation(libs.androidx.material3)
     kapt(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
     implementation(libs.navigation.compose)

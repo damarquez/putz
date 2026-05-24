@@ -73,9 +73,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.documentfile.provider.DocumentFile
 
 import androidx.compose.material.icons.filled.Add
@@ -84,6 +88,7 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.filled.CreateNewFolder
 
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material.icons.filled.Cloud
@@ -93,6 +98,12 @@ import androidx.compose.material3.NavigationRailItem
 import com.damarquez.putz.ui.GlobalSyncViewModel
 import com.damarquez.putz.ui.files.FilesUiState
 import androidx.hilt.navigation.compose.hiltViewModel
+
+import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material3.NavigationRailItemDefaults
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,6 +129,8 @@ fun FilesScreen(
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val currentTab by viewModel.currentTab.collectAsState()
+    val nameSort by viewModel.nameSort.collectAsState()
+    val dateSort by viewModel.dateSort.collectAsState()
     
     val context = LocalContext.current
     val pickFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -596,6 +609,11 @@ fun FilesScreen(
             modifier = Modifier.width(54.dp),
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
+            val railColors = NavigationRailItemDefaults.colors(
+                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                indicatorColor = Color.Transparent,
+            )
             Spacer(modifier = Modifier.height(16.dp))
             NavigationRailItem(
                 selected = currentTab == FilesTab.CLOUD,
@@ -606,7 +624,18 @@ fun FilesScreen(
                         viewModel.setTab(FilesTab.CLOUD)
                     }
                 },
-                icon = { Icon(Icons.Default.Cloud, contentDescription = "Cloud") },
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(if (currentTab == FilesTab.CLOUD) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Cloud, contentDescription = "Cloud")
+                    }
+                },
+                colors = railColors,
             )
             NavigationRailItem(
                 selected = currentTab == FilesTab.SPECIAL,
@@ -617,7 +646,18 @@ fun FilesScreen(
                         viewModel.setTab(FilesTab.SPECIAL)
                     }
                 },
-                icon = { Icon(Icons.Default.Storage, contentDescription = "Special Folders") },
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(if (currentTab == FilesTab.SPECIAL) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Storage, contentDescription = "Special Folders")
+                    }
+                },
+                colors = railColors,
             )
         }
 
@@ -697,74 +737,6 @@ fun FilesScreen(
                                 Icon(Icons.Default.Close, contentDescription = "Clear search")
                             }
                         }
-                    } else {
-                        IconButton(onClick = { viewModel.toggleSearch() }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
-                        }
-                        IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                        }
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                BadgedBox(
-                                    badge = {
-                                        if (libraryHasUpdates) {
-                                            Badge()
-                                        }
-                                    }
-                                ) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "More")
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false },
-                            ) {
-                                accountInfo?.let { info ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Column {
-                                                Text(
-                                                    text = info.username,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                )
-                                                Text(
-                                                    text = info.mail ?: "",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                                StorageBar(
-                                                    usedPercent = info.diskUsedPercent,
-                                                    modifier = Modifier.padding(top = 6.dp),
-                                                )
-                                            }
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Default.AccountCircle,
-                                                contentDescription = null,
-                                            )
-                                        },
-                                        onClick = {},
-                                    )
-                                    HorizontalDivider()
-                                }
-                                DropdownMenuItem(
-                                    text = { Text("Settings") },
-                                    onClick = {
-                                        showMenu = false
-                                        onNavigateToSettings()
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
-                                    onClick = {
-                                        showMenu = false
-                                        showSignOutConfirm = true
-                                    },
-                                )
-                            }
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -836,6 +808,121 @@ fun FilesScreen(
                                 color = MaterialTheme.colorScheme.primary,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
+                        }
+
+                        // Sort Toggles
+                        if (!isSearchMode) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                // Name Sort
+                                IconButton(onClick = { viewModel.toggleNameSort() }) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.SortByAlpha,
+                                            contentDescription = "Sort by name",
+                                            tint = if (nameSort != SortOrder.NONE) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (nameSort != SortOrder.NONE) {
+                                            Icon(
+                                                imageVector = if (nameSort == SortOrder.ASCENDING) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                // Date Sort
+                                IconButton(onClick = { viewModel.toggleDateSort() }) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarToday,
+                                            contentDescription = "Sort by date",
+                                            tint = if (dateSort != SortOrder.NONE) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (dateSort != SortOrder.NONE) {
+                                            Icon(
+                                                imageVector = if (dateSort == SortOrder.ASCENDING) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+
+                                IconButton(onClick = { viewModel.toggleSearch() }) {
+                                    Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Box {
+                                    IconButton(onClick = { showMenu = true }) {
+                                        BadgedBox(
+                                            badge = {
+                                                if (libraryHasUpdates) {
+                                                    Badge()
+                                                }
+                                            }
+                                        ) {
+                                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false },
+                                    ) {
+                                        accountInfo?.let { info ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Column {
+                                                        Text(
+                                                            text = info.username,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                        )
+                                                        Text(
+                                                            text = info.mail ?: "",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        )
+                                                        StorageBar(
+                                                            usedPercent = info.diskUsedPercent,
+                                                            modifier = Modifier.padding(top = 6.dp),
+                                                        )
+                                                    }
+                                                },
+                                                onClick = {},
+                                            )
+                                            HorizontalDivider()
+                                        }
+                                        DropdownMenuItem(
+                                            text = { Text("Settings") },
+                                            onClick = {
+                                                showMenu = false
+                                                onNavigateToSettings()
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
+                                            onClick = {
+                                                showMenu = false
+                                                showSignOutConfirm = true
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         if (files.isEmpty()) {
