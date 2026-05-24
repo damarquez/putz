@@ -128,12 +128,8 @@ fun CalibreConfirmationSheet(
                 matchedBookTitle = match.title
                 matchedBookAuthor = match.author
                 isUuidMatched = true
-                if (isReplaceCover || title.isBlank()) {
-                    title = match.title
-                }
-                if (isReplaceCover || author.isBlank()) {
-                    author = match.author
-                }
+                title = match.title
+                author = match.author
                 if (tags.isBlank() || !autoAddTags.isNullOrBlank()) {
                     tags = mergeTags(match.tags, autoAddTags)
                 }
