@@ -371,18 +371,35 @@ class FilesViewModel @Inject constructor(
 
     fun downloadFile(file: PutioFile) {
         viewModelScope.launch {
+            val downloadManager = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+
+            // CONTRACT: stub convention — serve the real file from the LAN mirror, not the put.io stub
+            if (file.isSynced) {
+                val host = settingsRepository.lanHostFlow.first().trim()
+                val port = settingsRepository.lanPortFlow.first()
+                val apiKey = settingsRepository.lanApiKeyFlow.first()
+                val url = "http://$host:$port/api/mirror/file/${file.id}"
+                val safeFileName = file.displayName.replace(Regex("[\\[\\]<>|*?\"']"), "_")
+                val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
+                    .setTitle(file.displayName)
+                    .setDescription("Downloading from LAN mirror")
+                    .addRequestHeader("X-Sidekick-Key", apiKey)
+                    .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, safeFileName)
+                downloadManager.enqueue(request)
+                _snackbarMessage.value = "Download started: ${file.displayName}"
+                return@launch
+            }
+
             val token = settingsRepository.authTokenFlow.first()
             val putioUrl = filesRepository.getDownloadUrl(token, file.id)
             val directUrl = filesRepository.resolveDirectDownloadUrl(putioUrl)
             val safeFileName = file.name.replace(Regex("[\\[\\]<>|*?\"']"), "_")
-
-            val downloadManager = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
             val request = android.app.DownloadManager.Request(android.net.Uri.parse(directUrl))
                 .setTitle(file.name)
                 .setDescription("Downloading from put.io")
                 .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, safeFileName)
-
             downloadManager.enqueue(request)
             _snackbarMessage.value = "Download started: ${file.name}"
         }
