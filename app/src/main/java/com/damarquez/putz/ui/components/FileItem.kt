@@ -442,7 +442,7 @@ private fun FileTypeIcon(
             painter = painterResource(id = customRes),
             contentDescription = null,
             tint = Color.Unspecified,
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(35.dp),
         )
         return
     }
@@ -472,7 +472,7 @@ private fun FileTypeIcon(
 
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(35.dp)
             .clip(shape)
             .background(bgColor)
             .then(
@@ -485,7 +485,7 @@ private fun FileTypeIcon(
             imageVector = icon,
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(19.dp),
         )
     }
 }

@@ -593,7 +593,7 @@ fun FilesScreen(
 
     Row(modifier = Modifier.fillMaxSize()) {
         NavigationRail(
-            modifier = Modifier.width(72.dp),
+            modifier = Modifier.width(54.dp),
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Spacer(modifier = Modifier.height(16.dp))
