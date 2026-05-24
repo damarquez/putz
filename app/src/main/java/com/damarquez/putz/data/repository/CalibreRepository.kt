@@ -138,6 +138,37 @@ data class PrioritySyncRequest(
     val putio_file_id: Long,
 )
 
+// CONTRACT: FUSE_BOOKS
+@Serializable
+data class FuseFormatEntry(
+    val format: String,
+    val source_book_id: Long,
+)
+
+@Serializable
+data class FuseMetadata(
+    val title: String,
+    val authors: String,
+    val publisher: String? = null,
+    val pubdate: String? = null,
+    val series: String? = null,
+    val series_index: Float? = null,
+    val language: String? = null,
+    val rating: Int? = null,
+    val tags: List<String>? = null,
+    val comments: String? = null,
+)
+
+@Serializable
+data class FuseBooksRequest(
+    val action: String = "FUSE_BOOKS",
+    val putio_file_id: Long,
+    val source_book_ids: List<Long>,
+    val cover_source_book_id: Long?,
+    val metadata: FuseMetadata,
+    val formats: List<FuseFormatEntry>,
+)
+
 @Singleton
 class CalibreRepository @Inject constructor(
     @ApplicationContext private val context: android.content.Context,
@@ -569,7 +600,7 @@ class CalibreRepository @Inject constructor(
                                 }
                             }
 
-                            if (newStatus == CalibreTransferStatus.FAILED && response.error?.contains("not found", ignoreCase = true) == true) {
+                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && response.error?.contains("not found", ignoreCase = true) == true) {
                                 if (transfer.retryCount < 3) {
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val delayMs = Random.nextLong(2000, 60000)
@@ -721,6 +752,35 @@ class CalibreRepository @Inject constructor(
         } else {
             NetworkResult.Error("Could not upload Plex request to Google Drive")
         }
+    }
+
+    // CONTRACT: FUSE_BOOKS
+    suspend fun sendFuseBooksRequest(
+        request: FuseBooksRequest,
+        displayTitle: String,
+        googleAccount: String,
+    ) {
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(
+            googleAccount,
+            "req_fuse_${request.putio_file_id}.json",
+            jsonStr,
+        )
+        val transfer = CalibreTransferEntity(
+            putioFileId = request.putio_file_id,
+            fileName = "Fusing ${request.source_book_ids.size} books",
+            title = displayTitle,
+            author = request.metadata.authors,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = request.putio_file_id.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            transferType = "FUSION",
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
     suspend fun checkExistsByUuid(dbFile: File, uuid: String): CalibreBookMatch? = withContext(Dispatchers.IO) {

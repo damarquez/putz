@@ -60,6 +60,20 @@
             </intent-filter>
         </activity>
 
+        <!-- CONTRACT: FUSE_BOOKS — receives fusion intents from CalibreAnywhere -->
+        <activity
+            android:name=".ui.fusion.FuseBooksActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Putz">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="fuse_books" />
+            </intent-filter>
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.damarquez.putz.fileprovider"
