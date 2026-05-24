@@ -1362,6 +1362,7 @@ class FilesViewModel @Inject constructor(
             pathStack = current.pathStack + current.currentPath,
             currentPath = newPath,
             folders = emptyList(),
+            files = emptyList(),
             isLoading = true,
             error = null,
         )
@@ -1376,6 +1377,7 @@ class FilesViewModel @Inject constructor(
             pathStack = current.pathStack.dropLast(1),
             currentPath = previousPath,
             folders = emptyList(),
+            files = emptyList(),
             isLoading = true,
             error = null,
         )
@@ -1386,7 +1388,7 @@ class FilesViewModel @Inject constructor(
         _plexPickerState.value = null
     }
 
-    fun sendToPlex(file: PutioFile, movieTitle: String, year: String, destPath: String, assembleMode: Boolean) {
+    fun sendToPlex(file: PutioFile, movieTitle: String, year: String, destPath: String, assembleMode: Boolean, createFolder: Boolean = true) {
         viewModelScope.launch {
             val account = googleAccount.value
             if (account.isBlank() && !assembleMode) {
@@ -1400,6 +1402,7 @@ class FilesViewModel @Inject constructor(
                 destPath = destPath,
                 assembleMode = assembleMode,
                 googleAccount = account,
+                createFolder = createFolder,
             )
             _snackbarMessage.value = if (assembleMode) "Movie assembly created — add subtitles, then tap play" else "Plex transfer request sent"
         }
@@ -1475,11 +1478,11 @@ class FilesViewModel @Inject constructor(
 
     private suspend fun loadPlexFolders(connectionId: Long, path: String) {
         try {
-            val files = lanFilesRepository.listDirectory(connectionId, path).first()
-            val folders = files.filter { it.isFolder }
+            val allFiles = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = true).first()
             val current = _plexPickerState.value ?: return
             _plexPickerState.value = current.copy(
-                folders = folders,
+                folders = allFiles.filter { it.isFolder },
+                files = allFiles.filter { !it.isFolder },
                 isLoading = false,
                 error = null,
             )

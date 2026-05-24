@@ -103,6 +103,7 @@ data class PlexBatchData(
     val year: String,
     val dest_path: String,
     val items: List<PlexAssemblyItem>,
+    val create_folder: Boolean = true,
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
@@ -119,6 +120,7 @@ data class PlexTransferRequest(
     val year: String,
     val dest_path: String,
     val items: List<PlexAssemblyItem>,
+    val create_folder: Boolean = true,
 )
 
 // CONTRACT: ADD_SUBTITLE_TO_MOVIE
@@ -630,10 +632,11 @@ class CalibreRepository @Inject constructor(
         destPath: String,
         assembleMode: Boolean,
         googleAccount: String,
+        createFolder: Boolean = true,
     ) {
         val displayName = file.displayName
         val movieItem = PlexAssemblyItem(putio_file_id = file.id, fileName = displayName, item_type = "MOVIE")
-        val batchData = PlexBatchData(movie_title = movieTitle, year = year, dest_path = destPath, items = listOf(movieItem))
+        val batchData = PlexBatchData(movie_title = movieTitle, year = year, dest_path = destPath, items = listOf(movieItem), create_folder = createFolder)
         val folderLabel = if (year.isNotBlank()) "$movieTitle ($year)" else movieTitle
 
         val transfer = CalibreTransferEntity(
@@ -727,6 +730,7 @@ class CalibreRepository @Inject constructor(
         year = batchData.year,
         dest_path = batchData.dest_path,
         items = batchData.items,
+        create_folder = batchData.create_folder,
     )
 
     private suspend fun retryPlexTransfer(transfer: CalibreTransferEntity, googleAccount: String): NetworkResult<Unit> {

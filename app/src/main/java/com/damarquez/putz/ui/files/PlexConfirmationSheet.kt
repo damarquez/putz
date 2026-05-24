@@ -37,11 +37,12 @@ fun PlexConfirmationSheet(
     selectedDestPath: String,
     onDismiss: () -> Unit,
     onBrowse: () -> Unit,
-    onConfirm: (title: String, year: String, destPath: String, assembleMode: Boolean) -> Unit,
+    onConfirm: (title: String, year: String, destPath: String, assembleMode: Boolean, createFolder: Boolean) -> Unit,
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var year by remember { mutableStateOf(initialYear) }
     var assembleMode by remember { mutableStateOf(false) }
+    var createFolder by remember { mutableStateOf(true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -127,10 +128,28 @@ fun PlexConfirmationSheet(
                     Switch(checked = assembleMode, onCheckedChange = { assembleMode = it })
                 }
 
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Create folder", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            if (createFolder) "New subfolder: ${title.trim().ifBlank { "Movie" }}${year.trim().let { if (it.isNotBlank()) " ($it)" else "" }}"
+                            else "Place files directly into selected folder",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = createFolder, onCheckedChange = { createFolder = it })
+                }
+
                 Spacer(Modifier.height(16.dp))
 
                 Button(
-                    onClick = { onConfirm(title.trim(), year.trim(), selectedDestPath, assembleMode) },
+                    onClick = { onConfirm(title.trim(), year.trim(), selectedDestPath, assembleMode, createFolder) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = title.isNotBlank() && (assembleMode || selectedDestPath.isNotBlank()),
                 ) {

@@ -437,8 +437,8 @@ fun FilesScreen(
                 plexSelectedDestPath = ""
             },
             onBrowse = { viewModel.openPlexFolderPicker() },
-            onConfirm = { title, year, destPath, assembleMode ->
-                viewModel.sendToPlex(plexFile, title, year, destPath, assembleMode)
+            onConfirm = { title, year, destPath, assembleMode, createFolder ->
+                viewModel.sendToPlex(plexFile, title, year, destPath, assembleMode, createFolder)
                 selectedFileForPlex = null
                 plexSelectedDestPath = ""
             },

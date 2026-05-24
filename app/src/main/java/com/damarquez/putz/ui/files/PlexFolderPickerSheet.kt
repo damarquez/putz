@@ -112,7 +112,7 @@ fun PlexFolderPickerSheet(
                         )
                     }
                 }
-                state.folders.isEmpty() && (!isFilePicker || state.files.isEmpty()) -> {
+                state.folders.isEmpty() && state.files.isEmpty() -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -120,7 +120,7 @@ fun PlexFolderPickerSheet(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = if (isFilePicker) "No video files or subfolders here" else "No subfolders here",
+                            text = if (isFilePicker) "No video files or subfolders here" else "No subfolders or files here",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -146,7 +146,7 @@ fun PlexFolderPickerSheet(
                                 Text(text = folder.name, style = MaterialTheme.typography.bodyLarge)
                             }
                         }
-                        if (isFilePicker && state.files.isNotEmpty()) {
+                        if (state.files.isNotEmpty()) {
                             if (state.folders.isNotEmpty()) {
                                 item { HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp)) }
                             }
@@ -154,18 +154,27 @@ fun PlexFolderPickerSheet(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onFileSelected!!(file) }
+                                        .then(
+                                            if (isFilePicker) Modifier.clickable { onFileSelected!!(file) }
+                                            else Modifier
+                                        )
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.VideoFile,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.secondary,
+                                        tint = if (isFilePicker) MaterialTheme.colorScheme.secondary
+                                               else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(24.dp),
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text(text = file.name, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        text = file.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (isFilePicker) MaterialTheme.colorScheme.onSurface
+                                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
                         }
