@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
@@ -65,6 +66,7 @@ fun LanConnectionsScreen(
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<LanConnectionEntity?>(null) }
+    var cloningConnection by remember { mutableStateOf<LanConnectionEntity?>(null) }
     var deleteConfirmId by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(snackbarMessage) {
@@ -131,6 +133,28 @@ fun LanConnectionsScreen(
             onConfirm = { label, host, user, pass, share ->
                 viewModel.updateConnection(conn.id, label, host, user, pass, share)
                 editingConnection = null
+                viewModel.resetTestState()
+            },
+        )
+    }
+
+    cloningConnection?.let { source ->
+        LanConnectionDialog(
+            connection = null,
+            cloneFrom = source,
+            initialPassword = viewModel.getPassword(source.id),
+            testState = testState,
+            onTestConnection = { host, user, pass, share ->
+                viewModel.testConnection(host, user, pass, share)
+            },
+            onResetTest = { viewModel.resetTestState() },
+            onDismiss = {
+                cloningConnection = null
+                viewModel.resetTestState()
+            },
+            onConfirm = { label, host, user, pass, share ->
+                viewModel.addConnection(label, host, user, pass, share)
+                cloningConnection = null
                 viewModel.resetTestState()
             },
         )
@@ -215,6 +239,9 @@ fun LanConnectionsScreen(
                         IconButton(onClick = { editingConnection = conn }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        IconButton(onClick = { cloningConnection = conn }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Clone", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         IconButton(onClick = { deleteConfirmId = conn.id }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                         }
@@ -235,16 +262,24 @@ private fun LanConnectionDialog(
     onResetTest: () -> Unit,
     onDismiss: () -> Unit,
     onConfirm: (label: String, host: String, username: String, password: String, shareName: String) -> Unit,
+    cloneFrom: LanConnectionEntity? = null,
 ) {
-    var label by remember { mutableStateOf(connection?.label ?: "") }
-    var host by remember { mutableStateOf(connection?.host ?: "") }
-    var username by remember { mutableStateOf(connection?.username ?: "") }
+    val isCloning = connection == null && cloneFrom != null
+    var label by remember { mutableStateOf(if (isCloning) "" else connection?.label ?: "") }
+    var host by remember { mutableStateOf(connection?.host ?: cloneFrom?.host ?: "") }
+    var username by remember { mutableStateOf(connection?.username ?: cloneFrom?.username ?: "") }
     var password by remember { mutableStateOf(initialPassword) }
-    var shareName by remember { mutableStateOf(connection?.shareName ?: "") }
+    var shareName by remember { mutableStateOf(connection?.shareName ?: cloneFrom?.shareName ?: "") }
+
+    val title = when {
+        isCloning -> "Clone Connection"
+        connection == null -> "Add LAN Connection"
+        else -> "Edit Connection"
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (connection == null) "Add LAN Connection" else "Edit Connection") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -253,6 +288,10 @@ private fun LanConnectionDialog(
                     label = { Text("Label") },
                     placeholder = { Text("e.g. Home NAS") },
                     singleLine = true,
+                    isError = isCloning && label.trim() == cloneFrom?.label,
+                    supportingText = if (isCloning && label.trim() == cloneFrom?.label) {
+                        { Text("Label must be different from the original") }
+                    } else null,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -331,11 +370,13 @@ private fun LanConnectionDialog(
             }
         },
         confirmButton = {
+            val labelTrimmed = label.trim()
+            val labelConflicts = isCloning && labelTrimmed == cloneFrom?.label
             TextButton(
                 onClick = {
-                    onConfirm(label.trim(), host.trim(), username.trim(), password, shareName.trim())
+                    onConfirm(labelTrimmed, host.trim(), username.trim(), password, shareName.trim())
                 },
-                enabled = label.isNotBlank() && host.isNotBlank() && shareName.isNotBlank(),
+                enabled = labelTrimmed.isNotBlank() && host.isNotBlank() && shareName.isNotBlank() && !labelConflicts,
             ) { Text("Save") }
         },
         dismissButton = {
