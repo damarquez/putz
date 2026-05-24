@@ -182,6 +182,30 @@ class LanDaemonTransport @Inject constructor(
             }.getOrDefault(false)
         }
 
+    /** Stream a file from the local put.io mirror by its put.io file ID. */
+    suspend fun downloadMirrorFile(putioFileId: Long, destination: File): Boolean =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${baseUrl()}/mirror/file/$putioFileId")
+                .header("X-Sidekick-Key", apiKey())
+                .get()
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        android.util.Log.w("LanDaemonTransport", "downloadMirrorFile($putioFileId) failed: HTTP ${response.code}")
+                        return@use false
+                    }
+                    val body = response.body ?: return@use false
+                    destination.outputStream().use { out -> body.byteStream().copyTo(out) }
+                    true
+                }
+            }.getOrElse { e ->
+                android.util.Log.w("LanDaemonTransport", "downloadMirrorFile($putioFileId) exception: $e")
+                false
+            }
+        }
+
     suspend fun downloadAssetsDb(destination: File): Boolean =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()

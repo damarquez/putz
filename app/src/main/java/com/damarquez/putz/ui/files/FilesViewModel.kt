@@ -19,6 +19,7 @@ import com.damarquez.putz.data.repository.CalibreBatchItem
 import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
+import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -67,6 +68,7 @@ class FilesViewModel @Inject constructor(
     private val lanFilesRepository: com.damarquez.putz.data.repository.LanFilesRepository,
     private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
+    private val lanDaemonTransport: LanDaemonTransport,
 ) : ViewModel() {
 
     val parentId: Long = savedStateHandle[Screen.Files.ARG_PARENT_ID] ?: 0L
@@ -176,6 +178,19 @@ class FilesViewModel @Inject constructor(
                         }
                         FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
                     }
+                    // CONTRACT: stub convention — serve the real file from the LAN mirror, not the put.io stub
+                    file.isSynced -> {
+                        val targetFile = File(File(context.cacheDir, "previews"), file.displayName)
+                        if (!targetFile.exists()) {
+                            withContext(Dispatchers.IO) { targetFile.parentFile?.mkdirs() }
+                            val ok = lanDaemonTransport.downloadMirrorFile(file.id, targetFile)
+                            if (!ok) {
+                                _snackbarMessage.value = "Preview failed: mirror file not available on LAN"
+                                return@launch
+                            }
+                        }
+                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
+                    }
                     else -> {
                         val token = settingsRepository.authTokenFlow.first()
                         val url = filesRepository.getDownloadUrl(token, file.id)
@@ -191,7 +206,7 @@ class FilesViewModel @Inject constructor(
                     }
                 }
 
-                val extension = MimeTypeMap.getFileExtensionFromUrl(file.name)
+                val extension = MimeTypeMap.getFileExtensionFromUrl(file.displayName)
                 val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
 
                 val intent = Intent(Intent.ACTION_VIEW).apply {

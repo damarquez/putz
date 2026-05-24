@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Sidekick daemon is reached over plain HTTP on the LAN / Tailscale network.
+    Android blocks cleartext HTTP to non-localhost by default (API 28+).  Allowing
+    it globally is safe here because all external services (put.io, Google Drive,
+    Supabase) enforce HTTPS on their end — the only cleartext traffic is to the
+    user's own LAN daemon (configurable host, may be a Tailscale hostname or a
+    private IP address, so a blanket base-config is necessary).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
