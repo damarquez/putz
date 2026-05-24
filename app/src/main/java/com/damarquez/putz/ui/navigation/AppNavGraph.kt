@@ -210,16 +210,22 @@ fun AppNavGraph(
                         nullable = true
                         defaultValue = null
                     },
+                    navArgument(Screen.Files.ARG_TAB) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
                 ),
             ) {
                 FilesScreen(
-                    onNavigateToFolder = { id, name, localUri, lanConnectionId, lanPath ->
+                    onNavigateToFolder = { id, name, localUri, lanConnectionId, lanPath, tab ->
                         navController.navigate(
                             Screen.Files.createRoute(
                                 id, name,
                                 localUri = localUri,
                                 lanConnectionId = if (lanConnectionId != -1L) lanConnectionId else null,
                                 lanPath = lanPath,
+                                tab = tab,
                             )
                         )
                     },

@@ -86,6 +86,10 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import com.damarquez.putz.ui.GlobalSyncViewModel
 import com.damarquez.putz.ui.files.FilesUiState
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -93,7 +97,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
-    onNavigateToFolder: (Long, String, String?, Long, String?) -> Unit,
+    onNavigateToFolder: (Long, String, String?, Long, String?, String?) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
     onNavigateToPutioArchive: (fileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean) -> Unit,
     onNavigateToTrash: () -> Unit,
@@ -113,6 +117,7 @@ fun FilesScreen(
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val currentTab by viewModel.currentTab.collectAsState()
     
     val context = LocalContext.current
     val pickFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -586,9 +591,39 @@ fun FilesScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
+    Row(modifier = Modifier.fillMaxSize()) {
+        NavigationRail(
+            modifier = Modifier.width(72.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+            NavigationRailItem(
+                selected = currentTab == FilesTab.CLOUD,
+                onClick = {
+                    if (viewModel.parentId != 0L) {
+                        onNavigateToFolder(0L, "Your Files", null, -1L, null, FilesTab.CLOUD.name)
+                    } else {
+                        viewModel.setTab(FilesTab.CLOUD)
+                    }
+                },
+                icon = { Icon(Icons.Default.Cloud, contentDescription = "Cloud") },
+            )
+            NavigationRailItem(
+                selected = currentTab == FilesTab.SPECIAL,
+                onClick = {
+                    if (viewModel.parentId != 0L) {
+                        onNavigateToFolder(0L, "Your Files", null, -1L, null, FilesTab.SPECIAL.name)
+                    } else {
+                        viewModel.setTab(FilesTab.SPECIAL)
+                    }
+                },
+                icon = { Icon(Icons.Default.Storage, contentDescription = "Special Folders") },
+            )
+        }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
                 title = {
                     if (isSearchMode) {
                         TextField(
@@ -840,6 +875,7 @@ fun FilesScreen(
                                                     file.localUri,
                                                     file.lanConnectionId ?: -1L,
                                                     file.lanPath,
+                                                    currentTab.name,
                                                 )
                                             } else if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.displayName)) {
                                                 onNavigateToArchive(
@@ -890,10 +926,10 @@ fun FilesScreen(
                         }
                     }
                 }
-
             }
         }
     }
+}
 }
 
 @Composable

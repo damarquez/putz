@@ -5,7 +5,7 @@ import android.net.Uri
 sealed class Screen(val route: String) {
     data object Auth : Screen("auth")
 
-    data object Files : Screen("files/{parentId}/{folderName}?highlight={highlightId}&localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}") {
+    data object Files : Screen("files/{parentId}/{folderName}?highlight={highlightId}&localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&tab={tab}") {
         fun createRoute(
             parentId: Long,
             folderName: String,
@@ -13,6 +13,7 @@ sealed class Screen(val route: String) {
             localUri: String? = null,
             lanConnectionId: Long? = null,
             lanPath: String? = null,
+            tab: String? = null,
         ): String {
             var route = "files/$parentId/${Uri.encode(folderName)}"
             val params = mutableListOf<String>()
@@ -20,6 +21,7 @@ sealed class Screen(val route: String) {
             if (localUri != null) params.add("localUri=${Uri.encode(localUri)}")
             if (lanConnectionId != null) params.add("lanConnectionId=$lanConnectionId")
             if (lanPath != null) params.add("lanPath=${Uri.encode(lanPath)}")
+            if (tab != null) params.add("tab=$tab")
             if (params.isNotEmpty()) route += "?" + params.joinToString("&")
             return route
         }
@@ -29,6 +31,7 @@ sealed class Screen(val route: String) {
         const val ARG_LOCAL_URI = "localUri"
         const val ARG_LAN_CONNECTION_ID = "lanConnectionId"
         const val ARG_LAN_PATH = "lanPath"
+        const val ARG_TAB = "tab"
     }
 
     data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}&putioIsSynced={putioIsSynced}") {

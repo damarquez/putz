@@ -59,6 +59,10 @@ sealed class FilesUiState {
     data class Error(val message: String) : FilesUiState()
 }
 
+enum class FilesTab {
+    CLOUD, SPECIAL
+}
+
 @HiltViewModel
 class FilesViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -77,6 +81,31 @@ class FilesViewModel @Inject constructor(
     val localUri: String? = savedStateHandle[Screen.Files.ARG_LOCAL_URI]
     val lanConnectionId: Long = savedStateHandle[Screen.Files.ARG_LAN_CONNECTION_ID] ?: -1L
     val lanPath: String? = savedStateHandle[Screen.Files.ARG_LAN_PATH]
+    val argTab: String? = savedStateHandle[Screen.Files.ARG_TAB]
+
+    private val _currentTab = MutableStateFlow(
+        if (argTab != null) {
+            try { FilesTab.valueOf(argTab) } catch (e: Exception) { FilesTab.CLOUD }
+        } else if (parentId == 0L) {
+            FilesTab.CLOUD
+        } else if (localUri != null || lanConnectionId != -1L || folderName == ".putz_attachments") {
+            FilesTab.SPECIAL
+        } else {
+            FilesTab.CLOUD
+        }
+    )
+    val currentTab: StateFlow<FilesTab> = _currentTab.asStateFlow()
+
+    fun setTab(tab: FilesTab) {
+        if (_currentTab.value == tab && parentId == 0L) return
+        _currentTab.value = tab
+        // If the user switches tabs while in a subfolder, we should ideally navigate back to root.
+        // But since ViewModel is scoped to the screen, we can't easily trigger navigation here.
+        // We will handle navigation in the UI.
+        if (parentId == 0L) {
+            loadFiles(isRefresh = true)
+        }
+    }
 
     val putioLocalLanConnectionId: StateFlow<Long?> = settingsRepository.putioLocalLanConnectionIdFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -361,7 +390,15 @@ class FilesViewModel @Inject constructor(
                     lanPath = putioLocalPath,
                 )
             } else null
-            listOfNotNull(localRoot, lanRoot, putioLocalRoot, trashRoot) + apiFiles
+
+            when (_currentTab.value) {
+                FilesTab.CLOUD -> {
+                    listOfNotNull(putioLocalRoot, trashRoot) + apiFiles.filter { it.name != ".putz_attachments" }
+                }
+                FilesTab.SPECIAL -> {
+                    listOfNotNull(localRoot, lanRoot) + apiFiles.filter { it.name == ".putz_attachments" }
+                }
+            }
         } else apiFiles
 
         return list.sortedWith(
