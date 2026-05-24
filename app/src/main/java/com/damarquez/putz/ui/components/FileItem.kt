@@ -75,6 +75,7 @@ fun FileItem(
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
     onCreateM4bFromFolder: (PutioFile) -> Unit,
+    onAssembleFolderToCalibre: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
     onRequestPrioritySync: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
@@ -379,19 +380,28 @@ fun FileItem(
                                     },
                                 )
                             }
-                            val isPlainPutioFolder = file.isFolder && !file.isLocal && !file.isLan
-                                && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments
-                            if (isPlainPutioFolder) {
+                            val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments
+                            if (isRegularFolder) {
                                 DropdownMenuItem(
-                                    text = { Text("Create M4B from folder") },
+                                    text = { Text("Assemble audiobook") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onCreateM4bFromFolder(file)
                                     },
                                 )
+                                if (hasPendingAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Add to existing assembly") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleFolderToCalibre(file)
+                                        },
+                                    )
+                                }
                             }
-                            if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || isPlainPutioFolder) {
+                            if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || isRegularFolder) {
                                 HorizontalDivider()
                             }
                         }

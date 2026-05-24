@@ -1455,8 +1455,7 @@ class FilesViewModel @Inject constructor(
         viewModelScope.launch {
             _folderAudioPickerState.value = FolderAudioPickerState.Loading(folder.name)
             try {
-                val token = settingsRepository.authTokenFlow.first()
-                val files = fetchAudioFilesRecursively(token, folder.id)
+                val files = fetchAudioFilesRecursively(folder)
                 if (files.isEmpty()) {
                     _folderAudioPickerState.value = FolderAudioPickerState.Error(folder.name, "No audio files found in this folder")
                 } else {
@@ -1473,17 +1472,22 @@ class FilesViewModel @Inject constructor(
         _folderAudioPickerState.value = null
     }
 
-    private suspend fun fetchAudioFilesRecursively(token: String, rootId: Long): List<FolderAudioFile> {
+    private suspend fun fetchAudioFilesRecursively(folder: PutioFile): List<FolderAudioFile> {
+        val token = settingsRepository.authTokenFlow.first()
         val result = mutableListOf<FolderAudioFile>()
-        val queue = ArrayDeque<Pair<Long, String>>()
-        queue.add(rootId to "")
+        val queue = ArrayDeque<Pair<PutioFile, String>>()
+        queue.add(folder to "")
         while (queue.isNotEmpty()) {
-            val (currentId, prefix) = queue.removeFirst()
-            val children = filesRepository.listFiles(token, currentId).dataOrNull()?.first ?: continue
+            val (currentFolder, prefix) = queue.removeFirst()
+            val children = when {
+                currentFolder.isLocal -> currentFolder.localUri?.let { localFilesRepository.listLocalFolder(it).first() } ?: emptyList()
+                currentFolder.isLan -> currentFolder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, currentFolder.lanPath ?: "", includeAllFiles = true).first() } ?: emptyList()
+                else -> filesRepository.listFiles(token, currentFolder.id).dataOrNull()?.first ?: emptyList()
+            }
             for (child in children) {
                 val childPath = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
                 if (child.isFolder) {
-                    queue.add(child.id to childPath)
+                    queue.add(child to childPath)
                 } else if (MetadataUtils.isMultiTrackAudio(child.displayName)) {
                     result.add(FolderAudioFile(child, childPath))
                 }
@@ -1500,10 +1504,30 @@ class FilesViewModel @Inject constructor(
                 _snackbarMessage.value = "Link your Google account in Settings first"
                 return@launch
             }
+            val token = settingsRepository.authTokenFlow.first()
             val sortedFiles = selectedFiles.sortedBy { it.relativePath }
-            val filePairs = sortedFiles.map { folderFile ->
-                folderFile.file to AudiobookFile(folderFile.file.id, folderFile.file.displayName, use_local = true)
+            val filePairs = sortedFiles.mapNotNull { folderFile ->
+                val f = folderFile.file
+                val smbPath = if (f.isLan) {
+                    val conn = f.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                    if (conn == null || f.lanPath == null) {
+                        _snackbarMessage.value = "LAN connection info missing for ${f.name}"
+                        return@mapNotNull null
+                    }
+                    buildUncPath(conn.host, conn.shareName, f.lanPath)
+                } else null
+
+                f to AudiobookFile(
+                    putio_file_id = if (f.isLocal || f.isLan) 0L else f.id,
+                    fileName = f.displayName,
+                    download_url = if (f.isLocal || f.isLan) null else filesRepository.getDownloadUrl(token, f.id),
+                    smb_path = smbPath,
+                    use_local = if (f.isLocal || f.isSynced || (!f.isLan && f.id > 0)) true else null
+                )
             }
+
+            if (filePairs.isEmpty()) return@launch
+
             calibreRepository.addAudiobookPackTransfer(
                 files = filePairs,
                 title = title,
@@ -1512,6 +1536,52 @@ class FilesViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
             )
             _snackbarMessage.value = "Audiobook transfer requested for $title"
+        }
+    }
+
+    fun appendFolderAudiobookPackToAssembly(assemblyFileId: Long, selectedFiles: List<FolderAudioFile>, title: String, author: String, isAltVersion: Boolean = false) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val sortedFiles = selectedFiles.sortedBy { it.relativePath }
+            val resolvedAudioFiles = sortedFiles.mapNotNull { folderFile ->
+                val f = folderFile.file
+                val smbPath = if (f.isLan) {
+                    val conn = f.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                    if (conn == null || f.lanPath == null) {
+                        _snackbarMessage.value = "LAN connection info missing for ${f.name}"
+                        return@mapNotNull null
+                    }
+                    buildUncPath(conn.host, conn.shareName, f.lanPath)
+                } else null
+
+                AudiobookFile(
+                    putio_file_id = if (f.isLocal || f.isLan) 0L else f.id,
+                    fileName = f.displayName,
+                    download_url = if (f.isLocal || f.isLan) null else filesRepository.getDownloadUrl(token, f.id),
+                    smb_path = smbPath,
+                    use_local = if (f.isLocal || f.isSynced || (!f.isLan && f.id > 0)) true else null
+                )
+            }
+
+            if (resolvedAudioFiles.isEmpty()) return@launch
+
+            val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
+            val newItem = CalibreBatchItem(
+                type = "PACK",
+                putio_file_id = resolvedAudioFiles.first().putio_file_id,
+                fileName = fileName,
+                files = resolvedAudioFiles,
+            )
+
+            val added = calibreRepository.appendToAssembly(
+                assemblyFileId = assemblyFileId,
+                title = title,
+                author = author,
+                newItem = newItem,
+                newFileIds = resolvedAudioFiles.map { it.putio_file_id },
+            )
+            _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
+            else "\"$fileName\" is already in this assembly"
         }
     }
 

@@ -270,21 +270,30 @@ fun FilesScreen(
     var selectedFileForAssembly by remember { mutableStateOf<Pair<PutioFile, Boolean>?>(null) } // File, isPack
     var targetAssemblyForFile by remember { mutableStateOf<com.damarquez.putz.data.local.CalibreTransferEntity?>(null) }
     var selectedPackFilesForAssembly by remember { mutableStateOf<List<PutioFile>?>(null) }
+    var selectedFolderAudioFilesForAssembly by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
+    var isFolderAssembly by remember { mutableStateOf(false) }
 
     if (selectedFileForAssembly != null && targetAssemblyForFile == null) {
         val isPack = selectedFileForAssembly!!.second
-        if (!isPack || selectedPackFilesForAssembly != null) {
+        val canShowPicker = when {
+            isFolderAssembly -> selectedFolderAudioFilesForAssembly != null
+            isPack -> selectedPackFilesForAssembly != null
+            else -> true
+        }
+        if (canShowPicker) {
             AlertDialog(
-                onDismissRequest = { 
+                onDismissRequest = {
                     selectedFileForAssembly = null
                     selectedPackFilesForAssembly = null
+                    selectedFolderAudioFilesForAssembly = null
+                    isFolderAssembly = false
                 },
                 title = { Text("Pick Assembly") },
                 text = {
                     Column {
                         pendingAssemblies.forEach { assembly ->
                             DropdownMenuItem(
-                                text = { 
+                                text = {
                                     Column {
                                         Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
                                         Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -297,35 +306,51 @@ fun FilesScreen(
                 },
                 confirmButton = {},
                 dismissButton = {
-                    TextButton(onClick = { 
-                        selectedFileForAssembly = null 
+                    TextButton(onClick = {
+                        selectedFileForAssembly = null
                         selectedPackFilesForAssembly = null
+                        selectedFolderAudioFilesForAssembly = null
+                        isFolderAssembly = false
                     }) { Text("Cancel") }
                 }
             )
         }
     }
-
     if (targetAssemblyForFile != null) {
         val (file, isPack) = selectedFileForAssembly!!
+        val displayName = when {
+            isFolderAssembly -> "${selectedFolderAudioFilesForAssembly?.size} audio files"
+            isPack -> "${selectedPackFilesForAssembly?.size} audio files"
+            else -> file.name
+        }
         CalibreConfirmationSheet(
-            displayName = if (isPack) "${selectedPackFilesForAssembly?.size} audio files" else file.name,
+            displayName = displayName,
             initialTitle = targetAssemblyForFile!!.title,
             initialAuthor = targetAssemblyForFile!!.author,
             onDismiss = {
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
+                selectedFolderAudioFilesForAssembly = null
+                isFolderAssembly = false
             },
             onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _, _ ->
-                if (isPack) {
-                    viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
-                } else {
-                    viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode, isAltVersion)
+                when {
+                    isFolderAssembly -> {
+                        viewModel.appendFolderAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedFolderAudioFilesForAssembly!!, title, author, isAltVersion)
+                    }
+                    isPack -> {
+                        viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
+                    }
+                    else -> {
+                        viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode, isAltVersion)
+                    }
                 }
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
+                selectedFolderAudioFilesForAssembly = null
+                isFolderAssembly = false
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -466,9 +491,19 @@ fun FilesScreen(
     folderAudioPickerState?.let { pickerState ->
         FolderAudioPickerSheet(
             state = pickerState,
-            onDismiss = { viewModel.dismissFolderAudioPicker() },
+            onDismiss = {
+                viewModel.dismissFolderAudioPicker()
+                if (isFolderAssembly) {
+                    selectedFileForAssembly = null
+                    isFolderAssembly = false
+                }
+            },
             onConfirm = { files ->
-                selectedFolderAudioFiles = files
+                if (isFolderAssembly) {
+                    selectedFolderAudioFilesForAssembly = files
+                } else {
+                    selectedFolderAudioFiles = files
+                }
                 viewModel.dismissFolderAudioPicker()
             },
         )
@@ -1042,8 +1077,13 @@ fun FilesScreen(
                                             folderForAudioPicker = folder
                                             viewModel.openFolderAudioPicker(folder)
                                         },
-                                        hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),
-                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
+                                        onAssembleFolderToCalibre = { folder ->
+                                            folderForAudioPicker = folder
+                                            isFolderAssembly = true
+                                            selectedFileForAssembly = folder to true
+                                            viewModel.openFolderAudioPicker(folder)
+                                        },
+                                        hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },
                                         onDelete = { fileToDelete = file },
