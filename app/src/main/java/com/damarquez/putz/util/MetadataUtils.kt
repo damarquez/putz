@@ -8,30 +8,34 @@ object MetadataUtils {
     private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b")
     private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "wmv", "m4v", "ts", "webm", "flv", "mpg", "mpeg", "divx")
 
+    private fun cleanStubSuffix(fileName: String): String {
+        return fileName.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
+    }
+
     fun isArchive(fileName: String): Boolean {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in ARCHIVE_EXTENSIONS
     }
 
     fun isEbook(fileName: String): Boolean {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in EBOOK_EXTENSIONS || ext in AUDIO_EXTENSIONS
     }
 
     /** True for formats that can be combined into an M4B pack. */
     fun isMultiTrackAudio(fileName: String): Boolean {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in MULTI_TRACK_AUDIO_EXTENSIONS
     }
 
     fun isVideo(fileName: String): Boolean {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS
     }
 
     /** Parse movie title and year from a video filename (e.g. "The.Matrix.1999.mkv" → "The Matrix", "1999"). */
     fun parseMovieTitleAndYear(fileName: String): Pair<String, String> {
-        val nameWithoutExt = fileName.substringBeforeLast('.')
+        val nameWithoutExt = cleanStubSuffix(fileName).substringBeforeLast('.')
         val cleaned = nameWithoutExt.replace('.', ' ').replace('_', ' ').trim()
         val yearMatch = Regex("""\b(19|20)\d{2}\b""").find(cleaned)
         return if (yearMatch != null) {
@@ -43,7 +47,7 @@ object MetadataUtils {
     }
 
     fun extractMetadata(fileName: String): Pair<String, String> {
-        val nameWithoutExt = fileName.substringBeforeLast('.')
+        val nameWithoutExt = cleanStubSuffix(fileName).substringBeforeLast('.')
         
         // Pattern: Author - Title
         val dashParts = nameWithoutExt.split(" - ")

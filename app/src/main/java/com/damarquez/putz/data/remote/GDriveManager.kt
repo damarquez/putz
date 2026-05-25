@@ -195,6 +195,7 @@ class GDriveManager @Inject constructor(
             val result = service.files().list()
                 .setQ("'$responsesId' in parents and trashed = false")
                 .setFields("files(id, name)")
+                .setOrderBy("name")
                 .execute()
             result.files ?: emptyList()
         } catch (e: Exception) {

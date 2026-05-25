@@ -35,10 +35,10 @@ data class PutioFile(
     val isPutzAttachments: Boolean get() = name == ".putz_attachments"
 
     // CONTRACT: stub convention, Putz file state
-    val isSynced: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder && name.endsWith(".sk_synced")
+    val isSynced: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder && (name.endsWith(".sk_synced") || name.endsWith(".sk_sync"))
 
     // CONTRACT: stub convention — always use displayName (not name) with MetadataUtils
-    val displayName: String get() = if (isSynced) name.removeSuffix(".sk_synced") else name
+    val displayName: String get() = name.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
 
     companion object {
         const val TRASH_ROOT_ID = -3000L

@@ -585,8 +585,9 @@ class CalibreRepository @Inject constructor(
 
                         val isNewerStatus = newStatus.ordinal > transfer.status.ordinal
                         val isSameStatusFailure = newStatus == CalibreTransferStatus.FAILED && transfer.status == CalibreTransferStatus.FAILED
+                        val isProcessingUpdate = newStatus == CalibreTransferStatus.PROCESSING && transfer.status == CalibreTransferStatus.PROCESSING
 
-                        if (isNewerStatus || isSameStatusFailure) {
+                        if (isNewerStatus || isSameStatusFailure || isProcessingUpdate) {
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 status = newStatus,
                                 errorMessage = response.error,

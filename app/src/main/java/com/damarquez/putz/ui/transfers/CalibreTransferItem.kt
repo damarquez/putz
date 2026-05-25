@@ -195,6 +195,7 @@ fun CalibreTransferItem(
                         status = transfer.status,
                         uploadProgress = uploadProgress,
                         isAssemblyUploading = isAssemblyUploading,
+                        errorMessage = transfer.errorMessage,
                     )
                     Spacer(Modifier.weight(1f))
                     if (isAssembled) {
@@ -291,7 +292,7 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, errorMessage: String? = null) {
     val (icon, color, label) = when (status) {
         CalibreTransferStatus.UPLOADING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
         CalibreTransferStatus.ASSEMBLED -> if (isAssemblyUploading) {
@@ -301,7 +302,15 @@ private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? =
         }
         CalibreTransferStatus.PENDING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.outline, "Pending")
         CalibreTransferStatus.REQUESTED -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.primary, "Requested")
-        CalibreTransferStatus.PROCESSING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, "Processing")
+        CalibreTransferStatus.PROCESSING -> {
+            val progressLabel = if (errorMessage?.startsWith("encoding", ignoreCase = true) == true || 
+                                   errorMessage?.startsWith("probing", ignoreCase = true) == true) {
+                errorMessage
+            } else {
+                "Processing"
+            }
+            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, progressLabel)
+        }
         CalibreTransferStatus.COMPLETED -> Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, "Completed")
         CalibreTransferStatus.FAILED -> Triple(Icons.Default.Error, MaterialTheme.colorScheme.error, "Failed")
     }
