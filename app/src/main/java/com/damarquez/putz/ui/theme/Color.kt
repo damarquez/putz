@@ -39,6 +39,12 @@ val SuccessGreenContainer = Color(0xFFE8F5E9)
 val SuccessGreenDark = Color(0xFFB9F6CA)
 val SuccessGreenContainerDark = Color(0xFF00391C)
 
+// Pending-verification colors (daemon completed, not yet confirmed in library)
+val PendingVerifyAmber = Color(0xFFF9A825)
+val PendingVerifyContainer = Color(0xFFFFFDE7)
+val PendingVerifyAmberDark = Color(0xFFFFE57F)
+val PendingVerifyContainerDark = Color(0xFF3E2C00)
+
 // E-ink (always high contrast black/white)
 val EinkBlack = Color(0xFF000000)
 val EinkWhite = Color(0xFFFFFFFF)

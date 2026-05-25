@@ -588,11 +588,17 @@ class CalibreRepository @Inject constructor(
                         val isProcessingUpdate = newStatus == CalibreTransferStatus.PROCESSING && transfer.status == CalibreTransferStatus.PROCESSING
 
                         if (isNewerStatus || isSameStatusFailure || isProcessingUpdate) {
+                            // Plex transfers are verified by the daemon before it sends COMPLETED
+                            // (it checks file existence and physically moves the files), so no
+                            // library-sync check is needed on the Putz side.
+                            val libraryVerified = newStatus == CalibreTransferStatus.COMPLETED &&
+                                transfer.transferType == "PLEX"
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 status = newStatus,
                                 errorMessage = response.error,
                                 calibreBookUuid = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_uuid != null) response.calibre_book_uuid else transfer.calibreBookUuid,
                                 warnings = if (newStatus == CalibreTransferStatus.COMPLETED) response.warnings?.joinToString("\n")?.takeIf { it.isNotBlank() } else transfer.warnings,
+                                libraryVerified = libraryVerified,
                                 lastUpdatedAt = System.currentTimeMillis()
                             ))
 
@@ -820,6 +826,90 @@ class CalibreRepository @Inject constructor(
             e.printStackTrace()
             null
         }
+    }
+
+    suspend fun verifyCompletedTransfers(dbFile: File) = withContext(Dispatchers.IO) {
+        val transfers = calibreTransferDao.getAllTransfers().first().filter {
+            it.status == CalibreTransferStatus.COMPLETED && !it.libraryVerified
+        }
+        if (transfers.isEmpty() || !dbFile.exists()) return@withContext
+
+        val db = try {
+            android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbFile.absolutePath, null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
+        } catch (e: Exception) { return@withContext }
+
+        db.use {
+            for (transfer in transfers) {
+                val action = transfer.lastRequestPayload?.let { payload ->
+                    try { json.decodeFromString<CalibreBatchRequest>(payload).action } catch (_: Exception) { null }
+                }
+                val verified = when {
+                    // Non-Calibre actions need no library check
+                    transfer.transferType == "PLEX" -> true
+                    action == "PRIORITY_PUTIO_SYNC" -> true
+                    // Must have a UUID to locate the book
+                    transfer.calibreBookUuid == null -> true
+                    action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                    action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
+                    else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
+                }
+                if (verified) {
+                    calibreTransferDao.updateTransfer(
+                        transfer.copy(libraryVerified = true, lastUpdatedAt = System.currentTimeMillis())
+                    )
+                }
+            }
+        }
+    }
+
+    private fun checkBookUuidExists(db: android.database.sqlite.SQLiteDatabase, uuid: String): Boolean {
+        return db.rawQuery("SELECT 1 FROM books WHERE uuid = ?", arrayOf(uuid)).use { it.moveToFirst() }
+    }
+
+    private fun checkCoverVerified(db: android.database.sqlite.SQLiteDatabase, uuid: String): Boolean {
+        return db.rawQuery("SELECT has_cover FROM books WHERE uuid = ?", arrayOf(uuid)).use { cursor ->
+            cursor.moveToFirst() && cursor.getInt(0) != 0
+        }
+    }
+
+    private fun checkFormatsVerified(
+        db: android.database.sqlite.SQLiteDatabase,
+        uuid: String,
+        batchDataJson: String?,
+    ): Boolean {
+        val bookId = db.rawQuery("SELECT id FROM books WHERE uuid = ?", arrayOf(uuid)).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0) else return false
+        }
+        val libraryFormats = db.rawQuery("SELECT format FROM data WHERE book = ?", arrayOf(bookId.toString())).use { cursor ->
+            buildSet { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+        val expectedFormats = expectedFormats(batchDataJson)
+        return libraryFormats.containsAll(expectedFormats)
+    }
+
+    private fun expectedFormats(batchDataJson: String?): Set<String> {
+        val items = batchDataJson?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
+        } ?: return emptySet()
+        return items.flatMap { item ->
+            when (item.type) {
+                "PACK" -> listOf("M4B")
+                // Archives can produce any set of formats; just verify the book exists
+                "ARCHIVE", "ARCHIVE_ENTRY" -> emptyList()
+                else -> {
+                    val ext = item.fileName.substringAfterLast('.', "").uppercase()
+                    // Daemon converts PRC/MOBI to EPUB
+                    when {
+                        ext == "PRC" || ext == "MOBI" -> listOf("EPUB")
+                        ext.isNotEmpty() && ext.length <= 5 && !ext.contains(' ') -> listOf(ext)
+                        else -> emptyList()
+                    }
+                }
+            }
+        }.toSet()
     }
 
     private fun getBookTags(db: android.database.sqlite.SQLiteDatabase, bookId: Long): String {

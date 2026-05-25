@@ -220,6 +220,9 @@ class CalibreTransfersViewModel @Inject constructor(
                     calibreRepository.sendGlobalStatusProbe(account)
                     val dbFile = File(context.filesDir, "metadata.db")
                     val result = calibreRepository.syncMetadataDb(account, dbFile)
+                    if (result is NetworkResult.Success) {
+                        calibreRepository.verifyCompletedTransfers(dbFile)
+                    }
                     calibreRepository.pollHeartbeat(account)
 
                     _snackbarMessage.value = when (result) {

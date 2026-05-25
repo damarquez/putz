@@ -88,23 +88,24 @@ fun CalibreTransferItem(
     }
 
     val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
-    val containerColor = if (isCompleted) {
-        if (isDark) {
+    val isVerified = isCompleted && transfer.libraryVerified
+    val containerColor = when {
+        isVerified -> if (isDark)
             com.damarquez.putz.ui.theme.SuccessGreenContainerDark.copy(alpha = 0.6f)
-        } else {
+        else
             com.damarquez.putz.ui.theme.SuccessGreenContainer.copy(alpha = 0.8f)
-        }
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        isCompleted -> if (isDark)
+            com.damarquez.putz.ui.theme.PendingVerifyContainerDark.copy(alpha = 0.6f)
+        else
+            com.damarquez.putz.ui.theme.PendingVerifyContainer.copy(alpha = 0.8f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
-    val contentColor = if (isCompleted) {
-        if (isDark) {
-            com.damarquez.putz.ui.theme.SuccessGreenDark
-        } else {
-            com.damarquez.putz.ui.theme.SuccessGreen
-        }
-    } else {
-        MaterialTheme.colorScheme.primary
+    val contentColor = when {
+        isVerified -> if (isDark) com.damarquez.putz.ui.theme.SuccessGreenDark
+            else com.damarquez.putz.ui.theme.SuccessGreen
+        isCompleted -> if (isDark) com.damarquez.putz.ui.theme.PendingVerifyAmberDark
+            else com.damarquez.putz.ui.theme.PendingVerifyAmber
+        else -> MaterialTheme.colorScheme.primary
     }
 
     Box {

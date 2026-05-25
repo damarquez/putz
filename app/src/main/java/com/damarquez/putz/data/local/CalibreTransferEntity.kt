@@ -46,6 +46,10 @@ data class CalibreTransferEntity(
 
     /** "CALIBRE" or "PLEX". Used to route dispatch and display logic. */
     val transferType: String = "CALIBRE",
+
+    /** True once the book has been confirmed present in the synced Calibre library.
+     *  COMPLETED transfers show yellow until this is set; then they turn green. */
+    val libraryVerified: Boolean = false,
     ) {
 
     fun parsedFileIds(): List<Long> = 
