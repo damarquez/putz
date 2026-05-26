@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.damarquez.putz.data.archive.LocalArchiveStream
+import com.damarquez.putz.data.archive.MirrorArchiveStream
 import com.damarquez.putz.data.archive.PutioArchiveStream
 import com.damarquez.putz.data.model.ArchiveDestination
 import com.damarquez.putz.data.model.ArchiveEntry
@@ -24,7 +25,6 @@ import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.SevenZipNativeInitializationException
 import com.damarquez.putz.data.model.NetworkResult
-import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -42,7 +42,6 @@ class ArchiveRepository @Inject constructor(
     private val lanFilesRepository: LanFilesRepository,
     private val filesRepository: FilesRepository,
     private val settingsRepository: SettingsRepository,
-    private val lanDaemonTransport: LanDaemonTransport,
     private val okHttpClient: OkHttpClient,
 ) {
     private val initialized: Boolean by lazy {
@@ -228,16 +227,18 @@ class ArchiveRepository @Inject constructor(
         }
         is ArchiveSource.Lan -> lanFilesRepository.openArchiveStream(source.connectionId, source.path)
         is ArchiveSource.Putio -> PutioArchiveStream(source.downloadUrl, source.fileSize, okHttpClient)
-        // CONTRACT: stub convention — download full file from mirror to cache, then open as local stream
+        // CONTRACT: stub convention — stream from LAN mirror via HTTP range requests (no full download)
         is ArchiveSource.Mirror -> {
-            val cacheDir = java.io.File(context.cacheDir, "mirror_archives").also { it.mkdirs() }
-            val cacheFile = java.io.File(cacheDir, "mirror_${source.putioFileId}")
-            if (!cacheFile.exists()) {
-                val err = lanDaemonTransport.downloadMirrorFile(source.putioFileId, cacheFile, source.localPath)
-                if (err != null) throw IOException("Mirror file unavailable: $err")
-            }
-            val pfd = android.os.ParcelFileDescriptor.open(cacheFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
-            LocalArchiveStream(pfd)
+            val host = settingsRepository.lanHostFlow.first().trim()
+            val port = settingsRepository.lanPortFlow.first()
+            val apiKey = settingsRepository.lanApiKeyFlow.first()
+            val base = "http://$host:$port/api/mirror/file/${source.putioFileId}"
+            val url = if (source.localPath != null)
+                "$base?local_path=${java.net.URLEncoder.encode(source.localPath, "UTF-8")}"
+            else base
+            val fileSize = MirrorArchiveStream.resolveFileSize(url, apiKey, okHttpClient)
+            if (fileSize <= 0L) throw IOException("Mirror file unavailable or empty: $url")
+            MirrorArchiveStream(url, fileSize, apiKey, okHttpClient)
         }
     }
 
