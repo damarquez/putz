@@ -30,4 +30,6 @@ object AppSettingsKeys {
     val LAN_HOST = stringPreferencesKey("lan_host")
     val LAN_PORT = intPreferencesKey("lan_port")
     val LAN_API_KEY = stringPreferencesKey("lan_api_key")
+    // Stable per-installation ID so the daemon can route responses back to the right device
+    val APP_ID = stringPreferencesKey("app_id")
 }

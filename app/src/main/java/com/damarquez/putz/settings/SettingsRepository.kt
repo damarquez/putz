@@ -8,7 +8,9 @@ import com.damarquez.putz.ui.theme.AppCategory
 import com.damarquez.putz.ui.theme.AppMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -183,5 +185,13 @@ class SettingsRepository @Inject constructor(
             if (key.isBlank()) prefs.remove(AppSettingsKeys.LAN_API_KEY)
             else prefs[AppSettingsKeys.LAN_API_KEY] = key.trim()
         }
+    }
+
+    suspend fun getOrCreateAppId(): String {
+        val existing = dataStore.data.map { it[AppSettingsKeys.APP_ID] }.first()
+        if (!existing.isNullOrBlank()) return existing
+        val newId = UUID.randomUUID().toString()
+        dataStore.edit { it[AppSettingsKeys.APP_ID] = newId }
+        return newId
     }
 }

@@ -57,6 +57,7 @@ data class CalibreBatchRequest(
     val calibre_book_uuid: String? = null, // For targeting existing book
     val comments: String? = null, // For UPDATE_COMMENTS
     val tags: String? = null, // For UPDATE_COMMENTS
+    val app_id: String? = null, // Device ID — daemon echoes back so each device only reads its own responses
 )
 
 // CONTRACT: ADD_BOOK_BATCH
@@ -79,6 +80,7 @@ data class CalibreResponse(
     val daemon_status: String? = null, // "IDLE" or "WORKING"
     val calibre_book_uuid: String? = null,
     val warnings: List<String>? = null,
+    val app_id: String? = null, // Echoed from request; used to route responses to the correct device
 )
 
 data class CalibreBookMatch(
@@ -121,6 +123,7 @@ data class PlexTransferRequest(
     val dest_path: String,
     val items: List<PlexAssemblyItem>,
     val create_folder: Boolean = true,
+    val app_id: String? = null,
 )
 
 // CONTRACT: ADD_SUBTITLE_TO_MOVIE
@@ -131,6 +134,7 @@ data class PlexAddSubtitleRequest(
     val language: String,
     val movie_folder_path: String,
     val movie_file_name: String,
+    val app_id: String? = null,
 )
 
 // CONTRACT: PRIORITY_PUTIO_SYNC
@@ -138,6 +142,7 @@ data class PlexAddSubtitleRequest(
 data class PrioritySyncRequest(
     val action: String = "PRIORITY_PUTIO_SYNC",
     val putio_file_id: Long,
+    val app_id: String? = null,
 )
 
 // CONTRACT: FUSE_BOOKS
@@ -169,6 +174,13 @@ data class FuseBooksRequest(
     val cover_source_book_id: Long?,
     val metadata: FuseMetadata,
     val formats: List<FuseFormatEntry>,
+    val app_id: String? = null,
+)
+
+@Serializable
+data class GlobalStatusProbeRequest(
+    val action: String = "GLOBAL_STATUS_PROBE",
+    val app_id: String? = null,
 )
 
 @Singleton
@@ -221,7 +233,8 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String? = null,
     ) {
         // We use a fake putio_file_id for comments update as it doesn't involve a file
-        val putioFileId = System.currentTimeMillis() 
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             action = "UPDATE_COMMENTS",
             putio_file_id = putioFileId,
@@ -232,6 +245,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid,
             comments = comments,
             tags = tags,
+            app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_comments_$putioFileId.json", jsonStr)
@@ -258,14 +272,16 @@ class CalibreRepository @Inject constructor(
 
     // CONTRACT: PRIORITY_PUTIO_SYNC
     suspend fun sendPrioritySyncRequest(file: PutioFile, googleAccount: String): Boolean {
-        val request = PrioritySyncRequest(putio_file_id = file.id)
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = PrioritySyncRequest(putio_file_id = file.id, app_id = appId)
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_priority_${file.id}.json", jsonStr)
         return gDriveId != null
     }
 
     suspend fun sendGlobalStatusProbe(googleAccount: String): Boolean {
-        val request = mapOf("action" to "GLOBAL_STATUS_PROBE")
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = GlobalStatusProbeRequest(app_id = appId)
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_global_status.json", jsonStr)
         return gDriveId != null
@@ -328,12 +344,14 @@ class CalibreRepository @Inject constructor(
         if (assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null)) return
 
         // Immediately try to upload request
+        val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             putio_file_id = putioFileId,
             title = title,
             author = author,
             items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$putioFileId.json", jsonStr)
@@ -357,21 +375,23 @@ class CalibreRepository @Inject constructor(
 
     suspend fun updateTransferAfterUpload(fileId: Long, newPutioFileId: Long, downloadUrl: String, googleAccount: String) {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return
-        
+
         // Update batch data with new ID and URL
         val items = transfer.batchData?.let {
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: emptyList()
-        
+
         val updatedItems = items.map { it.copy(putio_file_id = newPutioFileId, download_url = downloadUrl) }
         val updatedBatchData = json.encodeToString(updatedItems)
 
+        val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             putio_file_id = newPutioFileId,
             title = transfer.title,
             author = transfer.author,
             items = updatedItems,
-            calibre_book_uuid = transfer.calibreBookUuid
+            calibre_book_uuid = transfer.calibreBookUuid,
+            app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPutioFileId.json", jsonStr)
@@ -430,12 +450,14 @@ class CalibreRepository @Inject constructor(
 
         if (assembleBook || isUploading || audioFiles.any { it.download_url == null && it.smb_path == null && it.use_local != true }) return
 
+        val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             putio_file_id = primaryFileId,
             title = title,
             author = author,
             items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$primaryFileId.json", jsonStr)
@@ -468,12 +490,14 @@ class CalibreRepository @Inject constructor(
             files = audioFiles
         ))
 
+        val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             putio_file_id = newPrimaryId,
             title = transfer.title,
             author = transfer.author,
             items = items,
-            calibre_book_uuid = transfer.calibreBookUuid
+            calibre_book_uuid = transfer.calibreBookUuid,
+            app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPrimaryId.json", jsonStr)
@@ -565,10 +589,13 @@ class CalibreRepository @Inject constructor(
     }
 
     suspend fun pollResponses(googleAccount: String) {
+        val myAppId = settingsRepository.getOrCreateAppId()
         val envelopes = daemonTransport.pollResponses(googleAccount)
         envelopes.forEach { envelope ->
             try {
                 val response = json.decodeFromString<CalibreResponse>(envelope.content)
+                // Skip responses addressed to a different device; leave them on Drive
+                if (response.app_id != null && response.app_id != myAppId) return@forEach
 
                 if (response.action == "GLOBAL_STATUS_PROBE") {
                     _daemonStatus.value = response.daemon_status
@@ -661,7 +688,8 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
         if (assembleMode) return
 
-        val request = plexRequestFromBatchData(batchData, file.id)
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = plexRequestFromBatchData(batchData, file.id, appId)
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_plex_${file.id}.json", jsonStr)
         withContext(NonCancellable) {
@@ -706,11 +734,13 @@ class CalibreRepository @Inject constructor(
         movieFileName: String,
         googleAccount: String,
     ) {
+        val appId = settingsRepository.getOrCreateAppId()
         val request = PlexAddSubtitleRequest(
             putio_file_id = subtitle.id,
             language = language,
             movie_folder_path = movieFolderPath,
             movie_file_name = movieFileName,
+            app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_subtitle_${subtitle.id}.json", jsonStr)
@@ -731,23 +761,25 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
-    private fun plexRequestFromBatchData(batchData: PlexBatchData, anchorFileId: Long) = PlexTransferRequest(
+    private fun plexRequestFromBatchData(batchData: PlexBatchData, anchorFileId: Long, appId: String? = null) = PlexTransferRequest(
         putio_file_id = anchorFileId,
         movie_title = batchData.movie_title,
         year = batchData.year,
         dest_path = batchData.dest_path,
         items = batchData.items,
         create_folder = batchData.create_folder,
+        app_id = appId,
     )
 
     private suspend fun retryPlexTransfer(transfer: CalibreTransferEntity, googleAccount: String): NetworkResult<Unit> {
+        val appId = settingsRepository.getOrCreateAppId()
         val payload = transfer.lastRequestPayload ?: run {
             val batchData = transfer.batchData?.let {
                 try { json.decodeFromString<PlexBatchData>(it) } catch (e: Exception) {
                     return NetworkResult.Error("Could not parse Plex assembly data")
                 }
             } ?: return NetworkResult.Error("No batch data for Plex transfer")
-            json.encodeToString(plexRequestFromBatchData(batchData, transfer.putioFileId))
+            json.encodeToString(plexRequestFromBatchData(batchData, transfer.putioFileId, appId))
         }
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_plex_${transfer.putioFileId}.json", payload)
         return if (gDriveId != null) {
@@ -771,7 +803,8 @@ class CalibreRepository @Inject constructor(
         displayTitle: String,
         googleAccount: String,
     ) {
-        val jsonStr = json.encodeToString(request)
+        val appId = settingsRepository.getOrCreateAppId()
+        val jsonStr = json.encodeToString(request.copy(app_id = appId))
         val gDriveId = daemonTransport.submitRequest(
             googleAccount,
             "req_fuse_${request.putio_file_id}.json",
@@ -992,6 +1025,7 @@ class CalibreRepository @Inject constructor(
             fileName = fileName,
             download_url = downloadUrl,
         )
+        val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             action = "REPLACE_COVER",
             putio_file_id = putioFileId,
@@ -999,7 +1033,8 @@ class CalibreRepository @Inject constructor(
             author = author,
             items = listOf(item),
             calibre_book_id = calibreBookId,
-            calibre_book_uuid = calibreBookUuid
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_cover_$putioFileId.json", jsonStr)
@@ -1064,6 +1099,7 @@ class CalibreRepository @Inject constructor(
             try { json.decodeFromString<CalibreBatchRequest>(it) } catch (e: Exception) { null }
         }
 
+        val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             action = originalRequest?.action ?: "ADD_BOOK_BATCH",
             putio_file_id = transfer.putioFileId,
@@ -1072,7 +1108,8 @@ class CalibreRepository @Inject constructor(
             items = items,
             is_probe = true,
             calibre_book_id = originalRequest?.calibre_book_id,
-            calibre_book_uuid = transfer.calibreBookUuid
+            calibre_book_uuid = transfer.calibreBookUuid,
+            app_id = appId,
         )
 
         val jsonStr = json.encodeToString(request)
