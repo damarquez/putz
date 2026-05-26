@@ -90,6 +90,10 @@ class ArchiveViewModel @Inject constructor(
     private val lanConnectionId: Long = savedStateHandle[Screen.Archive.ARG_LAN_CONNECTION_ID] ?: -1L
     private val lanPath: String? = savedStateHandle[Screen.Archive.ARG_LAN_PATH]
     private val putioFileId: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_FILE_ID] ?: -1L
+    // CONTRACT: stub convention — actual put.io ID of the stub (differs from putioFileId for synced files)
+    // -1L is the nav defaultValue, meaning the arg was absent → fall back to putioFileId
+    private val putioStubFileId: Long = (savedStateHandle[Screen.Archive.ARG_PUTIO_STUB_FILE_ID] ?: -1L)
+        .takeIf { it != -1L } ?: putioFileId
     private val putioDownloadUrl: String? = savedStateHandle[Screen.Archive.ARG_PUTIO_DOWNLOAD_URL]
     private val putioFileSize: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_FILE_SIZE] ?: 0L
     val putioParentFolderId: Long = savedStateHandle[Screen.Archive.ARG_PUTIO_PARENT_FOLDER_ID] ?: 0L
@@ -98,9 +102,13 @@ class ArchiveViewModel @Inject constructor(
     val source: ArchiveSource = when {
         localUri != null -> ArchiveSource.Local(localUri)
         lanConnectionId != -1L && lanPath != null -> ArchiveSource.Lan(lanConnectionId, lanPath)
+        putioFileId != -1L && putioIsSynced -> ArchiveSource.Mirror(putioFileId, null)
         putioFileId != -1L && putioDownloadUrl != null -> ArchiveSource.Putio(putioFileId, putioDownloadUrl, putioFileSize)
         else -> error("ArchiveViewModel: no valid source in saved state")
     }
+
+    // CONTRACT: stub convention — Mirror.localPath resolved from stub JSON before first use; equals source for all other types
+    private var resolvedSource: ArchiveSource = source
 
     val isPutio: Boolean get() = source is ArchiveSource.Putio
 
@@ -132,7 +140,11 @@ class ArchiveViewModel @Inject constructor(
     private fun load() {
         viewModelScope.launch {
             _uiState.value = ArchiveUiState.Loading
-            runCatching { archiveRepository.listEntries(source) }
+            if (source is ArchiveSource.Mirror) {
+                val localPath = calibreRepository.readStubLocalPathById(putioStubFileId)
+                resolvedSource = (source as ArchiveSource.Mirror).copy(localPath = localPath)
+            }
+            runCatching { archiveRepository.listEntries(resolvedSource) }
                 .onSuccess { entries ->
                     _uiState.value = ArchiveUiState.Success(
                         allEntries = entries,
@@ -187,7 +199,7 @@ class ArchiveViewModel @Inject constructor(
     fun extract(destination: ArchiveDestination) {
         val s = _uiState.value as? ArchiveUiState.Success ?: return
         val toExtract = if (s.selectedEntries.isEmpty()) s.visibleEntries else s.selectedEntries.toList()
-        archiveRepository.extractEntries(source, toExtract, destination, s.currentDir)
+        archiveRepository.extractEntries(resolvedSource, toExtract, destination, s.currentDir)
             .onEach { progress ->
                 _uiState.value = s.copy(
                     extractionProgress = progress,
@@ -405,7 +417,7 @@ class ArchiveViewModel @Inject constructor(
                     isUploading = true,
                 )
 
-                tempFile = archiveRepository.extractEntryToTempFile(source, entry, context.cacheDir)
+                tempFile = archiveRepository.extractEntryToTempFile(resolvedSource, entry, context.cacheDir)
 
                 _calibreSendStatus.value = CalibreSendStatus.Working("Uploading…")
 
@@ -514,16 +526,23 @@ class ArchiveViewModel @Inject constructor(
         try {
             _calibreSendStatus.value = CalibreSendStatus.Working("Sending to Calibre…")
 
-            val (fileId, smbPath, useLocal) = when (source) {
+            // CONTRACT: stub convention — for synced put.io archives, putioFileId is the original file ID
+            // and putioStubFileId is the actual put.io ID of the stub (read local_path from stub content)
+            data class ResolvedSource(val fileId: Long, val smbPath: String?, val useLocal: Boolean, val localPath: String?)
+            val resolved = when (source) {
                 is ArchiveSource.Lan -> {
                     val conn = lanFilesRepository.getConnectionById(source.connectionId)
                         ?: throw java.io.IOException("LAN connection not found")
                     val uncPath = buildUncPath(conn.host, conn.shareName, source.path)
-                    Triple(System.currentTimeMillis(), uncPath, false)
+                    ResolvedSource(System.currentTimeMillis(), uncPath, false, null)
                 }
-                is ArchiveSource.Putio -> Triple(source.fileId, null, true)
+                is ArchiveSource.Putio -> {
+                    val localPath = if (putioIsSynced) calibreRepository.readStubLocalPathById(putioStubFileId) else null
+                    ResolvedSource(putioFileId, null, true, localPath)
+                }
                 else -> throw IllegalStateException("Unexpected source for daemon path")
             }
+            val (fileId, smbPath, useLocal, localPath) = resolved
 
             if (assemblyFileId != null) {
                 val newItem = CalibreBatchItem(
@@ -531,6 +550,7 @@ class ArchiveViewModel @Inject constructor(
                     putio_file_id = fileId,
                     fileName = entry.name,
                     use_local = if (useLocal) true else null,
+                    local_path = localPath,
                     smb_path = smbPath,
                     archive_entry = entry.path,
                 )
@@ -556,6 +576,7 @@ class ArchiveViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     archiveEntry = entry.path,
+                    localPath = localPath,
                 )
                 _snackbarMessage.value = "Transfer requested for $title"
             }

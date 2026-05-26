@@ -554,6 +554,23 @@ class PutioApiClient @Inject constructor(
         }
     }
 
+    // CONTRACT: stub convention — read tiny stub JSON to get local_path
+    fun downloadFileAsString(token: String, fileId: Long): NetworkResult<String> {
+        return try {
+            val request = Request.Builder()
+                .url("$BASE_URL/files/$fileId/download")
+                .header("Authorization", "Bearer $token")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return NetworkResult.Error("Empty response", response.code)
+                if (!response.isSuccessful) return NetworkResult.Error("HTTP ${response.code}", response.code)
+                NetworkResult.Success(body)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(e.message ?: "Unknown error")
+        }
+    }
+
     fun renameFile(token: String, fileId: Long, newName: String): NetworkResult<Unit> {
         return try {
             val body = FormBody.Builder()

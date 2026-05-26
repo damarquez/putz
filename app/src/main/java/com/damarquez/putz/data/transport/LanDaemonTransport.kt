@@ -182,27 +182,34 @@ class LanDaemonTransport @Inject constructor(
             }.getOrDefault(false)
         }
 
-    /** Stream a file from the local put.io mirror by its put.io file ID. */
-    suspend fun downloadMirrorFile(putioFileId: Long, destination: File): Boolean =
+    /** Stream a file from the local put.io mirror by its put.io file ID.
+     *  For new-format stubs, pass [localPath] (from stub JSON) so the daemon can locate the file
+     *  directly without a legacy index lookup.
+     *  Returns null on success, or a human-readable error string on failure. */
+    suspend fun downloadMirrorFile(putioFileId: Long, destination: File, localPath: String? = null): String? =
         withContext(Dispatchers.IO) {
+            val base = "${baseUrl()}/mirror/file/$putioFileId"
+            val url = if (localPath != null) "$base?local_path=${java.net.URLEncoder.encode(localPath, "UTF-8")}" else base
             val request = Request.Builder()
-                .url("${baseUrl()}/mirror/file/$putioFileId")
+                .url(url)
                 .header("X-Sidekick-Key", apiKey())
                 .get()
                 .build()
             runCatching {
                 okHttpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        android.util.Log.w("LanDaemonTransport", "downloadMirrorFile($putioFileId) failed: HTTP ${response.code}")
-                        return@use false
+                        val msg = "HTTP ${response.code} — $url"
+                        android.util.Log.w("LanDaemonTransport", "downloadMirrorFile($putioFileId) failed: $msg")
+                        return@use msg
                     }
-                    val body = response.body ?: return@use false
+                    val body = response.body ?: return@use "empty response — $url"
                     destination.outputStream().use { out -> body.byteStream().copyTo(out) }
-                    true
+                    null
                 }
             }.getOrElse { e ->
-                android.util.Log.w("LanDaemonTransport", "downloadMirrorFile($putioFileId) exception: $e")
-                false
+                val msg = "${e.message} — $url"
+                android.util.Log.w("LanDaemonTransport", "downloadMirrorFile($putioFileId) exception: $msg")
+                msg
             }
         }
 

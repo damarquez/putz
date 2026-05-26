@@ -41,6 +41,7 @@ data class CalibreBatchItem(
     val files: List<AudiobookFile>? = null, // For PACK
     val archiveMode: String? = null, // For ARCHIVE
     val use_local: Boolean? = null,  // When true the daemon uses the local synced copy; no download needed
+    val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
     val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
     val archive_entry: String? = null, // For ARCHIVE_ENTRY: path of the entry within the archive file
 )
@@ -68,6 +69,7 @@ data class AudiobookFile(
     val download_url: String? = null,
     val smb_path: String? = null,
     val use_local: Boolean? = null,
+    val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
 )
 
 // CONTRACT: response schema, GLOBAL_STATUS_PROBE
@@ -93,10 +95,12 @@ data class CalibreBookMatch(
 // CONTRACT: SEND_TO_PLEX
 @Serializable
 data class PlexAssemblyItem(
-    val putio_file_id: Long,
+    val putio_file_id: Long,     // CONTRACT: stub convention — original file ID (from stub filename for synced files)
     val fileName: String,
     val item_type: String = "MOVIE", // "MOVIE" or "SUBTITLE"
     val language: String? = null,
+    val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
+    val stub_putio_id: Long? = null, // CONTRACT: stub convention — actual put.io ID of the stub (for daemon to delete after processing)
 )
 
 @Serializable
@@ -130,10 +134,12 @@ data class PlexTransferRequest(
 @Serializable
 data class PlexAddSubtitleRequest(
     val action: String = "ADD_SUBTITLE_TO_MOVIE",
-    val putio_file_id: Long,
+    val putio_file_id: Long,         // CONTRACT: stub convention — original file ID (from stub filename for synced files)
     val language: String,
     val movie_folder_path: String,
     val movie_file_name: String,
+    val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
+    val stub_putio_id: Long? = null, // CONTRACT: stub convention — actual put.io ID of the stub (for daemon to delete after processing)
     val app_id: String? = null,
 )
 
@@ -304,6 +310,7 @@ class CalibreRepository @Inject constructor(
         useLocal: Boolean = false,
         smbPath: String? = null,
         archiveEntry: String? = null,
+        localPath: String? = null,   // CONTRACT: stub convention — relative path within the local mirror repo
     ) {
         val initialItem = CalibreBatchItem(
             type = when {
@@ -316,6 +323,7 @@ class CalibreRepository @Inject constructor(
             download_url = downloadUrl,
             archiveMode = archiveMode,
             use_local = if (useLocal) true else null,
+            local_path = localPath,
             smb_path = smbPath,
             archive_entry = archiveEntry,
         )
@@ -669,19 +677,28 @@ class CalibreRepository @Inject constructor(
         createFolder: Boolean = true,
     ) {
         val displayName = file.displayName
-        val movieItem = PlexAssemblyItem(putio_file_id = file.id, fileName = displayName, item_type = "MOVIE")
+        // CONTRACT: stub convention — use original file ID + local_path for synced files
+        val localPath = readStubLocalPath(file)
+        val movieItem = PlexAssemblyItem(
+            putio_file_id = file.syncedFileId,
+            fileName = displayName,
+            item_type = "MOVIE",
+            local_path = localPath,
+            stub_putio_id = if (file.isSynced) file.id else null,
+        )
         val batchData = PlexBatchData(movie_title = movieTitle, year = year, dest_path = destPath, items = listOf(movieItem), create_folder = createFolder)
         val folderLabel = if (year.isNotBlank()) "$movieTitle ($year)" else movieTitle
+        val anchorId = file.syncedFileId
 
         val transfer = CalibreTransferEntity(
-            putioFileId = file.id,
+            putioFileId = anchorId,
             fileName = displayName,
             title = folderLabel,
             author = destPath.ifBlank { "Plex root" },
             status = if (assembleMode) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = file.id.toString(),
+            allPutioFileIds = anchorId.toString(),
             transferType = "PLEX",
             batchData = json.encodeToString(batchData),
         )
@@ -689,9 +706,9 @@ class CalibreRepository @Inject constructor(
         if (assembleMode) return
 
         val appId = settingsRepository.getOrCreateAppId()
-        val request = plexRequestFromBatchData(batchData, file.id, appId)
+        val request = plexRequestFromBatchData(batchData, anchorId, appId)
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_plex_${file.id}.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_plex_$anchorId.json", jsonStr)
         withContext(NonCancellable) {
             calibreTransferDao.updateTransfer(transfer.copy(
                 status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
@@ -716,9 +733,18 @@ class CalibreRepository @Inject constructor(
         val existingLanguages = batchData.items.filter { it.item_type == "SUBTITLE" }.mapNotNull { it.language }.toSet()
         if (language in existingLanguages) return "This language is already in the assembly"
 
-        val newItem = PlexAssemblyItem(putio_file_id = subtitle.id, fileName = subtitle.displayName, item_type = "SUBTITLE", language = language)
+        // CONTRACT: stub convention — use original file ID + local_path for synced subtitles
+        val localPath = readStubLocalPath(subtitle)
+        val newItem = PlexAssemblyItem(
+            putio_file_id = subtitle.syncedFileId,
+            fileName = subtitle.displayName,
+            item_type = "SUBTITLE",
+            language = language,
+            local_path = localPath,
+            stub_putio_id = if (subtitle.isSynced) subtitle.id else null,
+        )
         val updated = batchData.copy(items = batchData.items + newItem)
-        val updatedIds = (transfer.parsedFileIds() + subtitle.id).distinct()
+        val updatedIds = (transfer.parsedFileIds() + subtitle.syncedFileId).distinct()
         calibreTransferDao.updateTransfer(transfer.copy(
             batchData = json.encodeToString(updated),
             allPutioFileIds = updatedIds.joinToString(","),
@@ -734,25 +760,30 @@ class CalibreRepository @Inject constructor(
         movieFileName: String,
         googleAccount: String,
     ) {
+        // CONTRACT: stub convention — use original file ID + local_path for synced subtitles
+        val localPath = readStubLocalPath(subtitle)
+        val anchorId = subtitle.syncedFileId
         val appId = settingsRepository.getOrCreateAppId()
         val request = PlexAddSubtitleRequest(
-            putio_file_id = subtitle.id,
+            putio_file_id = anchorId,
             language = language,
             movie_folder_path = movieFolderPath,
             movie_file_name = movieFileName,
+            local_path = localPath,
+            stub_putio_id = if (subtitle.isSynced) subtitle.id else null,
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_subtitle_${subtitle.id}.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_subtitle_$anchorId.json", jsonStr)
         val transfer = CalibreTransferEntity(
-            putioFileId = subtitle.id,
+            putioFileId = anchorId,
             fileName = subtitle.displayName,
             title = "Add subtitle → ${movieFileName.substringBeforeLast('.')}",
             author = movieFolderPath.ifBlank { "Plex" },
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = subtitle.id.toString(),
+            allPutioFileIds = anchorId.toString(),
             transferType = "PLEX",
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
@@ -958,6 +989,34 @@ class CalibreRepository @Inject constructor(
                     add(cursor.getString(0))
                 }
             }.joinToString(", ")
+        }
+    }
+
+    @Serializable
+    private data class StubContent(val local_path: String? = null)
+
+    // CONTRACT: stub convention — read local_path from stub JSON by file ID; for use when PutioFile is unavailable
+    suspend fun readStubLocalPathById(stubFileId: Long): String? {
+        val token = secureStorage.authTokenFlow.value
+        if (token.isBlank()) return null
+        return withContext(Dispatchers.IO) {
+            val result = putioApiClient.downloadFileAsString(token, stubFileId)
+            (result as? NetworkResult.Success)?.data?.let { body ->
+                try { json.decodeFromString<StubContent>(body).local_path } catch (_: Exception) { null }
+            }
+        }
+    }
+
+    // CONTRACT: stub convention — read local_path from stub JSON; returns null if not synced or on error
+    suspend fun readStubLocalPath(file: com.damarquez.putz.data.model.PutioFile): String? {
+        if (!file.isSynced) return null
+        val token = secureStorage.authTokenFlow.value
+        if (token.isBlank()) return null
+        return withContext(Dispatchers.IO) {
+            val result = putioApiClient.downloadFileAsString(token, file.id)
+            (result as? NetworkResult.Success)?.data?.let { body ->
+                try { json.decodeFromString<StubContent>(body).local_path } catch (_: Exception) { null }
+            }
         }
     }
 
@@ -1203,8 +1262,22 @@ class CalibreRepository @Inject constructor(
 
     suspend fun deleteFileFromPutio(token: String, fileId: Long): NetworkResult<Unit> {
         return withContext(Dispatchers.IO) {
-            val ids = calibreTransferDao.getTransferById(fileId)?.parsedFileIds() ?: listOf(fileId)
-            putioApiClient.deleteFiles(token, ids)
+            val originalIds = calibreTransferDao.getTransferById(fileId)?.parsedFileIds() ?: listOf(fileId)
+            val idsToDelete = mutableListOf<Long>()
+            for (originalId in originalIds) {
+                // CONTRACT: stub convention — new-format stubs have a different put.io ID than the original.
+                // Search for the stub by its filename suffix; if found, delete the stub (not the original).
+                val searchResult = putioApiClient.searchFiles(token, ".sk_synced.$originalId")
+                val stubIds = (searchResult as? NetworkResult.Success)?.data
+                    ?.filter { it.name.substringAfterLast(".sk_synced.", "").toLongOrNull() == originalId }
+                    ?.map { it.id } ?: emptyList()
+                if (stubIds.isNotEmpty()) {
+                    idsToDelete.addAll(stubIds)
+                } else {
+                    idsToDelete.add(originalId)
+                }
+            }
+            putioApiClient.deleteFiles(token, idsToDelete.distinct())
         }
     }
 

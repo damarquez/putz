@@ -188,7 +188,15 @@ class FilesViewModel @Inject constructor(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
-    data class PutioArchiveEvent(val fileId: Long, val fileName: String, val downloadUrl: String, val fileSize: Long, val parentFolderId: Long, val isSynced: Boolean)
+    data class PutioArchiveEvent(
+        val fileId: Long,           // CONTRACT: stub convention — original file ID (syncedFileId) for requests
+        val stubFileId: Long,       // CONTRACT: stub convention — actual put.io ID of the stub (for deletion and content reading)
+        val fileName: String,
+        val downloadUrl: String,
+        val fileSize: Long,
+        val parentFolderId: Long,
+        val isSynced: Boolean,
+    )
     private val _putioArchiveEvent = MutableSharedFlow<PutioArchiveEvent>()
     val putioArchiveEvent: SharedFlow<PutioArchiveEvent> = _putioArchiveEvent.asSharedFlow()
 
@@ -248,9 +256,10 @@ class FilesViewModel @Inject constructor(
                         val targetFile = File(File(context.cacheDir, "previews"), file.displayName)
                         if (!targetFile.exists()) {
                             withContext(Dispatchers.IO) { targetFile.parentFile?.mkdirs() }
-                            val ok = lanDaemonTransport.downloadMirrorFile(file.id, targetFile)
-                            if (!ok) {
-                                _snackbarMessage.value = "Preview failed: mirror file not available on LAN"
+                            val localPath = calibreRepository.readStubLocalPath(file)
+                            val err = lanDaemonTransport.downloadMirrorFile(file.syncedFileId, targetFile, localPath)
+                            if (err != null) {
+                                _snackbarMessage.value = "Preview failed: $err"
                                 return@launch
                             }
                         }
@@ -475,7 +484,10 @@ class FilesViewModel @Inject constructor(
                 val host = settingsRepository.lanHostFlow.first().trim()
                 val port = settingsRepository.lanPortFlow.first()
                 val apiKey = settingsRepository.lanApiKeyFlow.first()
-                val url = "http://$host:$port/api/mirror/file/${file.id}"
+                val localPath = calibreRepository.readStubLocalPath(file)
+                val encodedPath = localPath?.let { java.net.URLEncoder.encode(it, "UTF-8") }
+                val base = "http://$host:$port/api/mirror/file/${file.syncedFileId}"
+                val url = if (encodedPath != null) "$base?local_path=$encodedPath" else base
                 val safeFileName = file.displayName.replace(Regex("[\\[\\]<>|*?\"']"), "_")
                 val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
                     .setTitle(file.displayName)
@@ -668,8 +680,9 @@ class FilesViewModel @Inject constructor(
             
             if (file.isSynced) {
                 // File already in local repository — tell daemon to use local copy directly
+                val localPath = calibreRepository.readStubLocalPath(file)
                 calibreRepository.addTransfer(
-                    putioFileId = file.id,
+                    putioFileId = file.syncedFileId,
                     fileName = file.displayName,
                     title = title,
                     author = author,
@@ -680,6 +693,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     useLocal = true,
+                    localPath = localPath,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
                 return@launch
@@ -849,6 +863,27 @@ class FilesViewModel @Inject constructor(
                 return@launch
             }
 
+            if (files.all { it.isSynced }) {
+                // All files already in local mirror — use local copies directly
+                val audioFiles = buildList {
+                    for (file in files) {
+                        val localPath = calibreRepository.readStubLocalPath(file)
+                        add(file to AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
+                    }
+                }
+                calibreRepository.addAudiobookPackTransfer(
+                    files = audioFiles,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    assembleBook = assembleBook,
+                    customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
+                    calibreBookUuid = calibreBookUuid,
+                )
+                _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
+                return@launch
+            }
+
             val anyLocal = anyDeviceLocal || files.any { it.isLan }
             if (anyLocal) {
                 // Create placeholder — store local URIs so the upload can be restarted if the app is killed
@@ -953,19 +988,21 @@ class FilesViewModel @Inject constructor(
                     val ext = file.displayName.substringAfterLast('.', "")
                     if (ext.isNotEmpty()) file.displayName.substringBeforeLast('.') + "." + ext + "_bkp" else file.displayName
                 } else file.displayName
+                val localPath = calibreRepository.readStubLocalPath(file)
                 val newItem = CalibreBatchItem(
                     type = if (archiveMode != null) "ARCHIVE" else "SINGLE",
-                    putio_file_id = file.id,
+                    putio_file_id = file.syncedFileId,
                     fileName = targetFileName,
                     archiveMode = archiveMode,
                     use_local = true,
+                    local_path = localPath,
                 )
                 val added = calibreRepository.appendToAssembly(
                     assemblyFileId = assemblyFileId,
                     title = title,
                     author = author,
                     newItem = newItem,
-                    newFileIds = listOf(file.id),
+                    newFileIds = listOf(file.syncedFileId),
                 )
                 _snackbarMessage.value = if (added) "File added to assembly: $title"
                     else "\"$targetFileName\" is already in this assembly"
@@ -1046,13 +1083,16 @@ class FilesViewModel @Inject constructor(
 
             if (files.all { it.isSynced }) {
                 // All files already synced locally — use local copies directly
-                val audioFiles = files.map { file ->
-                    AudiobookFile(file.id, file.displayName, use_local = true)
+                val audioFiles = buildList {
+                    for (file in files) {
+                        val localPath = calibreRepository.readStubLocalPath(file)
+                        add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
+                    }
                 }
                 val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
                 val newItem = CalibreBatchItem(
                     type = "PACK",
-                    putio_file_id = files.first().id,
+                    putio_file_id = files.first().syncedFileId,
                     fileName = fileName,
                     files = audioFiles,
                 )
@@ -1061,7 +1101,7 @@ class FilesViewModel @Inject constructor(
                     title = title,
                     author = author,
                     newItem = newItem,
-                    newFileIds = files.map { it.id },
+                    newFileIds = files.map { it.syncedFileId },
                 )
                 _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
                     else "\"$fileName\" is already in this assembly"
@@ -1100,9 +1140,12 @@ class FilesViewModel @Inject constructor(
             // Resolve each file: synced → use_local, LAN → SMB path, local → upload, remote → URL.
             val resolvedAudioFiles = mutableListOf<AudiobookFile>()
             val total = files.size
-            files.forEachIndexed { index, file ->
+            for ((index, file) in files.withIndex()) {
                 when {
-                    file.isSynced -> resolvedAudioFiles.add(AudiobookFile(file.id, file.displayName, use_local = true))
+                    file.isSynced -> {
+                        val localPath = calibreRepository.readStubLocalPath(file)
+                        resolvedAudioFiles.add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
+                    }
                     file.isLan -> {
                         val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
                         if (conn == null || file.lanPath == null) {
@@ -1151,7 +1194,8 @@ class FilesViewModel @Inject constructor(
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val url = filesRepository.getDownloadUrl(token, file.id)
-            _putioArchiveEvent.emit(PutioArchiveEvent(file.id, file.displayName, url, file.size, file.parentId, file.isSynced))
+            // CONTRACT: stub convention — fileId is the original file ID; stubFileId is the actual put.io ID of the stub
+            _putioArchiveEvent.emit(PutioArchiveEvent(file.syncedFileId, file.id, file.displayName, url, file.size, file.parentId, file.isSynced))
         }
     }
 
@@ -1506,6 +1550,13 @@ class FilesViewModel @Inject constructor(
             }
             val token = settingsRepository.authTokenFlow.first()
             val sortedFiles = selectedFiles.sortedBy { it.relativePath }
+            // Pre-read stub content for synced files (network call, can't do inside mapNotNull)
+            val stubPaths = buildMap<Long, String?> {
+                for (folderFile in sortedFiles) {
+                    val f = folderFile.file
+                    if (f.isSynced) put(f.id, calibreRepository.readStubLocalPath(f))
+                }
+            }
             val filePairs = sortedFiles.mapNotNull { folderFile ->
                 val f = folderFile.file
                 val smbPath = if (f.isLan) {
@@ -1518,11 +1569,12 @@ class FilesViewModel @Inject constructor(
                 } else null
 
                 f to AudiobookFile(
-                    putio_file_id = if (f.isLocal || f.isLan) 0L else f.id,
+                    putio_file_id = if (f.isLocal || f.isLan) 0L else f.syncedFileId,
                     fileName = f.displayName,
                     download_url = if (f.isLocal || f.isLan) null else filesRepository.getDownloadUrl(token, f.id),
                     smb_path = smbPath,
-                    use_local = if (f.isLocal || f.isSynced || (!f.isLan && f.id > 0)) true else null
+                    use_local = if (f.isLocal || f.isSynced || (!f.isLan && f.id > 0)) true else null,
+                    local_path = if (f.isSynced) stubPaths[f.id] else null,
                 )
             }
 
@@ -1543,6 +1595,13 @@ class FilesViewModel @Inject constructor(
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val sortedFiles = selectedFiles.sortedBy { it.relativePath }
+            // Pre-read stub content for synced files (network call, can't do inside mapNotNull)
+            val stubPaths = buildMap<Long, String?> {
+                for (folderFile in sortedFiles) {
+                    val f = folderFile.file
+                    if (f.isSynced) put(f.id, calibreRepository.readStubLocalPath(f))
+                }
+            }
             val resolvedAudioFiles = sortedFiles.mapNotNull { folderFile ->
                 val f = folderFile.file
                 val smbPath = if (f.isLan) {
@@ -1555,11 +1614,12 @@ class FilesViewModel @Inject constructor(
                 } else null
 
                 AudiobookFile(
-                    putio_file_id = if (f.isLocal || f.isLan) 0L else f.id,
+                    putio_file_id = if (f.isLocal || f.isLan) 0L else f.syncedFileId,
                     fileName = f.displayName,
                     download_url = if (f.isLocal || f.isLan) null else filesRepository.getDownloadUrl(token, f.id),
                     smb_path = smbPath,
-                    use_local = if (f.isLocal || f.isSynced || (!f.isLan && f.id > 0)) true else null
+                    use_local = if (f.isLocal || f.isSynced || (!f.isLan && f.id > 0)) true else null,
+                    local_path = if (f.isSynced) stubPaths[f.id] else null,
                 )
             }
 

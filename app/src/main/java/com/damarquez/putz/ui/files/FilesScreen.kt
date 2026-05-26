@@ -110,7 +110,7 @@ import androidx.compose.material3.NavigationRailItemDefaults
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?, String?) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
-    onNavigateToPutioArchive: (fileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean) -> Unit,
+    onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -217,7 +217,7 @@ fun FilesScreen(
 
     LaunchedEffect(Unit) {
         viewModel.putioArchiveEvent.collect { event ->
-            onNavigateToPutioArchive(event.fileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId, event.isSynced)
+            onNavigateToPutioArchive(event.fileId, event.stubFileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId, event.isSynced)
         }
     }
 

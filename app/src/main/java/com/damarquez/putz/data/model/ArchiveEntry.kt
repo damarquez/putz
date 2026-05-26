@@ -12,6 +12,9 @@ sealed class ArchiveSource {
     data class Local(val uri: String) : ArchiveSource()
     data class Lan(val connectionId: Long, val path: String) : ArchiveSource()
     data class Putio(val fileId: Long, val downloadUrl: String, val fileSize: Long) : ArchiveSource()
+    // CONTRACT: stub convention — synced put.io file; serve from LAN mirror using the original file ID
+    // localPath is the relative path from the stub JSON, passed to the daemon to avoid an index lookup
+    data class Mirror(val putioFileId: Long, val localPath: String?) : ArchiveSource()
 }
 
 sealed class ArchiveDestination {

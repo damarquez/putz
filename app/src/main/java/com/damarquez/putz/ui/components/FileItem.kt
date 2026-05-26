@@ -163,7 +163,7 @@ fun FileItem(
                         file.isSynced -> Icon(
                             imageVector = Icons.Default.CloudDone,
                             contentDescription = "Synced locally",
-                            tint = MaterialTheme.colorScheme.tertiary,
+                            tint = if (file.isNewFormatStub) Color(0xFF4FC3F7) else MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier
                                 .size(20.dp)
                                 .align(Alignment.BottomEnd)

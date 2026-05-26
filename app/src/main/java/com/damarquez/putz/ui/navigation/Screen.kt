@@ -34,13 +34,14 @@ sealed class Screen(val route: String) {
         const val ARG_TAB = "tab"
     }
 
-    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}&putioIsSynced={putioIsSynced}") {
+    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioStubFileId={putioStubFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}&putioIsSynced={putioIsSynced}") {
         fun createRoute(
             archiveName: String,
             localUri: String? = null,
             lanConnectionId: Long? = null,
             lanPath: String? = null,
             putioFileId: Long? = null,
+            putioStubFileId: Long? = null,  // CONTRACT: stub convention — actual put.io ID of the stub (differs from putioFileId for synced files)
             putioDownloadUrl: String? = null,
             putioFileSize: Long? = null,
             putioParentFolderId: Long? = null,
@@ -52,6 +53,7 @@ sealed class Screen(val route: String) {
             if (lanConnectionId != null) params.add("lanConnectionId=$lanConnectionId")
             if (lanPath != null) params.add("lanPath=${Uri.encode(lanPath)}")
             if (putioFileId != null) params.add("putioFileId=$putioFileId")
+            if (putioStubFileId != null) params.add("putioStubFileId=$putioStubFileId")
             if (putioDownloadUrl != null) params.add("putioDownloadUrl=${Uri.encode(putioDownloadUrl)}")
             if (putioFileSize != null) params.add("putioFileSize=$putioFileSize")
             if (putioParentFolderId != null) params.add("putioParentFolderId=$putioParentFolderId")
@@ -64,6 +66,7 @@ sealed class Screen(val route: String) {
         const val ARG_LAN_CONNECTION_ID = "lanConnectionId"
         const val ARG_LAN_PATH = "lanPath"
         const val ARG_PUTIO_FILE_ID = "putioFileId"
+        const val ARG_PUTIO_STUB_FILE_ID = "putioStubFileId"  // CONTRACT: stub convention — actual put.io ID of the stub
         const val ARG_PUTIO_DOWNLOAD_URL = "putioDownloadUrl"
         const val ARG_PUTIO_FILE_SIZE = "putioFileSize"
         const val ARG_PUTIO_PARENT_FOLDER_ID = "putioParentFolderId"

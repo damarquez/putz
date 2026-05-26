@@ -24,6 +24,7 @@ import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
 import net.sf.sevenzipjbinding.SevenZipNativeInitializationException
 import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -41,6 +42,7 @@ class ArchiveRepository @Inject constructor(
     private val lanFilesRepository: LanFilesRepository,
     private val filesRepository: FilesRepository,
     private val settingsRepository: SettingsRepository,
+    private val lanDaemonTransport: LanDaemonTransport,
     private val okHttpClient: OkHttpClient,
 ) {
     private val initialized: Boolean by lazy {
@@ -226,6 +228,17 @@ class ArchiveRepository @Inject constructor(
         }
         is ArchiveSource.Lan -> lanFilesRepository.openArchiveStream(source.connectionId, source.path)
         is ArchiveSource.Putio -> PutioArchiveStream(source.downloadUrl, source.fileSize, okHttpClient)
+        // CONTRACT: stub convention — download full file from mirror to cache, then open as local stream
+        is ArchiveSource.Mirror -> {
+            val cacheDir = java.io.File(context.cacheDir, "mirror_archives").also { it.mkdirs() }
+            val cacheFile = java.io.File(cacheDir, "mirror_${source.putioFileId}")
+            if (!cacheFile.exists()) {
+                val err = lanDaemonTransport.downloadMirrorFile(source.putioFileId, cacheFile, source.localPath)
+                if (err != null) throw IOException("Mirror file unavailable: $err")
+            }
+            val pfd = android.os.ParcelFileDescriptor.open(cacheFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+            LocalArchiveStream(pfd)
+        }
     }
 
     private fun buildEntryList(inArchive: IInArchive): List<ArchiveEntry> {
