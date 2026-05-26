@@ -268,4 +268,25 @@ class CalibreTransfersViewModel @Inject constructor(
             calibreRepository.removeTransfer(fileId)
         }
     }
+
+    fun clearGreenTransfers(alsoDeleteFromPutio: Boolean) {
+        viewModelScope.launch {
+            val green = transfers.value.filter {
+                it.status == CalibreTransferStatus.COMPLETED && it.libraryVerified
+            }
+            if (green.isEmpty()) return@launch
+            val token = if (alsoDeleteFromPutio) settingsRepository.authTokenFlow.first() else ""
+            green.forEach { transfer ->
+                if (alsoDeleteFromPutio) {
+                    if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
+                        localFilesRepository.detachOrHide(transfer.sourceLocalUri)
+                    } else {
+                        calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
+                    }
+                }
+                calibreRepository.removeTransfer(transfer.putioFileId)
+            }
+            _snackbarMessage.value = "${green.size} transfer${if (green.size == 1) "" else "s"} cleared"
+        }
+    }
 }

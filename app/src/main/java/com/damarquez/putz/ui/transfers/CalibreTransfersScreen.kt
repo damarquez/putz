@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -100,6 +101,11 @@ fun CalibreTransfersScreen(
 
     var transferToDelete by remember { mutableStateOf<CalibreTransferEntity?>(null) }
     var alsoDeleteFromPutio by remember { mutableStateOf(false) }
+    var showClearGreenDialog by remember { mutableStateOf(false) }
+    var clearGreenAlsoDelete by remember { mutableStateOf(false) }
+    val greenTransfers = remember(transfers) {
+        transfers.filter { it.status == CalibreTransferStatus.COMPLETED && it.libraryVerified }
+    }
     
     var clipboardImageUri by remember { mutableStateOf<Uri?>(null) }
     var clipboardComments by remember { mutableStateOf<String?>(null) }
@@ -230,6 +236,35 @@ fun CalibreTransfersScreen(
         )
     }
 
+    if (showClearGreenDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearGreenDialog = false },
+            title = { Text("Clear ${greenTransfers.size} verified transfer${if (greenTransfers.size == 1) "" else "s"}?") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = clearGreenAlsoDelete,
+                        onCheckedChange = { clearGreenAlsoDelete = it },
+                    )
+                    Text("Also delete files from put.io")
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.clearGreenTransfers(clearGreenAlsoDelete)
+                    showClearGreenDialog = false
+                }) {
+                    Text("Clear")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearGreenDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     transferToDelete?.let { transfer ->
         val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
         val isDuplicate = transfer.status == CalibreTransferStatus.FAILED && 
@@ -299,6 +334,15 @@ fun CalibreTransfersScreen(
                     }
                 },
                 actions = {
+                    if (greenTransfers.isNotEmpty()) {
+                        IconButton(onClick = {
+                            clearGreenAlsoDelete = false
+                            showClearGreenDialog = true
+                        }) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = "Clear verified transfers")
+                        }
+                    }
+
                     IconButton(
                         onClick = {
                             val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
