@@ -160,6 +160,30 @@ class TransfersRepository @Inject constructor(
         }
     }
 
+    /** Permanently stores history-resolved names for all matching transfers.
+     *  History names always win — they come from the actual .torrent file.
+     *  Skips if the resolved name is itself the hash (not a real name). */
+    suspend fun applyHistoryNames(resolvedByHash: Map<String, String>): Boolean =
+        withContext(Dispatchers.IO) {
+            var anyUpdated = false
+            for (entity in dao.getAll()) {
+                val hash = entity.infoHash?.lowercase() ?: continue
+                val resolved = resolvedByHash[hash]?.takeIf { it.isNotBlank() } ?: continue
+                if (resolved.lowercase() == hash) continue   // resolved name is just the hash itself
+                if (entity.displayName == resolved) continue
+                dao.upsert(entity.copy(displayName = resolved, nameResolved = true))
+                anyUpdated = true
+            }
+            anyUpdated
+        }
+
+    /** Immediately persists a history-resolved name for a specific transfer by put.io ID. */
+    suspend fun persistNameById(putioId: Long, name: String) = withContext(Dispatchers.IO) {
+        val entity = dao.getById(putioId) ?: return@withContext
+        if (entity.displayName == name) return@withContext
+        dao.upsert(entity.copy(displayName = name, nameResolved = true))
+    }
+
     private suspend fun mergeWithLocal(apiTransfers: List<PutioTransfer>): List<MergedTransfer> {
         return apiTransfers.map { transfer ->
             val local = dao.getById(transfer.id)
@@ -176,7 +200,7 @@ class TransfersRepository @Inject constructor(
                     displayName = displayName,
                     putioName = transfer.name,
                     magnetLink = magnetLink,
-                    infoHash = null,
+                    infoHash = transfer.hash?.lowercase(),
                     addedByApp = false,
                     addedAt = System.currentTimeMillis(),
                     nameResolved = isRealName(transfer.name),
@@ -197,14 +221,17 @@ class TransfersRepository @Inject constructor(
 
                 val updatedDisplayName = if (shouldResolve) transfer.name else local.displayName
                 val updatedMagnetLink = local.magnetLink ?: transfer.source?.takeIf { it.startsWith("magnet:") }
-                
-                if (shouldResolve || local.putioName != transfer.name || local.magnetLink != updatedMagnetLink || 
+                val updatedInfoHash = local.infoHash ?: transfer.hash?.lowercase()
+
+                if (shouldResolve || local.putioName != transfer.name || local.magnetLink != updatedMagnetLink ||
+                    local.infoHash != updatedInfoHash ||
                     local.percentDone != transfer.percentDone || local.size != transfer.size || local.isStopped) {
                     dao.upsert(
                         local.copy(
                             displayName = updatedDisplayName,
                             putioName = transfer.name,
                             magnetLink = updatedMagnetLink,
+                            infoHash = updatedInfoHash,
                             nameResolved = local.nameResolved || shouldResolve,
                             percentDone = transfer.percentDone,
                             size = transfer.size,

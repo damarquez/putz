@@ -136,12 +136,25 @@ class TransfersViewModel @Inject constructor(
             val token = settingsRepository.authTokenFlow.first()
             val result = historyRepository.fetchHistory(token) ?: return@launch
             historyByHash = result.entries.associateBy { it.infoHash.lowercase() }
-            // Re-apply enrichment to current state without re-fetching transfers
-            val current = _uiState.value as? TransfersUiState.Success ?: return@launch
-            val enriched = current.grouped.mapValues { (_, list) ->
-                list.map { it.copy(historyEntry = historyByHash[it.transfer.hash?.lowercase()]) }
+
+            // Persist any resolved names that are not yet in the local DB.
+            // Returns true if anything changed, so we trigger a fresh poll to reload the names.
+            val resolvedNames = result.entries
+                .mapNotNull { e -> e.resolvedName?.takeIf { it.isNotBlank() }?.let { e.infoHash.lowercase() to it } }
+                .toMap()
+            val anyPersisted = transfersRepository.applyHistoryNames(resolvedNames)
+
+            if (anyPersisted) {
+                // Re-poll so the updated displayNames from DB are loaded into state
+                startPolling(immediate = true)
+            } else {
+                // Nothing persisted — just attach history entries to current state for tap-to-detail
+                val current = _uiState.value as? TransfersUiState.Success ?: return@launch
+                val enriched = current.grouped.mapValues { (_, list) ->
+                    list.map { it.copy(historyEntry = historyByHash[it.transfer.hash?.lowercase()]) }
+                }
+                _uiState.value = current.copy(grouped = enriched)
             }
-            _uiState.value = current.copy(grouped = enriched)
         }
     }
 
@@ -277,6 +290,19 @@ class TransfersViewModel @Inject constructor(
 
     fun onNavigationHandled() {
         _navigationEvent.value = null
+    }
+
+    /** Called when the user taps a transfer that has a history entry. If the current display
+     *  name is still a hash, immediately persists the resolved name from history. */
+    fun onTransferTapped(merged: MergedTransfer) {
+        val resolved = merged.historyEntry?.resolvedName?.takeIf { it.isNotBlank() } ?: return
+        val currentName = merged.appDisplayName
+        // Only act if the current name looks like a bare hash (pure hex, likely unresolved)
+        if (!currentName.matches(Regex("[0-9a-fA-F]+"))) return
+        viewModelScope.launch {
+            transfersRepository.persistNameById(merged.transfer.id, resolved)
+            startPolling(immediate = true)
+        }
     }
 
     private fun buildGroupedMap(transfers: List<MergedTransfer>): Map<TransferGroup, List<MergedTransfer>> {

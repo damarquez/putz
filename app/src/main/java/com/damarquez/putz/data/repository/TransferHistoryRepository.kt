@@ -18,14 +18,21 @@ class TransferHistoryRepository @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Survives back-navigation because this class is a singleton.
+    // Returned when a fresh fetch fails so users never see a spurious "not available" error
+    // during the brief window when the daemon is rotating the history file on put.io.
+    private var cache: TransferHistoryJson? = null
+
     // CONTRACT: REGISTER_TRANSFER_HISTORY — fetch the history JSON from put.io by stored file ID
     suspend fun fetchHistory(token: String): TransferHistoryJson? {
-        val fileId = settingsRepository.historyFileIdFlow.first() ?: return null
+        val fileId = settingsRepository.historyFileIdFlow.first() ?: return cache
         return withContext(Dispatchers.IO) {
             val result = putioApiClient.downloadFileAsString(token, fileId)
-            (result as? NetworkResult.Success)?.data?.let { body ->
+            val fresh = (result as? NetworkResult.Success)?.data?.let { body ->
                 try { json.decodeFromString<TransferHistoryJson>(body) } catch (_: Exception) { null }
             }
+            if (fresh != null) cache = fresh
+            fresh ?: cache
         }
     }
 }

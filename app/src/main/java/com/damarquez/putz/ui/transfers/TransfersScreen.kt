@@ -201,7 +201,10 @@ fun TransfersScreen(
                                             viewModel.goToFiles(fileId)
                                         },
                                         onTap = merged.historyEntry?.let { entry ->
-                                            { selectedHistoryEntry = entry }
+                                            {
+                                                selectedHistoryEntry = entry
+                                                viewModel.onTransferTapped(merged)
+                                            }
                                         },
                                     )
                                 }

@@ -85,8 +85,7 @@ fun TransferItem(
     var showMenu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
-    val displayName = merged.historyEntry?.resolvedName?.takeIf { it.isNotBlank() }
-        ?: merged.appDisplayName
+    val displayName = merged.appDisplayName
 
     Column(
         modifier = modifier
