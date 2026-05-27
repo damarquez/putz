@@ -1,15 +1,21 @@
 package com.damarquez.putz.ui.transfers
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,8 +42,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.data.model.HistoryEntryFile
 import com.damarquez.putz.data.model.HistoryFileEntry
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -51,6 +63,8 @@ fun TransferHistoryScreen(
 
     var editingEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
     var editLabelValue by remember { mutableStateOf("") }
+    var selectedEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     if (editingEntry != null) {
         AlertDialog(
@@ -68,7 +82,11 @@ fun TransferHistoryScreen(
                 TextButton(onClick = {
                     val entry = editingEntry ?: return@TextButton
                     if (editLabelValue.isNotBlank()) {
-                        viewModel.updateLabel(entry.infoHash, editLabelValue.trim())
+                        val newLabel = editLabelValue.trim()
+                        viewModel.updateLabel(entry.infoHash, newLabel)
+                        if (selectedEntry?.infoHash == entry.infoHash) {
+                            selectedEntry = selectedEntry?.copy(label = newLabel)
+                        }
                     }
                     editingEntry = null
                 }) { Text("Save") }
@@ -77,6 +95,21 @@ fun TransferHistoryScreen(
                 TextButton(onClick = { editingEntry = null }) { Text("Cancel") }
             },
         )
+    }
+
+    if (selectedEntry != null) {
+        ModalBottomSheet(
+            onDismissRequest = { selectedEntry = null },
+            sheetState = sheetState,
+        ) {
+            HistoryDetailSheet(
+                entry = selectedEntry!!,
+                onEditLabel = {
+                    editLabelValue = selectedEntry!!.label
+                    editingEntry = selectedEntry
+                },
+            )
+        }
     }
 
     Scaffold(
@@ -138,10 +171,7 @@ fun TransferHistoryScreen(
                             items(state.entries, key = { it.infoHash }) { entry ->
                                 HistoryEntryRow(
                                     entry = entry,
-                                    onEditClick = {
-                                        editLabelValue = entry.label
-                                        editingEntry = entry
-                                    },
+                                    onClick = { selectedEntry = entry },
                                 )
                                 HorizontalDivider()
                             }
@@ -156,9 +186,10 @@ fun TransferHistoryScreen(
 @Composable
 private fun HistoryEntryRow(
     entry: HistoryFileEntry,
-    onEditClick: () -> Unit,
+    onClick: () -> Unit,
 ) {
     ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
         headlineContent = {
             Text(
                 text = entry.resolvedName ?: entry.label,
@@ -184,11 +215,182 @@ private fun HistoryEntryRow(
                 }
             }
         },
-        trailingContent = {
-            IconButton(onClick = onEditClick) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit label")
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistoryDetailSheet(
+    entry: HistoryFileEntry,
+    onEditLabel: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.getDefault()) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 32.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+            Text(
+                text = entry.resolvedName ?: entry.label,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            if (entry.resolvedName != null && entry.resolvedName != entry.label) {
+                Text(
+                    text = "Label: ${entry.label}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider()
+
+        ListItem(
+            headlineContent = { Text("Status") },
+            trailingContent = {
+                val color = when (entry.status.uppercase()) {
+                    "COMPLETED" -> MaterialTheme.colorScheme.primary
+                    "ERROR", "FAILED" -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(
+                    text = entry.status.lowercase().replaceFirstChar { it.uppercase() },
+                    color = color,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+        )
+        ListItem(
+            headlineContent = { Text("Added") },
+            trailingContent = {
+                Text(
+                    text = dateFormat.format(Date(entry.addedAt * 1000L)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+        )
+        entry.totalSizeBytes?.let { size ->
+            ListItem(
+                headlineContent = { Text("Size") },
+                trailingContent = {
+                    Text(
+                        text = formatBytes(size),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+            )
+        }
+        entry.putioName
+            ?.takeIf { it != entry.resolvedName && it != entry.label }
+            ?.let { name ->
+                ListItem(
+                    headlineContent = { Text("put.io name") },
+                    trailingContent = {
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                )
+            }
+
+        HorizontalDivider()
+
+        ListItem(
+            headlineContent = { Text("Info hash") },
+            supportingContent = {
+                Text(
+                    text = entry.infoHash,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            trailingContent = {
+                IconButton(onClick = { clipboard.setText(AnnotatedString(entry.infoHash)) }) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy info hash")
+                }
+            },
+        )
+        entry.magnetUri?.let { magnet ->
+            ListItem(
+                headlineContent = { Text("Magnet link") },
+                supportingContent = {
+                    Text(
+                        text = magnet,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                trailingContent = {
+                    IconButton(onClick = { clipboard.setText(AnnotatedString(magnet)) }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy magnet link")
+                    }
+                },
+            )
+        }
+
+        val files = entry.files
+        if (!files.isNullOrEmpty()) {
+            HorizontalDivider()
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = "Files (${files.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                },
+            )
+            files.forEach { file -> FileEntryRow(file) }
+        }
+
+        HorizontalDivider()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+        ) {
+            TextButton(
+                onClick = onEditLabel,
+                modifier = Modifier.align(Alignment.CenterStart),
+            ) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 6.dp),
+                )
+                Text("Edit label")
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileEntryRow(file: HistoryEntryFile) {
+    ListItem(
+        headlineContent = {
+            Text(
+                text = file.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
+        trailingContent = if (file.size > 0) {
+            { Text(formatBytes(file.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else null,
     )
 }
 
