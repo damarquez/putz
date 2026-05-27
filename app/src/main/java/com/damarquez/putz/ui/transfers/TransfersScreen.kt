@@ -49,6 +49,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.HistoryFileEntry
+import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.navigation.Screen
@@ -200,11 +201,10 @@ fun TransfersScreen(
                                         onGoToFiles = { fileId ->
                                             viewModel.goToFiles(fileId)
                                         },
-                                        onTap = merged.historyEntry?.let { entry ->
-                                            {
-                                                selectedHistoryEntry = entry
-                                                viewModel.onTransferTapped(merged)
-                                            }
+                                        onTap = {
+                                            selectedHistoryEntry = merged.historyEntry
+                                                ?: synthesizeHistoryEntry(merged)
+                                            viewModel.onTransferTapped(merged)
                                         },
                                     )
                                 }
@@ -259,6 +259,18 @@ private fun GroupHeader(group: TransferGroup, count: Int) {
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
+private fun synthesizeHistoryEntry(merged: MergedTransfer): HistoryFileEntry =
+    HistoryFileEntry(
+        infoHash = merged.transfer.hash ?: "",
+        label = merged.appDisplayName,
+        status = merged.transfer.status,
+        addedAt = System.currentTimeMillis() / 1000L,
+        magnetUri = merged.magnetLink,
+        putioId = merged.transfer.id,
+        putioName = merged.transfer.name.takeIf { it != merged.appDisplayName },
+        totalSizeBytes = merged.transfer.size.takeIf { it > 0 },
+    )
 
 @Composable
 private fun EmptyTransfersView(modifier: Modifier = Modifier) {
