@@ -7,6 +7,7 @@ import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.data.model.group
 import com.damarquez.putz.data.model.isActive
+import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.TransfersRepository
 import com.damarquez.putz.oauth.PendingMagnetRepository
 import com.damarquez.putz.settings.SettingsRepository
@@ -45,9 +46,13 @@ sealed class TransfersNavigationEvent {
 class TransfersViewModel @Inject constructor(
     private val transfersRepository: TransfersRepository,
     private val filesRepository: com.damarquez.putz.data.repository.FilesRepository,
+    private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
     private val pendingMagnetRepository: PendingMagnetRepository,
 ) : ViewModel() {
+
+    // Tracks last-registered "status:displayName" per transfer ID to avoid redundant daemon calls
+    private val registeredKeys = mutableMapOf<Long, String>()
 
     private val _uiState = MutableStateFlow<TransfersUiState>(TransfersUiState.Loading)
     val uiState: StateFlow<TransfersUiState> = _uiState.asStateFlow()
@@ -99,6 +104,7 @@ class TransfersViewModel @Inject constructor(
                         val transfers = result.data
                         _uiState.value = TransfersUiState.Success(grouped = buildGroupedMap(transfers))
                         val hasActive = transfers.any { it.transfer.isActive() }
+                        registerTransferHistory(transfers, token)
                         delay(if (hasActive) POLL_ACTIVE_MS else POLL_IDLE_MS)
                     }
                     is NetworkResult.Error -> {
@@ -178,7 +184,33 @@ class TransfersViewModel @Inject constructor(
     fun updateDisplayName(id: Long, newName: String) {
         viewModelScope.launch {
             transfersRepository.updateDisplayName(id, newName)
+            // Invalidate cached registration key so the next poll re-registers with the new label
+            registeredKeys.remove(id)
             refresh()
+        }
+    }
+
+    // CONTRACT: REGISTER_TRANSFER_HISTORY — fire-and-forget registration for changed transfers
+    private fun registerTransferHistory(transfers: List<MergedTransfer>, putioToken: String) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) return@launch
+            for (t in transfers) {
+                val hash = t.transfer.hash?.takeIf { it.isNotBlank() } ?: continue
+                val key = "${t.transfer.status}:${t.appDisplayName}"
+                if (registeredKeys[t.transfer.id] == key) continue
+                registeredKeys[t.transfer.id] = key
+                calibreRepository.registerTransferHistory(
+                    putioTransferId = t.transfer.id,
+                    infoHash = hash,
+                    label = t.appDisplayName,
+                    putioName = t.transfer.name,
+                    magnetUri = t.magnetLink,
+                    putioId = t.transfer.id,
+                    status = t.transfer.status,
+                    googleAccount = googleAccount,
+                )
+            }
         }
     }
 

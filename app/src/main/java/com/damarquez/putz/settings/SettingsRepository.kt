@@ -187,6 +187,17 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    val historyFileIdFlow: Flow<Long?> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.TRANSFER_HISTORY_FILE_ID]
+    }
+
+    suspend fun saveHistoryFileId(id: Long?) {
+        dataStore.edit { prefs ->
+            if (id == null) prefs.remove(AppSettingsKeys.TRANSFER_HISTORY_FILE_ID)
+            else prefs[AppSettingsKeys.TRANSFER_HISTORY_FILE_ID] = id
+        }
+    }
+
     suspend fun getOrCreateAppId(): String {
         val existing = dataStore.data.map { it[AppSettingsKeys.APP_ID] }.first()
         if (!existing.isNullOrBlank()) return existing

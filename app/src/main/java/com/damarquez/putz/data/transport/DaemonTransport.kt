@@ -41,4 +41,7 @@ data class ResponseEnvelope(
     enum class Source { DRIVE, LAN }
 }
 
-data class HeartbeatData(val status: String)
+data class HeartbeatData(
+    val status: String,
+    val historyFileId: Long? = null,
+)

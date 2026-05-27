@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +57,7 @@ import kotlinx.coroutines.launch
 fun TransfersScreen(
     viewModel: TransfersViewModel,
     onNavigateToFiles: (Long, String, Long) -> Unit = { _, _, _ -> },
+    onNavigateToHistory: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val showAddSheet by viewModel.showAddSheet.collectAsState()
@@ -109,6 +111,9 @@ fun TransfersScreen(
             TopAppBar(
                 title = { Text("Transfers") },
                 actions = {
+                    IconButton(onClick = onNavigateToHistory) {
+                        Icon(Icons.Default.History, contentDescription = "History")
+                    }
                     IconButton(onClick = { viewModel.refresh() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }

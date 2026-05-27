@@ -189,6 +189,20 @@ data class GlobalStatusProbeRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: REGISTER_TRANSFER_HISTORY
+@Serializable
+data class RegisterHistoryRequest(
+    val action: String = "REGISTER_TRANSFER_HISTORY",
+    val putio_file_id: Long,
+    val info_hash: String,
+    val label: String,
+    val putio_name: String? = null,
+    val magnet_uri: String? = null,
+    val putio_id: Long? = null,
+    val status: String,
+    val app_id: String? = null,
+)
+
 @Singleton
 class CalibreRepository @Inject constructor(
     @ApplicationContext private val context: android.content.Context,
@@ -594,6 +608,35 @@ class CalibreRepository @Inject constructor(
         val heartbeat = daemonTransport.getHeartbeat(googleAccount) ?: return
         _daemonStatus.value = heartbeat.status
         settingsRepository.saveDaemonStatus(heartbeat.status)
+        settingsRepository.saveHistoryFileId(heartbeat.historyFileId)
+    }
+
+    // CONTRACT: REGISTER_TRANSFER_HISTORY
+    suspend fun registerTransferHistory(
+        putioTransferId: Long,
+        infoHash: String,
+        label: String,
+        putioName: String?,
+        magnetUri: String?,
+        putioId: Long?,
+        status: String,
+        googleAccount: String,
+    ) {
+        if (googleAccount.isBlank()) return
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = RegisterHistoryRequest(
+            putio_file_id = putioTransferId,
+            info_hash = infoHash,
+            label = label,
+            putio_name = putioName,
+            magnet_uri = magnetUri,
+            putio_id = putioId,
+            status = status,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        daemonTransport.submitRequest(googleAccount, "req_hist_$putioTransferId.json", jsonStr)
+        // Response is silently acknowledged by pollResponses — no DB tracking needed for history
     }
 
     suspend fun pollResponses(googleAccount: String) {

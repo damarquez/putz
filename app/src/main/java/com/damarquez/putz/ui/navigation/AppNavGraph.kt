@@ -33,6 +33,7 @@ import com.damarquez.putz.ui.settings.LanConnectionsScreen
 import com.damarquez.putz.ui.trash.TrashScreen
 import com.damarquez.putz.ui.settings.SettingsScreen
 import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
+import com.damarquez.putz.ui.transfers.TransferHistoryScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
 
 import androidx.compose.material3.Badge
@@ -326,11 +327,17 @@ fun AppNavGraph(
                 TransfersScreen(
                     viewModel = hiltViewModel(),
                     onNavigateToFiles = { parentId, folderName, highlightId ->
-                        // First, pop back to the Files root to clear any stale deep stack
                         navController.popBackStack(Screen.Files.route, inclusive = false)
-                        // Then navigate to the target folder with the highlight ID
                         navController.navigate(Screen.Files.createRoute(parentId, folderName, highlightId))
-                    }
+                    },
+                    onNavigateToHistory = { navController.navigate(Screen.TransferHistory.route) },
+                )
+            }
+
+            composable(Screen.TransferHistory.route) {
+                TransferHistoryScreen(
+                    viewModel = hiltViewModel(),
+                    onNavigateUp = { navController.navigateUp() },
                 )
             }
 

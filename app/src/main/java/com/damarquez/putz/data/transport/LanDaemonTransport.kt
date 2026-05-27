@@ -121,9 +121,12 @@ class LanDaemonTransport @Inject constructor(
                 okHttpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@use null
                     val body = response.body?.string() ?: return@use null
-                    val status = json.parseToJsonElement(body).jsonObject["status"]?.jsonPrimitive?.content
-                        ?.uppercase() ?: return@use null
-                    HeartbeatData(status)
+                    val obj = json.parseToJsonElement(body).jsonObject
+                    val status = obj["status"]?.jsonPrimitive?.content?.uppercase() ?: return@use null
+                    val historyFileId = runCatching {
+                        obj["transfer_history_file_id"]?.jsonPrimitive?.content?.toLong()
+                    }.getOrNull()
+                    HeartbeatData(status, historyFileId)
                 }
             }.getOrNull()
         }

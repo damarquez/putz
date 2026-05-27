@@ -97,8 +97,18 @@ class PutioApiClient @Inject constructor(
 
     fun listFiles(token: String, parentId: Long = 0L): NetworkResult<Pair<List<PutioFile>, PutioFile?>> {
         return try {
+            // Sort SIZE_DESC so real (large) files always precede tiny stubs (~150 B).
+            // put.io's cursor-based pagination is not used: the cursor token cannot be
+            // re-sent as a query parameter (all encoding variants return 400; POST returns 405).
+            // Folders with >1000 files are handled over multiple sync cycles as synced
+            // books become small stubs and the remaining large files rise to the top.
+            val url = "$BASE_URL/files/list".toHttpUrl().newBuilder()
+                .addQueryParameter("parent_id", parentId.toString())
+                .addQueryParameter("per_page", "1000")
+                .addQueryParameter("sort_by", "SIZE_DESC")
+                .build()
             val request = Request.Builder()
-                .url("$BASE_URL/files/list?parent_id=$parentId&per_page=1000")
+                .url(url)
                 .header("Authorization", "Bearer $token")
                 .header("Accept", "application/json")
                 .build()

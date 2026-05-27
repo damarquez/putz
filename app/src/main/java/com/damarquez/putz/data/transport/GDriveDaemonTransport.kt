@@ -72,10 +72,12 @@ class GDriveDaemonTransport @Inject constructor(
         }.getOrNull() ?: return null
 
         val content = gDriveManager.downloadFileContent(googleAccount, fileId) ?: return null
-        val status = runCatching {
-            json.parseToJsonElement(content).jsonObject["status"]?.jsonPrimitive?.content?.uppercase()
-        }.getOrNull() ?: return null
-        return HeartbeatData(status)
+        val obj = runCatching { json.parseToJsonElement(content).jsonObject }.getOrNull() ?: return null
+        val status = obj["status"]?.jsonPrimitive?.content?.uppercase() ?: return null
+        val historyFileId = runCatching {
+            obj["transfer_history_file_id"]?.jsonPrimitive?.content?.toLong()
+        }.getOrNull()
+        return HeartbeatData(status, historyFileId)
     }
 
     override suspend fun getLibraryVersion(googleAccount: String): Long? =

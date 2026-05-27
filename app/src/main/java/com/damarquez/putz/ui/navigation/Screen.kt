@@ -80,4 +80,5 @@ sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
     data object CalibreTransfers : Screen("calibre_transfers")
     data object LanConnections : Screen("lan_connections")
+    data object TransferHistory : Screen("transfer_history")
 }

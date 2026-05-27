@@ -32,4 +32,6 @@ object AppSettingsKeys {
     val LAN_API_KEY = stringPreferencesKey("lan_api_key")
     // Stable per-installation ID so the daemon can route responses back to the right device
     val APP_ID = stringPreferencesKey("app_id")
+    // put.io file ID of the transfer history JSON uploaded by the daemon
+    val TRANSFER_HISTORY_FILE_ID = longPreferencesKey("transfer_history_file_id")
 }
