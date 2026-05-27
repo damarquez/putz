@@ -20,4 +20,7 @@ data class MergedTransfer(
 
     /** True if this transfer was stopped (removed from put.io but kept in app). */
     val isStopped: Boolean = false,
+
+    /** Matching history entry from the daemon, if available for this transfer's hash. */
+    val historyEntry: HistoryFileEntry? = null,
 )

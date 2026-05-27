@@ -2,12 +2,14 @@ package com.damarquez.putz.ui.transfers
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.data.model.group
 import com.damarquez.putz.data.model.isActive
 import com.damarquez.putz.data.repository.CalibreRepository
+import com.damarquez.putz.data.repository.TransferHistoryRepository
 import com.damarquez.putz.data.repository.TransfersRepository
 import com.damarquez.putz.oauth.PendingMagnetRepository
 import com.damarquez.putz.settings.SettingsRepository
@@ -47,12 +49,16 @@ class TransfersViewModel @Inject constructor(
     private val transfersRepository: TransfersRepository,
     private val filesRepository: com.damarquez.putz.data.repository.FilesRepository,
     private val calibreRepository: CalibreRepository,
+    private val historyRepository: TransferHistoryRepository,
     private val settingsRepository: SettingsRepository,
     private val pendingMagnetRepository: PendingMagnetRepository,
 ) : ViewModel() {
 
     // Tracks last-registered "status:displayName" per transfer ID to avoid redundant daemon calls
     private val registeredKeys = mutableMapOf<Long, String>()
+
+    // Cached history keyed by lowercase info hash; refreshed on init and manual refresh
+    private var historyByHash: Map<String, HistoryFileEntry> = emptyMap()
 
     private val _uiState = MutableStateFlow<TransfersUiState>(TransfersUiState.Loading)
     val uiState: StateFlow<TransfersUiState> = _uiState.asStateFlow()
@@ -74,6 +80,7 @@ class TransfersViewModel @Inject constructor(
     init {
         startPolling()
         observePendingMagnet()
+        loadHistory()
     }
 
     private fun observePendingMagnet() {
@@ -119,7 +126,24 @@ class TransfersViewModel @Inject constructor(
         }
     }
 
-    fun refresh() = startPolling(immediate = true)
+    fun refresh() {
+        loadHistory()
+        startPolling(immediate = true)
+    }
+
+    private fun loadHistory() {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val result = historyRepository.fetchHistory(token) ?: return@launch
+            historyByHash = result.entries.associateBy { it.infoHash.lowercase() }
+            // Re-apply enrichment to current state without re-fetching transfers
+            val current = _uiState.value as? TransfersUiState.Success ?: return@launch
+            val enriched = current.grouped.mapValues { (_, list) ->
+                list.map { it.copy(historyEntry = historyByHash[it.transfer.hash?.lowercase()]) }
+            }
+            _uiState.value = current.copy(grouped = enriched)
+        }
+    }
 
     fun openAddSheet(prefill: String = "") {
         _prefillMagnet.value = prefill
@@ -256,7 +280,11 @@ class TransfersViewModel @Inject constructor(
     }
 
     private fun buildGroupedMap(transfers: List<MergedTransfer>): Map<TransferGroup, List<MergedTransfer>> {
-        val grouped = transfers.groupBy { it.transfer.group() }
+        val enriched = transfers.map { t ->
+            val entry = t.transfer.hash?.lowercase()?.let { historyByHash[it] }
+            if (entry != null) t.copy(historyEntry = entry) else t
+        }
+        val grouped = enriched.groupBy { it.transfer.group() }
         return buildMap {
             TransferGroup.entries.forEach { group ->
                 val items = grouped[group] ?: return@forEach

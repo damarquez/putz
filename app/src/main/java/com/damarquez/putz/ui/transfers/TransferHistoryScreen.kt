@@ -1,5 +1,6 @@
 package com.damarquez.putz.ui.transfers
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -213,14 +215,45 @@ private fun HistoryEntryRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Text(
+                    text = entry.infoHash.take(8),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                )
             }
         },
+        trailingContent = { MetadataSourceBadge(entry) },
     )
+}
+
+@Composable
+private fun MetadataSourceBadge(entry: HistoryFileEntry) {
+    val hasExternal = entry.resolvedName != null
+    val hasPutio = !hasExternal && (entry.totalSizeBytes != null || !entry.files.isNullOrEmpty())
+    if (!hasExternal && !hasPutio) return
+
+    val text = if (hasExternal) "external" else "put.io"
+    val bgColor = if (hasExternal) MaterialTheme.colorScheme.primaryContainer
+                  else MaterialTheme.colorScheme.secondaryContainer
+    val textColor = if (hasExternal) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSecondaryContainer
+
+    Box(
+        modifier = Modifier
+            .background(bgColor, shape = RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HistoryDetailSheet(
+internal fun HistoryDetailSheet(
     entry: HistoryFileEntry,
     onEditLabel: () -> Unit,
 ) {
@@ -378,7 +411,7 @@ private fun HistoryDetailSheet(
 }
 
 @Composable
-private fun FileEntryRow(file: HistoryEntryFile) {
+internal fun FileEntryRow(file: HistoryEntryFile) {
     ListItem(
         headlineContent = {
             Text(

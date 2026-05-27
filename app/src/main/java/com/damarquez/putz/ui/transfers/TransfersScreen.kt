@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.navigation.Screen
@@ -66,12 +68,14 @@ fun TransfersScreen(
     val navigationEvent by viewModel.navigationEvent.collectAsState()
     
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val historySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
 
     var editNameTransferId by remember { mutableStateOf<Long?>(null) }
     var editNameValue by remember { mutableStateOf("") }
+    var selectedHistoryEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
 
     LaunchedEffect(navigationEvent) {
         navigationEvent?.let { event ->
@@ -195,7 +199,10 @@ fun TransfersScreen(
                                         },
                                         onGoToFiles = { fileId ->
                                             viewModel.goToFiles(fileId)
-                                        }
+                                        },
+                                        onTap = merged.historyEntry?.let { entry ->
+                                            { selectedHistoryEntry = entry }
+                                        },
                                     )
                                 }
                                 item(key = "divider_${group.name}") {
@@ -209,6 +216,18 @@ fun TransfersScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (selectedHistoryEntry != null) {
+        ModalBottomSheet(
+            onDismissRequest = { selectedHistoryEntry = null },
+            sheetState = historySheetState,
+        ) {
+            HistoryDetailSheet(
+                entry = selectedHistoryEntry!!,
+                onEditLabel = { /* label editing not needed from transfers screen */ },
+            )
         }
     }
 

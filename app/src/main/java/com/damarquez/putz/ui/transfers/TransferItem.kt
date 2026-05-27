@@ -74,21 +74,25 @@ fun TransferItem(
     onResume: (Long) -> Unit,
     onEditName: (Long, String) -> Unit,
     onGoToFiles: (Long) -> Unit,
+    onTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val transfer = merged.transfer
     val styling = LocalAppStyling.current
     val status = TransferStatus.from(transfer.status)
     val cornerRadius = styling.cornerRadiusDp.dp
-    
+
     var showMenu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+
+    val displayName = merged.historyEntry?.resolvedName?.takeIf { it.isNotBlank() }
+        ?: merged.appDisplayName
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = { /* Could toggle expansion or something later */ },
+                onClick = { onTap?.invoke() },
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     showMenu = true
@@ -111,7 +115,7 @@ fun TransferItem(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = merged.appDisplayName,
+                        text = displayName,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         maxLines = 2,
