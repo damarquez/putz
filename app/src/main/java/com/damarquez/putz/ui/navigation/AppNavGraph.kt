@@ -134,7 +134,7 @@ fun AppNavGraph(
                             }
                         },
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Transfers") },
-                        label = { Text("Transfers") },
+                        label = { Text("Put.io Transfers") },
                     )
                     NavigationBarItem(
                         selected = calibreSelected,
@@ -158,7 +158,7 @@ fun AppNavGraph(
                                 Icon(Icons.Default.Book, contentDescription = "Calibre")
                             }
                         },
-                        label = { Text("Calibre") },
+                        label = { Text("Calibre Transfers") },
                     )
                 }
             }
