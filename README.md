@@ -20,24 +20,55 @@ schemas, stub convention, side effects) see:
 
 | Property | Meaning |
 |----------|---------|
-| `isSynced` | File on put.io was downloaded to the local mirror; its put.io name ends in `.sk_synced`. |
+| `isSynced` | File on put.io was downloaded to the local mirror; put.io name contains `.sk_synced`. |
+| `isNewFormatStub` | Stub uses the new format: filename ends in `.sk_synced.<original_putio_id>`. |
+| `syncedFileId` | The original put.io file ID — embedded in the stub filename for new-format stubs, equals `id` for old-format stubs. |
 | `isLocal` | File lives on the Android device. |
 | `isLan` | File accessible over the LAN mount. |
 | `isRegularRemote` | put.io file not yet synced — shown dimmed at 45 % alpha. |
 
-### displayName vs name
+### Stub filename format
 
-`file.name` for a synced file is e.g. `Chapter1.mp3.sk_synced`.
-`file.displayName` strips the `.sk_synced` suffix.
+New-format stub: `Chapter1.mp3.sk_synced.1589002411`
+- `displayName` → `Chapter1.mp3`
+- `syncedFileId` → `1589002411` (the original put.io file ID, extracted from the suffix)
+- `id` → the stub's current put.io ID (needed only for deleting the stub itself)
+
+Old-format stub: `Chapter1.mp3.sk_synced` (no numeric suffix)
+- `displayName` → `Chapter1.mp3`
+- `syncedFileId` → `id` (the stub and original share the same put.io ID)
 
 **Always pass `file.displayName` to `MetadataUtils.isX()` calls — never `file.name`.**
 The `MetadataUtils` object is annotated with a `// CONTRACT:` reminder.
 
 ### File source in requests
 
-When building a request for a synced file (`file.isSynced == true`), set `use_local = true`
-instead of `download_url`.  The daemon will read the file from the local mirror via its
-sync index, avoiding a redundant re-download.
+When building a request for a synced file (`file.isSynced == true`):
+
+1. Set `use_local: true` in the item.
+2. Read the stub's JSON content via `CalibreRepository.readStubLocalPath(file)` to get
+   the `local_path` string.
+3. Include `local_path` in the request item — the daemon resolves it relative to
+   `putio_repo_root` and reads the file from the local mirror, avoiding a re-download.
+
+Old-format stubs (no numeric suffix) do not include `local_path` in the request;
+the daemon falls back to `SyncedFileIndex` during the migration period.
+
+### Mirror file access (preview / download / archive browsing)
+
+For synced files, Putz reaches the local mirror via the daemon's LAN HTTP endpoint:
+
+```
+GET /api/mirror/file/<syncedFileId>?local_path=<url-encoded-relative-path>
+```
+
+- `syncedFileId` is `file.syncedFileId` (original file ID, **not** `file.id`)
+- `local_path` is read from the stub JSON and URL-encoded
+- The endpoint streams the file with HTTP range-request support (required for archive browsing)
+
+For **archive browsing**, the `ArchiveSource.Mirror` source type is used with
+`MirrorArchiveStream`, which fetches archive data via HTTP range requests so large archives
+are not fully downloaded before 7-zip can inspect them.
 
 ---
 
@@ -47,11 +78,15 @@ Putz sends JSON files to `.calibre_integration/requests/` on Google Drive.
 The daemon picks them up within 15 s, processes them, and writes a response to
 `.calibre_integration/responses/`.
 
+LAN direct mode: when the daemon is reachable, requests can also be submitted via
+`POST /api/request` on the LAN HTTP server (bypassing Google Drive).
+
 | Action | Sent from | What happens |
 |--------|-----------|-------------|
 | `ADD_BOOK_BATCH` | `CalibreRepository.sendBatchRequest()` | Adds one or more formats to a Calibre book. Item types: SINGLE, PACK (MP3→M4B), ARCHIVE, ARCHIVE_ENTRY. |
 | `REPLACE_COVER` | `CalibreRepository.sendReplaceCoverRequest()` | Replaces the cover of an existing Calibre book. |
 | `UPDATE_COMMENTS` | `CalibreRepository.sendUpdateCommentsRequest()` | Updates comments, title, author, and/or tags. |
+| `FUSE_BOOKS` | CalibreAnywhere → Putz → daemon | Merges two or more Calibre books into one new book; deletes source books. |
 | `SEND_TO_PLEX` | `CalibreRepository` (Plex flow) | Moves a synced video from the mirror to the Plex library; daemon triggers Plex scan. |
 | `ADD_SUBTITLE_TO_MOVIE` | `CalibreRepository` (subtitle flow) | Moves a synced subtitle into a Plex movie folder; daemon triggers Plex scan. |
 | `PRIORITY_PUTIO_SYNC` | `CalibreRepository.sendPrioritySyncRequest()` | Asks the daemon to download a specific put.io file immediately. |
@@ -81,7 +116,9 @@ The daemon picks them up within 15 s, processes them, and writes a response to
 
 ### End of life
 
-- COMPLETED transfers: user taps "Remove"; optionally deletes the source file from put.io.
+- COMPLETED transfers: user taps "Remove"; optionally deletes the source stub from put.io.
+  `CalibreRepository.deleteFileFromPutio()` searches for the stub by its embedded file ID
+  (`.sk_synced.<syncedFileId>`) and deletes the stub — not the original ID (which is gone).
 - Duplicate-format failures: treated like COMPLETED for cleanup purposes.
 - Other failures: transfer deleted from Room DB; remote files untouched.
 
@@ -91,13 +128,18 @@ The daemon picks them up within 15 s, processes them, and writes a response to
 
 | File | Role |
 |------|------|
-| `data/model/PutioFile.kt` | File state flags (`isSynced`, `isRegularRemote`, `displayName`) |
-| `data/repository/CalibreRepository.kt` | All request data classes and send functions |
+| `data/model/PutioFile.kt` | File state flags (`isSynced`, `isNewFormatStub`, `syncedFileId`, `displayName`) |
+| `data/model/ArchiveEntry.kt` | `ArchiveSource` sealed class — `Local`, `Lan`, `Putio`, `Mirror` |
+| `data/archive/MirrorArchiveStream.kt` | HTTP range-request stream for daemon mirror endpoint |
+| `data/repository/CalibreRepository.kt` | All request data classes, send functions, `readStubLocalPath()` |
+| `data/repository/ArchiveRepository.kt` | Archive open/list/extract; routes `Mirror` source to `MirrorArchiveStream` |
 | `data/remote/GDriveManager.kt` | Drive upload/download primitives |
+| `data/transport/LanDaemonTransport.kt` | LAN HTTP calls — `downloadMirrorFile(localPath)`, `submitRequest()` |
 | `ui/components/FileItem.kt` | Per-file menu; visibility of every item is gated on file state — see `CONTRACTS.md §19` |
-| `ui/files/FilesViewModel.kt` | Business logic for all file actions |
-| `ui/files/FilesScreen.kt` | Screen composition; contains the audiobook file filter — **must use `it.displayName`**, not `it.name` (stubs end in `.sk_synced`; see `CONTRACTS.md §2`) |
+| `ui/files/FilesViewModel.kt` | Business logic for all file actions (preview, download, send, delete) |
+| `ui/files/FilesScreen.kt` | Screen composition; contains the audiobook file filter — **must use `it.displayName`**, not `it.name` |
 | `ui/files/AudiobookPackSheet.kt` | "Select files for audiobook" dialog; receives the pre-filtered list from `FilesScreen.kt` |
+| `ui/archive/ArchiveViewModel.kt` | Archive browsing; resolves `local_path` from stub JSON before opening Mirror source |
 | `util/MetadataUtils.kt` | Extension-based file type checks — **all callers must pass `file.displayName`, never `file.name`** |
 
 Search for `// CONTRACT:` in the source to find every integration boundary.
