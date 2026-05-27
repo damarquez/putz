@@ -121,6 +121,7 @@ fun FilesScreen(
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
     val uiState by viewModel.uiState.collectAsState()
+    val allSyncedFolderIds by viewModel.allSyncedFolderIds.collectAsState()
     val accountInfo by viewModel.accountInfo.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
     val completedTransfersWithUuid by viewModel.completedTransfersWithUuid.collectAsState()
@@ -321,7 +322,7 @@ fun FilesScreen(
         val displayName = when {
             isFolderAssembly -> "${selectedFolderAudioFilesForAssembly?.size} audio files"
             isPack -> "${selectedPackFilesForAssembly?.size} audio files"
-            else -> file.name
+            else -> file.displayName
         }
         CalibreConfirmationSheet(
             displayName = displayName,
@@ -354,7 +355,7 @@ fun FilesScreen(
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            isArchive = !isPack && MetadataUtils.isArchive(file.name),
+            isArchive = !isPack && MetadataUtils.isArchive(file.displayName),
             forceAssemble = true,
             transferRefs = completedTransfersWithUuid,
         )
@@ -366,10 +367,10 @@ fun FilesScreen(
     if (selectedFileForCalibre != null) {
         val singleFile = selectedFileForCalibre!!
         val (initialTitle, initialAuthor) = remember(singleFile) {
-            MetadataUtils.extractMetadata(singleFile.name)
+            MetadataUtils.extractMetadata(singleFile.displayName)
         }
         CalibreConfirmationSheet(
-            displayName = singleFile.name,
+            displayName = singleFile.displayName,
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedFileForCalibre = null },
@@ -379,7 +380,7 @@ fun FilesScreen(
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            isArchive = MetadataUtils.isArchive(singleFile.name),
+            isArchive = MetadataUtils.isArchive(singleFile.displayName),
             transferRefs = completedTransfersWithUuid,
         )
     }
@@ -387,10 +388,10 @@ fun FilesScreen(
     if (selectedFileForCover != null) {
         val imageFile = selectedFileForCover!!
         val (initialTitle, initialAuthor) = remember(imageFile) {
-            MetadataUtils.extractMetadata(imageFile.name)
+            MetadataUtils.extractMetadata(imageFile.displayName)
         }
         CalibreConfirmationSheet(
-            displayName = imageFile.name,
+            displayName = imageFile.displayName,
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedFileForCover = null },
@@ -1047,7 +1048,7 @@ fun FilesScreen(
                                                     file.lanPath,
                                                     file.displayName,
                                                 )
-                                            } else if (!file.isLocal && !file.isLan && MetadataUtils.isArchive(file.displayName)) {
+                                            } else if (!file.isLocal && !file.isLan && file.isSynced && MetadataUtils.isArchive(file.displayName)) {
                                                 viewModel.openPutioArchive(file)
                                             }
                                         },
@@ -1092,6 +1093,7 @@ fun FilesScreen(
                                         isGoogleSignedIn = isGoogleSignedIn,
                                         isHighlighted = file.id == currentHighlightId,
                                         hasPendingAssemblies = pendingAssemblies.isNotEmpty(),
+                                        isFolderAllSynced = file.isFolder && file.id in allSyncedFolderIds,
                                     )
                                 }
                             }

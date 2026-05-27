@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.damarquez.putz.util.MetadataUtils
 import java.io.File
@@ -154,6 +155,9 @@ class FilesViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
+
+    private val _allSyncedFolderIds = MutableStateFlow<Set<Long>>(emptySet())
+    val allSyncedFolderIds: StateFlow<Set<Long>> = _allSyncedFolderIds.asStateFlow()
 
     private val _previewIntent = MutableSharedFlow<Intent>()
     val previewIntent: SharedFlow<Intent> = _previewIntent.asSharedFlow()
@@ -396,11 +400,31 @@ class FilesViewModel @Inject constructor(
                     val (files, parent) = result.data
                     rawApiFiles = files
                     _uiState.value = FilesUiState.Success(files = augmentWithLocal(files), parent = parent)
+                    _allSyncedFolderIds.value = emptySet()
+                    checkSubfolderSyncState(files.filter { it.isFolder && !it.isLocal && !it.isLan }, token)
                 }
                 is NetworkResult.Error -> {
                     _uiState.value = FilesUiState.Error(result.message)
                 }
                 NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    private fun checkSubfolderSyncState(subfolders: List<PutioFile>, token: String) {
+        if (subfolders.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            subfolders.forEach { folder ->
+                launch {
+                    val result = filesRepository.listFiles(token, folder.id)
+                    if (result is NetworkResult.Success) {
+                        val children = result.data.first
+                        val fileChildren = children.filter { !it.isFolder }
+                        if (fileChildren.isNotEmpty() && fileChildren.all { it.isSynced }) {
+                            _allSyncedFolderIds.update { it + folder.id }
+                        }
+                    }
+                }
             }
         }
     }

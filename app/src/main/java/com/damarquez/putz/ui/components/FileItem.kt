@@ -86,6 +86,7 @@ fun FileItem(
     isGoogleSignedIn: Boolean = false,
     hasPendingAssemblies: Boolean = false,
     isHighlighted: Boolean = false,
+    isFolderAllSynced: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val styling = LocalAppStyling.current
@@ -160,6 +161,16 @@ fun FileItem(
                         cornerRadius = cornerRadius.value.toInt(),
                     )
                     when {
+                        isFolderAllSynced -> Icon(
+                            imageVector = Icons.Default.CloudDone,
+                            contentDescription = "All files synced",
+                            tint = Color(0xFF4FC3F7),
+                            modifier = Modifier
+                                .size(20.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
+                                .padding(2.dp)
+                        )
                         file.isSynced -> Icon(
                             imageVector = Icons.Default.CloudDone,
                             contentDescription = "Synced locally",
@@ -273,7 +284,7 @@ fun FileItem(
                             )
                             HorizontalDivider()
                         }
-                        if (!file.isLan && !file.isFolder) {
+                        if (!file.isLan && !file.isFolder && !isRegularRemote) {
                             DropdownMenuItem(
                                 text = { Text("Download") },
                                 onClick = {
@@ -288,15 +299,16 @@ fun FileItem(
                                     onCopyLink(file)
                                 },
                             )
-                            if (isRegularRemote) {
-                                DropdownMenuItem(
-                                    text = { Text("Priority sync") },
-                                    onClick = {
-                                        showMenu = false
-                                        onRequestPrioritySync(file)
-                                    },
-                                )
-                            }
+                            HorizontalDivider()
+                        }
+                        if (isRegularRemote && !file.isLan && !file.isFolder) {
+                            DropdownMenuItem(
+                                text = { Text("Priority sync") },
+                                onClick = {
+                                    showMenu = false
+                                    onRequestPrioritySync(file)
+                                },
+                            )
                             HorizontalDivider()
                         }
                         if (!isRegularRemote) {
@@ -412,8 +424,8 @@ fun FileItem(
                                 clipboard.setText(AnnotatedString(file.name))
                             },
                         )
-                        HorizontalDivider()
-                        if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments) {
+                        if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !isRegularRemote) {
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = {
                                     Text(
