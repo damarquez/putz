@@ -119,14 +119,16 @@ fun CalibreTransfersScreen(
                 try {
                     val previewsDir = File(context.cacheDir, "previews")
                     if (!previewsDir.exists()) previewsDir.mkdirs()
-                    
+
                     val tempFile = File(previewsDir, "clipboard_cover_temp.jpg")
-                    context.contentResolver.openInputStream(uri)?.use { input ->
+                    val stream = context.contentResolver.openInputStream(uri)
+                    if (stream == null) return@withContext null
+                    stream.use { input ->
                         FileOutputStream(tempFile).use { output ->
                             input.copyTo(output)
                         }
                     }
-                    tempFile
+                    if (tempFile.length() == 0L) null else tempFile
                 } catch (e: Exception) {
                     null
                 }
@@ -135,7 +137,7 @@ fun CalibreTransfersScreen(
                 clipboardImageUri = FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", cachedFile)
                 prefilledUuid = uuid
             } else {
-                snackbarHostState.showSnackbar("Failed to cache clipboard image")
+                snackbarHostState.showSnackbar("Clipboard image is empty or unavailable")
             }
         }
     }
@@ -200,6 +202,7 @@ fun CalibreTransfersScreen(
             isReplaceCover = true,
             initialUuid = prefilledUuid ?: "",
             transferRefs = completedTransferRefs,
+            coverImageUri = clipboardImageUri,
         )
     }
 

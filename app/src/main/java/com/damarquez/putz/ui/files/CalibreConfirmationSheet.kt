@@ -16,6 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -77,6 +80,7 @@ fun CalibreConfirmationSheet(
     initialTags: String = "",
     autoAddTags: String? = null,
     includeComments: Boolean = true,
+    coverImageUri: Uri? = null,
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
@@ -182,11 +186,23 @@ fun CalibreConfirmationSheet(
                     .verticalScroll(rememberScrollState())
                     .imePadding(),
             ) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (coverImageUri != null) {
+                    AsyncImage(
+                        model = coverImageUri,
+                        contentDescription = "Cover preview",
+                        modifier = Modifier
+                            .size(120.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .align(Alignment.CenterHorizontally),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                } else {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 if (matchedBookId != null) {
                     Spacer(Modifier.height(16.dp))
