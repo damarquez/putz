@@ -184,16 +184,17 @@ class GDriveManager @Inject constructor(
     }
 
     // CONTRACT: IPC transport
-    suspend fun listResponses(accountName: String): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
+    suspend fun listResponses(accountName: String, appId: String): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)
             val libFolderId = getLibraryFolderId(service) ?: return@withContext emptyList()
 
             val rootId = findFolder(service, ".calibre_integration", libFolderId) ?: return@withContext emptyList()
             val responsesId = findFolder(service, "responses", rootId) ?: return@withContext emptyList()
+            val appFolderId = findFolder(service, appId, responsesId) ?: return@withContext emptyList()
 
             val result = service.files().list()
-                .setQ("'$responsesId' in parents and trashed = false")
+                .setQ("'$appFolderId' in parents and trashed = false")
                 .setFields("files(id, name)")
                 .setOrderBy("name")
                 .execute()

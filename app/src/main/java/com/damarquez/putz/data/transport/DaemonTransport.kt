@@ -14,11 +14,11 @@ interface DaemonTransport {
     /** Upload a request JSON; returns the Drive file ID (used in DB as gdriveRequestId), or null on failure. */
     suspend fun submitRequest(googleAccount: String, fileName: String, content: String): String?
 
-    /** Return all pending responses; each envelope contains the raw JSON and its delivery source. */
-    suspend fun pollResponses(googleAccount: String): List<ResponseEnvelope>
+    /** Return all pending responses for this app instance; each envelope contains the raw JSON and its delivery source. */
+    suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope>
 
     /** Acknowledge that a response was processed (delete from Drive / LAN buffer). */
-    suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope)
+    suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope, appId: String)
 
     /** Return current daemon heartbeat status, or null if unavailable. */
     suspend fun getHeartbeat(googleAccount: String): HeartbeatData?

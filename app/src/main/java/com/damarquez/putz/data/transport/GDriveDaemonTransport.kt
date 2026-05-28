@@ -21,8 +21,8 @@ class GDriveDaemonTransport @Inject constructor(
     override suspend fun submitRequest(googleAccount: String, fileName: String, content: String): String? =
         gDriveManager.uploadRequest(googleAccount, fileName, content)
 
-    override suspend fun pollResponses(googleAccount: String): List<ResponseEnvelope> {
-        val files = gDriveManager.listResponses(googleAccount)
+    override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
+        val files = gDriveManager.listResponses(googleAccount, appId)
         return files.mapNotNull { file ->
             val content = gDriveManager.downloadFileContent(googleAccount, file.id) ?: return@mapNotNull null
             val putioFileId = runCatching {
@@ -37,7 +37,7 @@ class GDriveDaemonTransport @Inject constructor(
         }
     }
 
-    override suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope) {
+    override suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope, appId: String) {
         if (envelope.source == ResponseEnvelope.Source.DRIVE) {
             gDriveManager.deleteFile(googleAccount, envelope.id)
         }

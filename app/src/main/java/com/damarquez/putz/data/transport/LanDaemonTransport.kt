@@ -69,10 +69,10 @@ class LanDaemonTransport @Inject constructor(
             }.getOrNull()
         }
 
-    override suspend fun pollResponses(googleAccount: String): List<ResponseEnvelope> =
+    override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
-                .url("${baseUrl()}/responses")
+                .url("${baseUrl()}/responses/$appId")
                 .header("X-Sidekick-Key", apiKey())
                 .get()
                 .build()
@@ -98,11 +98,11 @@ class LanDaemonTransport @Inject constructor(
             }.getOrDefault(emptyList())
         }
 
-    override suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope) {
+    override suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope, appId: String) {
         if (envelope.source != ResponseEnvelope.Source.LAN) return
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
-                .url("${baseUrl()}/response/${envelope.id}")
+                .url("${baseUrl()}/response/$appId/${envelope.id}")
                 .header("X-Sidekick-Key", apiKey())
                 .delete()
                 .build()

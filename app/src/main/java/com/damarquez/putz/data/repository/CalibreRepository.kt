@@ -641,18 +641,10 @@ class CalibreRepository @Inject constructor(
 
     suspend fun pollResponses(googleAccount: String) {
         val myAppId = settingsRepository.getOrCreateAppId()
-        val envelopes = daemonTransport.pollResponses(googleAccount)
+        val envelopes = daemonTransport.pollResponses(googleAccount, myAppId)
         envelopes.forEach { envelope ->
             try {
                 val response = json.decodeFromString<CalibreResponse>(envelope.content)
-                // For Drive: skip responses addressed to a different device (leave them for that device).
-                // For LAN: the buffer is single-device, so always consume even if app_id doesn't match.
-                if (response.app_id != null && response.app_id != myAppId) {
-                    if (envelope.source == ResponseEnvelope.Source.LAN) {
-                        daemonTransport.acknowledgeResponse(googleAccount, envelope)
-                    }
-                    return@forEach
-                }
 
                 if (response.action == "GLOBAL_STATUS_PROBE") {
                     _daemonStatus.value = response.daemon_status
@@ -709,7 +701,7 @@ class CalibreRepository @Inject constructor(
                         }
                     }
                 }
-                daemonTransport.acknowledgeResponse(googleAccount, envelope)
+                daemonTransport.acknowledgeResponse(googleAccount, envelope, myAppId)
             } catch (e: Exception) {
                 e.printStackTrace()
             }

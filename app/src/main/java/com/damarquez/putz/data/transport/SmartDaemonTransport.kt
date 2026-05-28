@@ -49,15 +49,14 @@ class SmartDaemonTransport @Inject constructor(
         return drive.submitRequest(googleAccount, fileName, content)
     }
 
-    override suspend fun pollResponses(googleAccount: String): List<ResponseEnvelope> {
+    override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
         val all = mutableListOf<ResponseEnvelope>()
 
         if (lanEnabled() && lan.isReachable()) {
-            runCatching { all += lan.pollResponses(googleAccount) }
+            runCatching { all += lan.pollResponses(googleAccount, appId) }
         }
 
-        val lanIds = all.mapNotNull { it.putioFileId }.toSet()
-        val driveEnvelopes = runCatching { drive.pollResponses(googleAccount) }.getOrDefault(emptyList())
+        val driveEnvelopes = runCatching { drive.pollResponses(googleAccount, appId) }.getOrDefault(emptyList())
 
         // Always add Drive envelopes; CalibreRepository's isNewerStatus guard prevents double-processing
         all += driveEnvelopes
@@ -65,13 +64,13 @@ class SmartDaemonTransport @Inject constructor(
         return all
     }
 
-    override suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope) {
+    override suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope, appId: String) {
         when (envelope.source) {
             ResponseEnvelope.Source.LAN -> {
-                runCatching { lan.acknowledgeResponse(googleAccount, envelope) }
+                runCatching { lan.acknowledgeResponse(googleAccount, envelope, appId) }
             }
             ResponseEnvelope.Source.DRIVE -> {
-                runCatching { drive.acknowledgeResponse(googleAccount, envelope) }
+                runCatching { drive.acknowledgeResponse(googleAccount, envelope, appId) }
             }
         }
     }
