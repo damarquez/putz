@@ -22,6 +22,7 @@ import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PersonSearch
@@ -390,30 +391,56 @@ fun CalibreConfirmationSheet(
 
                 Spacer(Modifier.height(16.dp))
 
-                OutlinedTextField(
-                    value = if (isReplaceCover && isUuidMatched) matchedBookTitle ?: "" else title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !titleAuthorLocked,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    trailingIcon = {
-                        if (!titleAuthorLocked) {
-                            IconButton(
-                                onClick = {
-                                    title = displayName.substringBeforeLast('.')
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = if (isReplaceCover && isUuidMatched) matchedBookTitle ?: "" else title,
+                        onValueChange = { title = it },
+                        label = { Text("Title") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        enabled = !titleAuthorLocked,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        trailingIcon = {
+                            if (!titleAuthorLocked) {
+                                IconButton(
+                                    onClick = {
+                                        title = displayName.substringBeforeLast('.')
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FileOpen,
+                                        contentDescription = "Load filename as title",
+                                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                    )
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FileOpen,
-                                    contentDescription = "Load filename as title",
-                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                                )
                             }
                         }
+                    )
+                    if (!titleAuthorLocked && title.isNotBlank()) {
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(
+                            onClick = {
+                                title = title
+                                    .replace('_', ' ')
+                                    .replace(Regex("\\s+"), " ")
+                                    .trim()
+                                    .split(" ")
+                                    .joinToString(" ") { word ->
+                                        word.lowercase().replaceFirstChar { it.uppercase() }
+                                    }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoFixHigh,
+                                contentDescription = "Fix title capitalisation",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
-                )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

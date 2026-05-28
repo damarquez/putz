@@ -1006,9 +1006,10 @@ class CalibreRepository @Inject constructor(
                 "ARCHIVE", "ARCHIVE_ENTRY" -> emptyList()
                 else -> {
                     val ext = item.fileName.substringAfterLast('.', "").uppercase()
-                    // Daemon converts PRC/MOBI to EPUB
+                    // Daemon converts PRC/MOBI to EPUB; Calibre auto-zips HTML/HTM on import
                     when {
                         ext == "PRC" || ext == "MOBI" -> listOf("EPUB")
+                        ext == "HTML" || ext == "HTM" -> listOf("ZIP")
                         ext.isNotEmpty() && ext.length <= 5 && !ext.contains(' ') -> listOf(ext)
                         else -> emptyList()
                     }
@@ -1315,10 +1316,31 @@ class CalibreRepository @Inject constructor(
                 if (stubIds.isNotEmpty()) {
                     idsToDelete.addAll(stubIds)
                 } else {
-                    idsToDelete.add(originalId)
+                    // Stub not found via search. Verify whether the original file still exists:
+                    // - 200: old-format transfer (never replaced by a stub) → delete the original.
+                    // - 404: file was synced to a stub, but search didn't find it. Adding originalId
+                    //        would silently no-op (put.io accepts deletes of non-existent IDs), leaving
+                    //        the stub on put.io. Log a warning instead.
+                    // - other error: network issue → fall back to originalId and try anyway.
+                    val fileCheck = putioApiClient.getFile(token, originalId)
+                    when {
+                        fileCheck is NetworkResult.Success ->
+                            idsToDelete.add(originalId)
+                        (fileCheck as? NetworkResult.Error)?.code == 404 ->
+                            android.util.Log.w("CalibreRepository",
+                                "Stub for put.io file $originalId not found via search and original is gone — stub may remain on put.io")
+                        else ->
+                            idsToDelete.add(originalId)
+                    }
                 }
             }
-            putioApiClient.deleteFiles(token, idsToDelete.distinct())
+            if (idsToDelete.isEmpty()) return@withContext NetworkResult.Success(Unit)
+            val result = putioApiClient.deleteFiles(token, idsToDelete.distinct())
+            if (result is NetworkResult.Error) {
+                android.util.Log.w("CalibreRepository",
+                    "Failed to delete put.io files $idsToDelete: ${result.message}")
+            }
+            result
         }
     }
 
