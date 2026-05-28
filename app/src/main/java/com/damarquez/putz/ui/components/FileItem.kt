@@ -113,11 +113,11 @@ fun FileItem(
         ?.uppercase()
 
     val specialBandColor: Color? = when {
-        file.isSpecialRootFolder || file.isPutzAttachments -> Color(0xFF757575)
+        file.isSpecialRootFolder || file.isPutzAttachments || file.isPutzHistory -> Color(0xFF757575)
         else -> null
     }
     val foregroundColor: Color? = when {
-        file.isSpecialRootFolder || file.isPutzAttachments -> Color.White
+        file.isSpecialRootFolder || file.isPutzAttachments || file.isPutzHistory -> Color.White
         else -> null
     }
 
