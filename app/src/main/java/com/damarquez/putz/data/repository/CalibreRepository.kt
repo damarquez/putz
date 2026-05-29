@@ -81,6 +81,7 @@ data class CalibreResponse(
     val error: String? = null,
     val daemon_status: String? = null, // "IDLE" or "WORKING"
     val calibre_book_uuid: String? = null,
+    val calibre_book_id: Int? = null,
     val warnings: List<String>? = null,
     val app_id: String? = null, // Echoed from request; used to route responses to the correct device
 )
@@ -684,6 +685,7 @@ class CalibreRepository @Inject constructor(
                                 status = newStatus,
                                 errorMessage = response.error,
                                 calibreBookUuid = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_uuid != null) response.calibre_book_uuid else transfer.calibreBookUuid,
+                                calibreBookId = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_id != null) response.calibre_book_id else transfer.calibreBookId,
                                 warnings = if (newStatus == CalibreTransferStatus.COMPLETED) response.warnings?.joinToString("\n")?.takeIf { it.isNotBlank() } else transfer.warnings,
                                 libraryVerified = libraryVerified,
                                 lastUpdatedAt = System.currentTimeMillis()
@@ -1274,13 +1276,25 @@ class CalibreRepository @Inject constructor(
                 title = transfer.title,
                 author = transfer.author,
                 items = items,
-                calibre_book_uuid = transfer.calibreBookUuid
+                calibre_book_uuid = transfer.calibreBookUuid,
+                calibre_book_id = transfer.calibreBookId?.toLong(),
             )
             json.encodeToString(request)
         }
 
+        // If calibreBookId was saved from a previous COMPLETED response but isn't in the stored
+        // payload yet (legacy requests), inject it so the daemon can skip string matching.
+        val finalPayload = if (transfer.calibreBookId != null) {
+            try {
+                val req = json.decodeFromString<CalibreBatchRequest>(payload)
+                if (req.calibre_book_id == null)
+                    json.encodeToString(req.copy(calibre_book_id = transfer.calibreBookId.toLong()))
+                else payload
+            } catch (_: Exception) { payload }
+        } else payload
+
         android.util.Log.d("CalibreRepository", "Retrying transfer $fileId for $googleAccount")
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_${transfer.putioFileId}.json", payload)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_${transfer.putioFileId}.json", finalPayload)
         
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -1289,7 +1303,7 @@ class CalibreRepository @Inject constructor(
                 lastUpdatedAt = System.currentTimeMillis(),
                 retryCount = if (transfer.status == CalibreTransferStatus.FAILED) transfer.retryCount + 1 else transfer.retryCount,
                 errorMessage = null,
-                lastRequestPayload = payload
+                lastRequestPayload = finalPayload,
             ))
             return NetworkResult.Success(Unit)
         }

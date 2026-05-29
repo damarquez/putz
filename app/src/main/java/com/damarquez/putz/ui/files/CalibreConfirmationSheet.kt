@@ -85,6 +85,7 @@ fun CalibreConfirmationSheet(
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
+    val authorHasAnd = author.contains(Regex("""\band\b""", RegexOption.IGNORE_CASE))
     var uuid by remember { mutableStateOf(initialUuid) }
     var comments by remember { mutableStateOf(initialComments) }
     var tags by remember { mutableStateOf(initialTags) }
@@ -470,9 +471,14 @@ fun CalibreConfirmationSheet(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         enabled = !titleAuthorLocked,
+                        isError = authorHasAnd,
+                        supportingText = if (authorHasAnd) {
+                            { Text("Use commas for multiple authors — \"and\" suggests title/author may be swapped") }
+                        } else null,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = {
                             val canSend = title.isNotBlank() &&
+                                !authorHasAnd &&
                                 (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
                                 (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
                                 (!requiresUuidMatch || isUuidMatched || uuidFromTransfer)
@@ -594,6 +600,7 @@ fun CalibreConfirmationSheet(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = title.isNotBlank() &&
+                        !authorHasAnd &&
                         (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
                         (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
                         (!requiresUuidMatch || isUuidMatched || uuidFromTransfer),

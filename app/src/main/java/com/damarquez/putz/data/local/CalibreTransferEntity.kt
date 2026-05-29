@@ -34,6 +34,10 @@ data class CalibreTransferEntity(
     /** The Calibre UUID of the book, if targeted directly. */
     val calibreBookUuid: String? = null,
 
+    /** The Calibre integer book ID returned by the daemon on COMPLETED. Echoed back on retry/probe
+     *  so the daemon can locate the book by ID instead of fallible title+author string matching. */
+    val calibreBookId: Int? = null,
+
     /** The exact JSON payload last uploaded to GDrive for this transfer. Used verbatim on retry. */
     val lastRequestPayload: String? = null,
 
