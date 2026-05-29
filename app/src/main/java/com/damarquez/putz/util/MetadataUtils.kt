@@ -4,8 +4,8 @@ package com.damarquez.putz.util
 object MetadataUtils {
     private val EBOOK_EXTENSIONS = setOf("epub", "mobi", "pdf", "azw3", "fb2", "cbz", "cbr", "rar", "zip", "7z", "prc", "rtf", "doc", "docx", "odt", "txt", "htm", "html")
     private val ARCHIVE_EXTENSIONS = setOf("rar", "zip", "7z")
-    private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a")
-    private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b")
+    private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a", "flac")
+    private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac")
     private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "wmv", "m4v", "ts", "webm", "flv", "mpg", "mpeg", "divx")
 
     private fun cleanStubSuffix(fileName: String): String {
