@@ -93,6 +93,7 @@ fun CalibreTransfersScreen(
     }
     val daemonStatus by viewModel.daemonStatus.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
+    val pendingAssemblyAppends by viewModel.pendingAssemblyAppends.collectAsState()
     val googleAccount by syncViewModel.googleAccount.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val isSyncing by viewModel.isSyncing.collectAsState(initial = false)
@@ -480,6 +481,7 @@ fun CalibreTransfersScreen(
                                     scope.launch { snackbarHostState.showSnackbar("JSON copied") }
                                 },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
+                                isPendingAppend = transfer.putioFileId in pendingAssemblyAppends,
                             )
                         }
                     }
@@ -514,6 +516,7 @@ fun CalibreTransfersScreen(
                                     scope.launch { snackbarHostState.showSnackbar("JSON copied") }
                                 },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
+                                isPendingAppend = transfer.putioFileId in pendingAssemblyAppends,
                                 onCopyUuid = { uuid ->
                                     clipboardManager.setText(AnnotatedString(uuid))
                                     scope.launch { snackbarHostState.showSnackbar("UUID copied") }

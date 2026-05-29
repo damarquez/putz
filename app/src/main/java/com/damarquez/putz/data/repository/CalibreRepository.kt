@@ -219,6 +219,17 @@ class CalibreRepository @Inject constructor(
     private val _uploadProgress = MutableStateFlow<Map<Long, String>>(emptyMap())
     val uploadProgress = _uploadProgress.asStateFlow()
 
+    private val _pendingAssemblyAppends = MutableStateFlow<Set<Long>>(emptySet())
+    val pendingAssemblyAppends = _pendingAssemblyAppends.asStateFlow()
+
+    fun markAssemblyAppendPending(transferId: Long) {
+        _pendingAssemblyAppends.value = _pendingAssemblyAppends.value + transferId
+    }
+
+    fun clearAssemblyAppendPending(transferId: Long) {
+        _pendingAssemblyAppends.value = _pendingAssemblyAppends.value - transferId
+    }
+
     // Tracks the last time updateUploadProgress was called with a non-null value.
     // Used by the orphan detector to catch uploads stuck in a retry loop (where the
     // progress key IS present but no bytes have flowed for several minutes).

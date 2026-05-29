@@ -60,6 +60,7 @@ fun CalibreTransferItem(
     onCopyJson: (String) -> Unit,
     modifier: Modifier = Modifier,
     uploadProgress: String? = null,
+    isPendingAppend: Boolean = false,
     onCopyUuid: ((String) -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -162,7 +163,7 @@ fun CalibreTransferItem(
 
             // Right column: text info, then status + buttons
             val isAssembled = transfer.status == CalibreTransferStatus.ASSEMBLED
-            val isAssemblyUploading = isAssembled && uploadProgress != null
+            val isAssemblyUploading = isAssembled && (uploadProgress != null || isPendingAppend)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = transfer.title,

@@ -1009,6 +1009,8 @@ class FilesViewModel @Inject constructor(
 
     fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null, isAltVersion: Boolean = false) {
         viewModelScope.launch {
+            calibreRepository.markAssemblyAppendPending(assemblyFileId)
+            try {
             val putioToken = settingsRepository.authTokenFlow.first()
 
             if (file.isSynced) {
@@ -1102,11 +1104,16 @@ class FilesViewModel @Inject constructor(
             )
             _snackbarMessage.value = if (added) "File added to assembly: $title"
                 else "\"$targetFileName\" is already in this assembly"
+            } finally {
+                calibreRepository.clearAssemblyAppendPending(assemblyFileId)
+            }
         }
     }
 
     fun appendAudiobookPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String, isAltVersion: Boolean = false) {
         viewModelScope.launch {
+            calibreRepository.markAssemblyAppendPending(assemblyFileId)
+            try {
             val putioToken = settingsRepository.authTokenFlow.first()
 
             if (files.all { it.isSynced }) {
@@ -1223,6 +1230,9 @@ class FilesViewModel @Inject constructor(
             )
             _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
                 else "\"$fileName\" is already in this assembly"
+            } finally {
+                calibreRepository.clearAssemblyAppendPending(assemblyFileId)
+            }
         }
     }
 
@@ -1634,6 +1644,8 @@ class FilesViewModel @Inject constructor(
 
     fun appendFolderAudiobookPackToAssembly(assemblyFileId: Long, selectedFiles: List<FolderAudioFile>, title: String, author: String, isAltVersion: Boolean = false) {
         viewModelScope.launch {
+            calibreRepository.markAssemblyAppendPending(assemblyFileId)
+            try {
             val token = settingsRepository.authTokenFlow.first()
             val sortedFiles = selectedFiles.sortedBy { it.relativePath }
             // Pre-read stub content for synced files (network call, can't do inside mapNotNull)
@@ -1688,6 +1700,9 @@ class FilesViewModel @Inject constructor(
             )
             _snackbarMessage.value = if (added) "Audiobook pack added to assembly: $title"
             else "\"$fileName\" is already in this assembly"
+            } finally {
+                calibreRepository.clearAssemblyAppendPending(assemblyFileId)
+            }
         }
     }
 

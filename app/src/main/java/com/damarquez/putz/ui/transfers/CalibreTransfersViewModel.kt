@@ -45,6 +45,9 @@ class CalibreTransfersViewModel @Inject constructor(
     val uploadProgress: StateFlow<Map<Long, String>> = calibreRepository.uploadProgress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    val pendingAssemblyAppends: StateFlow<Set<Long>> = calibreRepository.pendingAssemblyAppends
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing = _isSyncing.asStateFlow()
 
