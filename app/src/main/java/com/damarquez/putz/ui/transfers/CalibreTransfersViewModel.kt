@@ -62,6 +62,20 @@ class CalibreTransfersViewModel @Inject constructor(
         _snackbarMessage.value = null
     }
 
+    fun batchAddTags(uuids: List<String>, tags: String) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            _snackbarMessage.value = "Sending batch tag update..."
+            try {
+                calibreRepository.sendBatchAddTagsRequest(uuids, tags, account)
+                _snackbarMessage.value = "Batch tag request sent for ${uuids.size} book${if (uuids.size == 1) "" else "s"}"
+            } catch (e: Exception) {
+                _snackbarMessage.value = "Error: ${e.message}"
+            }
+        }
+    }
+
     fun replaceCommentsFromClipboard(comments: String?, tags: String?, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()

@@ -26,6 +26,7 @@ private sealed class PendingClipboardAction {
     data class Cover(val uuid: String) : PendingClipboardAction()
     data class Comments(val uuid: String) : PendingClipboardAction()
     data class Tags(val uuid: String, val autoAddTags: String?) : PendingClipboardAction()
+    data class BatchTags(val uuids: List<String>) : PendingClipboardAction()
 }
 
 @AndroidEntryPoint
@@ -93,6 +94,11 @@ class MainActivity : ComponentActivity() {
                 val autoAddTags = uri.getQueryParameter("auto_add") ?: uri.getQueryParameter("tags")
                 if (uuid != null) pendingClipboardAction = PendingClipboardAction.Tags(uuid, autoAddTags)
             }
+            uri.scheme == "putz" && uri.host == "batch_add_tags" -> {
+                val uuidsStr = uri.getQueryParameter("uuids")
+                val uuids = uuidsStr?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                if (uuids.isNotEmpty()) pendingClipboardAction = PendingClipboardAction.BatchTags(uuids)
+            }
             MagnetParser.isMagnetLink(uri.toString()) -> pendingMagnetRepository.set(uri.toString())
         }
     }
@@ -120,6 +126,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 is PendingClipboardAction.Tags -> pendingCommentsRepository.setTagsOnly(action.uuid, action.autoAddTags)
+                is PendingClipboardAction.BatchTags -> pendingCommentsRepository.setBatchTags(action.uuids)
             }
         } catch (e: Exception) {
             // Clipboard access can fail on some devices/Android versions; silently ignore.

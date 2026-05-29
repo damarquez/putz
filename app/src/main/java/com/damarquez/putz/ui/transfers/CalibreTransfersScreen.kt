@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -31,12 +33,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -113,6 +117,8 @@ fun CalibreTransfersScreen(
     var includeClipboardComments by remember { mutableStateOf(true) }
     var autoAddTags by remember { mutableStateOf<String?>(null) }
     var prefilledUuid by remember { mutableStateOf<String?>(null) }
+    var pendingBatchUuids by remember { mutableStateOf<List<String>?>(null) }
+    var batchTagInput by remember { mutableStateOf("") }
 
     val cacheClipboardImage: (Uri, String?) -> Unit = { uri: Uri, uuid: String? ->
         scope.launch {
@@ -160,6 +166,16 @@ fun CalibreTransfersScreen(
                 includeClipboardComments = pending.includeComments
                 autoAddTags = pending.autoAddTags
                 prefilledUuid = pending.uuid
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingCommentsRepository.batchTagsFlow.collect { pending ->
+            if (pending != null) {
+                pendingCommentsRepository.clearBatchTags()
+                batchTagInput = ""
+                pendingBatchUuids = pending.uuids
             }
         }
     }
@@ -237,6 +253,44 @@ fun CalibreTransfersScreen(
             autoAddTags = autoAddTags,
             includeComments = includeClipboardComments,
             transferRefs = completedTransferRefs,
+        )
+    }
+
+    pendingBatchUuids?.let { uuids ->
+        AlertDialog(
+            onDismissRequest = { pendingBatchUuids = null; batchTagInput = "" },
+            title = { Text("Add tag to ${uuids.size} book${if (uuids.size == 1) "" else "s"}") },
+            text = {
+                OutlinedTextField(
+                    value = batchTagInput,
+                    onValueChange = { batchTagInput = it },
+                    label = { Text("New tag(s)") },
+                    placeholder = { Text("e.g. read, fiction") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val tags = batchTagInput.trim()
+                        if (tags.isNotBlank()) {
+                            viewModel.batchAddTags(uuids, tags)
+                        }
+                        pendingBatchUuids = null
+                        batchTagInput = ""
+                    },
+                    enabled = batchTagInput.isNotBlank(),
+                ) {
+                    Text("Add tag")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBatchUuids = null; batchTagInput = "" }) {
+                    Text("Cancel")
+                }
+            },
         )
     }
 

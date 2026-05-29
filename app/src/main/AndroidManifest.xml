@@ -58,6 +58,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="add_tags" />
             </intent-filter>
+
+            <!-- Batch add tags deep link: putz://batch_add_tags?uuids=UUID1,UUID2,... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="batch_add_tags" />
+            </intent-filter>
         </activity>
 
         <!-- CONTRACT: FUSE_BOOKS — receives fusion intents from CalibreAnywhere -->

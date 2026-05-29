@@ -13,10 +13,15 @@ data class PendingComments(
     val autoAddTags: String? = null,
 )
 
+data class PendingBatchTags(val uuids: List<String>)
+
 @Singleton
 class PendingCommentsRepository @Inject constructor() {
     private val _flow = MutableStateFlow<PendingComments?>(null)
     val flow: StateFlow<PendingComments?> = _flow.asStateFlow()
+
+    private val _batchTagsFlow = MutableStateFlow<PendingBatchTags?>(null)
+    val batchTagsFlow: StateFlow<PendingBatchTags?> = _batchTagsFlow.asStateFlow()
 
     fun set(uuid: String, text: String) {
         _flow.value = PendingComments(uuid, text)
@@ -28,5 +33,13 @@ class PendingCommentsRepository @Inject constructor() {
 
     fun clear() {
         _flow.value = null
+    }
+
+    fun setBatchTags(uuids: List<String>) {
+        _batchTagsFlow.value = PendingBatchTags(uuids)
+    }
+
+    fun clearBatchTags() {
+        _batchTagsFlow.value = null
     }
 }

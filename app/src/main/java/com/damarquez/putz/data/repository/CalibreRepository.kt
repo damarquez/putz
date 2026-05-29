@@ -93,6 +93,16 @@ data class CalibreBookMatch(
     val tags: String = "",
 )
 
+// CONTRACT: BATCH_ADD_TAGS
+@Serializable
+data class BatchAddTagsRequest(
+    val action: String = "BATCH_ADD_TAGS",
+    val putio_file_id: Long,
+    val calibre_book_uuids: List<String>,
+    val tags: String,
+    val app_id: String? = null,
+)
+
 // CONTRACT: SEND_TO_PLEX
 @Serializable
 data class PlexAssemblyItem(
@@ -311,6 +321,40 @@ class CalibreRepository @Inject constructor(
         )
         // NonCancellable: the GDrive upload already completed; the DB record must always
         // be written so the transfer is visible even if the calling scope navigates away.
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: BATCH_ADD_TAGS
+    suspend fun sendBatchAddTagsRequest(
+        uuids: List<String>,
+        tags: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = BatchAddTagsRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuids = uuids,
+            tags = tags,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_batch_tags_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Batch add tags to ${uuids.size} books",
+            title = "Batch tag: $tags",
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            isTempUpload = true,
+            lastRequestPayload = jsonStr,
+        )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
