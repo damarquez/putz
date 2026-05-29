@@ -241,6 +241,7 @@ fun TransfersScreen(
             addState = addState,
             onDismiss = { viewModel.dismissAddSheet() },
             onSubmit = { viewModel.submitTransfer(it) },
+            onSubmitAnyway = { viewModel.submitTransferAnyway(it) },
         )
     }
 }

@@ -12,6 +12,7 @@ import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.TransferHistoryRepository
 import com.damarquez.putz.data.repository.TransfersRepository
 import com.damarquez.putz.oauth.PendingMagnetRepository
+import com.damarquez.putz.util.MagnetParser
 import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -38,6 +39,8 @@ sealed class AddTransferState {
     data object Idle : AddTransferState()
     data object Submitting : AddTransferState()
     data class Failed(val message: String) : AddTransferState()
+    /** Magnet was found in transfer history; user must confirm before adding. */
+    data class HistoryMatch(val entry: HistoryFileEntry, val magnetOrUrl: String) : AddTransferState()
 }
 
 sealed class TransfersNavigationEvent {
@@ -171,6 +174,23 @@ class TransfersViewModel @Inject constructor(
 
     fun submitTransfer(magnetOrUrl: String) {
         if (_addState.value is AddTransferState.Submitting) return
+        // Check transfer history for duplicates before submitting
+        if (MagnetParser.isMagnetLink(magnetOrUrl)) {
+            val hash = MagnetParser.extractInfoHash(magnetOrUrl)?.lowercase()
+            if (hash != null) {
+                val match = historyByHash[hash]
+                if (match != null) {
+                    _addState.value = AddTransferState.HistoryMatch(match, magnetOrUrl)
+                    return
+                }
+            }
+        }
+        doSubmitTransfer(magnetOrUrl)
+    }
+
+    fun submitTransferAnyway(magnetOrUrl: String) = doSubmitTransfer(magnetOrUrl)
+
+    private fun doSubmitTransfer(magnetOrUrl: String) {
         _addState.value = AddTransferState.Submitting
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()

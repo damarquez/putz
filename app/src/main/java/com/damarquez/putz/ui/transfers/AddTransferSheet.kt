@@ -1,21 +1,29 @@
 package com.damarquez.putz.ui.transfers
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,6 +39,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.util.MagnetParser
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,11 +51,14 @@ fun AddTransferSheet(
     addState: AddTransferState,
     onDismiss: () -> Unit,
     onSubmit: (String) -> Unit,
+    onSubmitAnyway: (String) -> Unit = {},
 ) {
     var input by remember(prefill) { mutableStateOf(prefill) }
     val focusRequester = remember { FocusRequester() }
 
     val isSubmitting = addState is AddTransferState.Submitting
+    val isHistoryMatch = addState is AddTransferState.HistoryMatch
+    val historyMatch = addState as? AddTransferState.HistoryMatch
     val errorMessage = (addState as? AddTransferState.Failed)?.message
 
     val previewName = remember(input) {
@@ -94,7 +108,7 @@ fun AddTransferSheet(
                 singleLine = false,
             )
 
-            if (previewName != null) {
+            if (previewName != null && !isHistoryMatch) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = previewName,
@@ -105,31 +119,91 @@ fun AddTransferSheet(
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            Button(
-                onClick = { onSubmit(input.trim()) },
-                enabled = input.isNotBlank() && !isSubmitting,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                if (isSubmitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .padding(end = 8.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
+            if (historyMatch != null) {
+                Spacer(Modifier.height(12.dp))
+                val entry = historyMatch.entry
+                val dateStr = remember(entry.addedAt) {
+                    SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(entry.addedAt * 1000))
                 }
-                Text(if (isSubmitting) "Adding…" else "Add")
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Already in history",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = entry.resolvedName ?: entry.putioName ?: entry.label,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "Added $dateStr · ${entry.status}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
+                        )
+                    }
+                }
             }
 
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isSubmitting,
-            ) {
-                Text("Cancel")
+            Spacer(Modifier.height(20.dp))
+
+            if (isHistoryMatch && historyMatch != null) {
+                Button(
+                    onClick = { onSubmitAnyway(historyMatch.magnetOrUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text("Add anyway")
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Cancel")
+                }
+            } else {
+                Button(
+                    onClick = { onSubmit(input.trim()) },
+                    enabled = input.isNotBlank() && !isSubmitting,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .padding(end = 8.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                    Text(if (isSubmitting) "Adding…" else "Add")
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting,
+                ) {
+                    Text("Cancel")
+                }
             }
         }
     }

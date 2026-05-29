@@ -11,7 +11,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,6 +34,25 @@ class TransferHistoryViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<HistoryUiState>(HistoryUiState.Loading)
     val uiState: StateFlow<HistoryUiState> = _uiState.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    val filteredEntries: StateFlow<List<HistoryFileEntry>> = combine(_uiState, _searchQuery) { state, query ->
+        val entries = (state as? HistoryUiState.Success)?.entries ?: return@combine emptyList()
+        if (query.isBlank()) entries
+        else {
+            val q = query.trim().lowercase()
+            entries.filter { e ->
+                e.label.lowercase().contains(q) ||
+                e.resolvedName?.lowercase()?.contains(q) == true ||
+                e.putioName?.lowercase()?.contains(q) == true ||
+                e.infoHash.lowercase().contains(q)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setSearchQuery(query: String) { _searchQuery.value = query }
 
     init {
         loadHistory()
