@@ -892,6 +892,10 @@ class FilesViewModel @Inject constructor(
                 val audioFiles = buildList {
                     for (file in files) {
                         val localPath = calibreRepository.readStubLocalPath(file)
+                        if (localPath == null) {
+                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing or unreadable. Please retry."
+                            return@launch
+                        }
                         add(file to AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
                     }
                 }
@@ -1110,6 +1114,10 @@ class FilesViewModel @Inject constructor(
                 val audioFiles = buildList {
                     for (file in files) {
                         val localPath = calibreRepository.readStubLocalPath(file)
+                        if (localPath == null) {
+                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing or unreadable. Please retry."
+                            return@launch
+                        }
                         add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
                     }
                 }
@@ -1168,6 +1176,10 @@ class FilesViewModel @Inject constructor(
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
+                        if (localPath == null) {
+                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing or unreadable. Please retry."
+                            return@launch
+                        }
                         resolvedAudioFiles.add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
                     }
                     file.isLan -> {
@@ -1581,6 +1593,11 @@ class FilesViewModel @Inject constructor(
                     if (f.isSynced) put(f.id, calibreRepository.readStubLocalPath(f))
                 }
             }
+            val missingStub = sortedFiles.firstOrNull { it.file.isSynced && stubPaths[it.file.id] == null }
+            if (missingStub != null) {
+                _snackbarMessage.value = "Could not resolve local path for ${missingStub.file.displayName} — stub may be missing or unreadable. Please retry."
+                return@launch
+            }
             val filePairs = sortedFiles.mapNotNull { folderFile ->
                 val f = folderFile.file
                 val smbPath = if (f.isLan) {
@@ -1625,6 +1642,11 @@ class FilesViewModel @Inject constructor(
                     val f = folderFile.file
                     if (f.isSynced) put(f.id, calibreRepository.readStubLocalPath(f))
                 }
+            }
+            val missingStub = sortedFiles.firstOrNull { it.file.isSynced && stubPaths[it.file.id] == null }
+            if (missingStub != null) {
+                _snackbarMessage.value = "Could not resolve local path for ${missingStub.file.displayName} — stub may be missing or unreadable. Please retry."
+                return@launch
             }
             val resolvedAudioFiles = sortedFiles.mapNotNull { folderFile ->
                 val f = folderFile.file
