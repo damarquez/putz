@@ -193,12 +193,20 @@ class GDriveManager @Inject constructor(
             val responsesId = findFolder(service, "responses", rootId) ?: return@withContext emptyList()
             val appFolderId = findFolder(service, appId, responsesId) ?: return@withContext emptyList()
 
-            val result = service.files().list()
-                .setQ("'$appFolderId' in parents and trashed = false")
-                .setFields("files(id, name)")
-                .setOrderBy("name")
-                .execute()
-            result.files ?: emptyList()
+            val all = mutableListOf<com.google.api.services.drive.model.File>()
+            var pageToken: String? = null
+            do {
+                val result = service.files().list()
+                    .setQ("'$appFolderId' in parents and trashed = false")
+                    .setFields("nextPageToken, files(id, name)")
+                    .setOrderBy("name")
+                    .setPageSize(1000)
+                    .also { if (pageToken != null) it.pageToken = pageToken }
+                    .execute()
+                all += result.files ?: emptyList()
+                pageToken = result.nextPageToken
+            } while (pageToken != null)
+            all
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()

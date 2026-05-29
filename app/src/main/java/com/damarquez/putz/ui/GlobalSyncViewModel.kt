@@ -37,6 +37,7 @@ class GlobalSyncViewModel @Inject constructor(
                 val account = settingsRepository.googleTokenFlow.first()
                 if (account.isNotBlank()) {
                     try {
+                        calibreRepository.pollResponses(account)
                         calibreRepository.pollLibraryUpdates(account)
                         calibreRepository.pollHeartbeat(account)
                     } catch (e: Exception) {
