@@ -184,6 +184,18 @@ data class FuseBooksRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: MANAGE_VIRTUAL_LIBRARY
+@Serializable
+data class ManageVirtualLibraryRequest(
+    val action: String = "MANAGE_VIRTUAL_LIBRARY",
+    val putio_file_id: Long,
+    val operation: String,
+    val name: String,
+    val new_name: String? = null,
+    val search_query: String? = null,
+    val app_id: String? = null,
+)
+
 @Serializable
 data class GlobalStatusProbeRequest(
     val action: String = "GLOBAL_STATUS_PROBE",
@@ -907,6 +919,42 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             transferType = "FUSION",
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: MANAGE_VIRTUAL_LIBRARY
+    suspend fun sendManageVirtualLibraryRequest(
+        request: ManageVirtualLibraryRequest,
+        googleAccount: String,
+    ) {
+        val appId = settingsRepository.getOrCreateAppId()
+        val jsonStr = json.encodeToString(request.copy(app_id = appId))
+        val displayName = when (request.operation) {
+            "CREATE" -> "Create VL \"${request.name}\""
+            "RENAME" -> "Rename VL \"${request.name}\" → \"${request.new_name}\""
+            "UPDATE_QUERY" -> "Update VL \"${request.name}\""
+            "DELETE" -> "Delete VL \"${request.name}\""
+            else -> "Manage VL \"${request.name}\""
+        }
+        val gDriveId = daemonTransport.submitRequest(
+            googleAccount,
+            "req_manage_vl_${request.putio_file_id}.json",
+            jsonStr,
+        )
+        val transfer = CalibreTransferEntity(
+            putioFileId = request.putio_file_id,
+            fileName = displayName,
+            title = displayName,
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = request.putio_file_id.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            transferType = "MANAGE_VL",
             lastRequestPayload = jsonStr,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }

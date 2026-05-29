@@ -74,6 +74,20 @@
             </intent-filter>
         </activity>
 
+        <!-- CONTRACT: MANAGE_VIRTUAL_LIBRARY — receives VL management intents from CalibreAnywhere -->
+        <activity
+            android:name=".ui.virtuallibraries.ManageVirtualLibraryActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Putz">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="manage_virtual_library" />
+            </intent-filter>
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.damarquez.putz.fileprovider"
