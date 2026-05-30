@@ -67,6 +67,7 @@ import java.io.File
 import java.io.FileOutputStream
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
+import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.util.MetadataUtils
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
@@ -81,6 +82,7 @@ fun CalibreTransfersScreen(
     viewModel: CalibreTransfersViewModel,
     pendingCoverRepository: PendingCoverRepository,
     pendingCommentsRepository: PendingCommentsRepository,
+    pendingGenerateCoverRepository: PendingGenerateCoverRepository,
 ) {
     val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
@@ -154,6 +156,15 @@ fun CalibreTransfersScreen(
             if (pending != null) {
                 pendingCoverRepository.clear()
                 cacheClipboardImage(pending.imageUri, pending.uuid)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingGenerateCoverRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingGenerateCoverRepository.clear()
+                viewModel.generateCover(pending.uuid, pending.title, pending.author)
             }
         }
     }

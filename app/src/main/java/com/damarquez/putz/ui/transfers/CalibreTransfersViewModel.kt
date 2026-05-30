@@ -110,6 +110,19 @@ class CalibreTransfersViewModel @Inject constructor(
         return calibreRepository.checkExistsByUuid(dbFile, uuid)
     }
 
+    fun generateCover(uuid: String, title: String, author: String) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            calibreRepository.sendGenerateCoverRequest(
+                title = title,
+                author = author,
+                calibreBookUuid = uuid,
+                googleAccount = account,
+            )
+        }
+    }
+
     fun replaceCoverFromClipboard(uri: android.net.Uri, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()

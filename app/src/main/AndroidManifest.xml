@@ -66,6 +66,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="batch_add_tags" />
             </intent-filter>
+
+            <!-- CONTRACT: GENERATE_COVER — putz://generate_cover?uuid=UUID&title=TITLE&author=AUTHOR -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="generate_cover" />
+            </intent-filter>
         </activity>
 
         <!-- CONTRACT: FUSE_BOOKS — receives fusion intents from CalibreAnywhere -->

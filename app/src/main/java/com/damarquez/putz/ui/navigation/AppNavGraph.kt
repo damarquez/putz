@@ -43,6 +43,7 @@ import com.damarquez.putz.ui.GlobalSyncViewModel
 import androidx.compose.runtime.LaunchedEffect
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
+import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import kotlinx.coroutines.flow.combine
 
 private const val ROOT_FOLDER_NAME = "Your Files"
@@ -51,7 +52,8 @@ private const val ROOT_FOLDER_NAME = "Your Files"
 fun AppNavGraph(
     settingsRepository: SettingsRepository,
     pendingCoverRepository: PendingCoverRepository,
-    pendingCommentsRepository: PendingCommentsRepository
+    pendingCommentsRepository: PendingCommentsRepository,
+    pendingGenerateCoverRepository: PendingGenerateCoverRepository,
 ) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
@@ -60,10 +62,14 @@ fun AppNavGraph(
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
     LaunchedEffect(Unit) {
-        combine(pendingCoverRepository.flow, pendingCommentsRepository.flow) { cover, comments ->
-            cover to comments
-        }.collect { (cover, comments) ->
-            if (cover != null || comments != null) {
+        combine(
+            pendingCoverRepository.flow,
+            pendingCommentsRepository.flow,
+            pendingGenerateCoverRepository.flow,
+        ) { cover, comments, generateCover ->
+            Triple(cover, comments, generateCover)
+        }.collect { (cover, comments, generateCover) ->
+            if (cover != null || comments != null || generateCover != null) {
                 val alreadyOnScreen = navController.currentDestination?.route == Screen.CalibreTransfers.route
                 if (!alreadyOnScreen) {
                     navController.navigate(Screen.CalibreTransfers.route) {
@@ -362,7 +368,8 @@ fun AppNavGraph(
                     onNavigateUp = { navController.navigateUp() },
                     viewModel = hiltViewModel(),
                     pendingCoverRepository = pendingCoverRepository,
-                    pendingCommentsRepository = pendingCommentsRepository
+                    pendingCommentsRepository = pendingCommentsRepository,
+                    pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                 )
             }
         }

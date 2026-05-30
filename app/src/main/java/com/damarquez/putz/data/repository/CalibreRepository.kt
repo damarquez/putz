@@ -1063,6 +1063,7 @@ class CalibreRepository @Inject constructor(
                     // Must have a UUID to locate the book
                     transfer.calibreBookUuid == null -> true
                     action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                    action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
                     else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
                 }
@@ -1262,6 +1263,45 @@ class CalibreRepository @Inject constructor(
         )
         // NonCancellable: the GDrive upload already completed; the DB record must always
         // be written so the transfer is visible even if the calling scope navigates away.
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: GENERATE_COVER
+    suspend fun sendGenerateCoverRequest(
+        title: String,
+        author: String,
+        calibreBookUuid: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            action = "GENERATE_COVER",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = emptyList(),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_gencover_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Generate cover for $title",
+            title = "Generate cover for $title",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 

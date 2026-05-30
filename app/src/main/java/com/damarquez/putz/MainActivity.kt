@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
+import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.oauth.OAuthManager
 import com.damarquez.putz.oauth.PendingMagnetRepository
 import com.damarquez.putz.settings.SettingsRepository
@@ -27,6 +28,7 @@ private sealed class PendingClipboardAction {
     data class Comments(val uuid: String) : PendingClipboardAction()
     data class Tags(val uuid: String, val autoAddTags: String?) : PendingClipboardAction()
     data class BatchTags(val uuids: List<String>) : PendingClipboardAction()
+    data class GenerateCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
 }
 
 @AndroidEntryPoint
@@ -37,6 +39,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var pendingMagnetRepository: PendingMagnetRepository
     @Inject lateinit var pendingCoverRepository: PendingCoverRepository
     @Inject lateinit var pendingCommentsRepository: PendingCommentsRepository
+    @Inject lateinit var pendingGenerateCoverRepository: PendingGenerateCoverRepository
 
     private var pendingClipboardAction: PendingClipboardAction? = null
 
@@ -58,7 +61,8 @@ class MainActivity : ComponentActivity() {
                 AppNavGraph(
                     settingsRepository = settingsRepository,
                     pendingCoverRepository = pendingCoverRepository,
-                    pendingCommentsRepository = pendingCommentsRepository
+                    pendingCommentsRepository = pendingCommentsRepository,
+                    pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                 )
             }
         }
@@ -99,6 +103,12 @@ class MainActivity : ComponentActivity() {
                 val uuids = uuidsStr?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                 if (uuids.isNotEmpty()) pendingClipboardAction = PendingClipboardAction.BatchTags(uuids)
             }
+            uri.scheme == "putz" && uri.host == "generate_cover" -> {
+                val uuid = uri.getQueryParameter("uuid")
+                val title = uri.getQueryParameter("title") ?: ""
+                val author = uri.getQueryParameter("author") ?: ""
+                if (uuid != null) pendingClipboardAction = PendingClipboardAction.GenerateCover(uuid, title, author)
+            }
             MagnetParser.isMagnetLink(uri.toString()) -> pendingMagnetRepository.set(uri.toString())
         }
     }
@@ -127,6 +137,7 @@ class MainActivity : ComponentActivity() {
                 }
                 is PendingClipboardAction.Tags -> pendingCommentsRepository.setTagsOnly(action.uuid, action.autoAddTags)
                 is PendingClipboardAction.BatchTags -> pendingCommentsRepository.setBatchTags(action.uuids)
+                is PendingClipboardAction.GenerateCover -> pendingGenerateCoverRepository.set(action.uuid, action.title, action.author)
             }
         } catch (e: Exception) {
             // Clipboard access can fail on some devices/Android versions; silently ignore.
