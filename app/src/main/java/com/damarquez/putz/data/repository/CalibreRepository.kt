@@ -1651,6 +1651,7 @@ class CalibreRepository @Inject constructor(
                 return NetworkResult.Error("Original comment data was not saved and cannot be reconstructed")
             }
 
+            val appId = settingsRepository.getOrCreateAppId()
             val request = CalibreBatchRequest(
                 action = action,
                 putio_file_id = transfer.putioFileId,
@@ -1659,6 +1660,7 @@ class CalibreRepository @Inject constructor(
                 items = items,
                 calibre_book_uuid = transfer.calibreBookUuid,
                 calibre_book_id = transfer.calibreBookId?.toLong(),
+                app_id = appId,
             )
             json.encodeToString(request)
         }
