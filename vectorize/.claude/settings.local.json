@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(C:\\\\Python314\\\\python -m pip index versions vtracer)",
+      "PowerShell(& \"C:\\\\Python314\\\\python\" -m pip index versions vtracer 2>&1 | Select-Object -First 5)",
+      "PowerShell(& \"C:\\\\Python314\\\\python\" -m pip install vtracer --quiet 2>&1 | Select-Object -Last 3)",
+      "PowerShell(& \"C:\\\\Python314\\\\python\" -c \"import vtracer; print\\('vtracer OK, version check passed'\\)\")",
+      "PowerShell(Get-Command *)",
+      "PowerShell(python -c \"import vtracer; print\\('OK'\\)\")",
+      "PowerShell(python \"H:\\\\git\\\\personal\\\\vectorize\\\\vectorize.py\" \"H:\\\\Download\\\\icons\")",
+      "PowerShell(python \"H:\\\\git\\\\personal\\\\vectorize\\\\vectorize.py\" \"H:\\\\Download\\\\icons\" 2>&1)",
+      "PowerShell(python -c \"import vtracer; help\\(vtracer.convert_image_to_svg_py\\)\" 2>&1)",
+      "PowerShell(python -c \"import vtracer; import os; print\\(os.path.dirname\\(vtracer.__file__\\)\\)\")",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "PowerShell(python -c \"import vtracer; vtracer.convert_image_to_svg_py\\(r'H:\\\\Download\\\\icons\\\\pdf-file-format.png', r'H:\\\\Download\\\\icons\\\\t.svg', filter_speckle=4\\); print\\('OK'\\)\" 2>&1)",
+      "PowerShell(python -c \"import vtracer; vtracer.convert_image_to_svg_py\\(r'H:\\\\Download\\\\icons\\\\pdf-file-format.png', r'H:\\\\Download\\\\icons\\\\t.svg', mode='spline'\\); print\\('OK'\\)\" 2>&1)",
+      "PowerShell(python -c \"import vtracer; vtracer.convert_image_to_svg_py\\(r'H:\\\\Download\\\\icons\\\\pdf-file-format.png', r'H:\\\\Download\\\\icons\\\\t.svg', mode='polygon'\\); print\\('OK'\\)\" 2>&1)",
+      "PowerShell(python -c \"import vtracer; vtracer.convert_image_to_svg_py\\(r'H:\\\\Download\\\\icons\\\\pdf-file-format.png', r'H:\\\\Download\\\\icons\\\\t.svg', mode='pixel'\\); print\\('OK'\\)\" 2>&1)"
+    ]
+  }
+}
