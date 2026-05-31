@@ -55,9 +55,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import android.app.SearchManager
 import android.content.Intent
 import android.net.Uri
 import com.damarquez.putz.data.repository.CalibreBookMatch
+import com.damarquez.putz.util.MetadataUtils
 
 data class TransferRef(val uuid: String, val title: String, val author: String)
 
@@ -201,8 +203,16 @@ fun CalibreConfirmationSheet(
                 } else {
                     Text(
                         text = displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium.copy(textDecoration = TextDecoration.Underline),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            val query = MetadataUtils.webSearchQuery(displayName)
+                            val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                                putExtra(SearchManager.QUERY, query)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        },
                     )
                 }
 

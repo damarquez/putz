@@ -40,7 +40,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import android.app.SearchManager
+import android.content.Intent
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -101,6 +104,7 @@ fun FileItem(
         file.displayName.endsWith(".sub", ignoreCase = true)
     val isImage = fileType == PutioFileType.IMAGE
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
 
     // CONTRACT: Putz file state — drives menu visibility; see CONTRACTS.md §19
@@ -424,6 +428,20 @@ fun FileItem(
                                 clipboard.setText(AnnotatedString(file.name))
                             },
                         )
+                        if (!file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory) {
+                            DropdownMenuItem(
+                                text = { Text("Search web") },
+                                onClick = {
+                                    showMenu = false
+                                    val query = MetadataUtils.webSearchQuery(file.displayName)
+                                    val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                                        putExtra(SearchManager.QUERY, query)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                },
+                            )
+                        }
                         if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !isRegularRemote) {
                             HorizontalDivider()
                             DropdownMenuItem(

@@ -75,6 +75,26 @@ object MetadataUtils {
         return Pair(nameWithoutExt, "Unknown")
     }
 
+    /**
+     * Normalize a file/folder displayName for use as a web search query.
+     * Removes the file extension (if it looks like one: 2-6 ASCII letters), then replaces every
+     * run of non-alphanumeric characters with a single space and trims the result.
+     *
+     * Examples:
+     *   "my.file/#2.by.this_author1,author2.epub" → "my file 2 by this author1 author2"
+     *   "The.Matrix.1999"                         → "The Matrix 1999"
+     *   "My Folder"                               → "My Folder"
+     */
+    fun webSearchQuery(displayName: String): String {
+        val ext = displayName.substringAfterLast('.', "")
+        val withoutExt = if (ext.isNotEmpty() && ext.length in 2..6 && ext.all { it.isLetter() }) {
+            displayName.substringBeforeLast('.')
+        } else {
+            displayName
+        }
+        return withoutExt.replace(Regex("[^A-Za-z0-9]+"), " ").trim()
+    }
+
     fun sanitizeHtml(text: String, htmlText: String? = null): String {
         val source = htmlText ?: text
         val trimmed = source.trim()
