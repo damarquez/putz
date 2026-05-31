@@ -10,6 +10,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
+import com.damarquez.putz.data.repository.PendingDeletionAction
+import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.oauth.OAuthManager
@@ -31,6 +33,7 @@ private sealed class PendingClipboardAction {
     data class BatchTags(val uuids: List<String>) : PendingClipboardAction()
     data class GenerateCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class SetPageCount(val uuid: String, val pageCount: Int) : PendingClipboardAction()
+    data class DeletionAction(val action: PendingDeletionAction) : PendingClipboardAction()
 }
 
 @AndroidEntryPoint
@@ -43,6 +46,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var pendingCommentsRepository: PendingCommentsRepository
     @Inject lateinit var pendingGenerateCoverRepository: PendingGenerateCoverRepository
     @Inject lateinit var pendingSetPageCountRepository: PendingSetPageCountRepository
+    @Inject lateinit var pendingDeletionActionRepository: PendingDeletionActionRepository
 
     private var pendingClipboardAction: PendingClipboardAction? = null
 
@@ -67,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
+                    pendingDeletionActionRepository = pendingDeletionActionRepository,
                 )
             }
         }
@@ -119,6 +124,35 @@ class MainActivity : ComponentActivity() {
                 if (uuid != null && pages != null && pages > 0)
                     pendingClipboardAction = PendingClipboardAction.SetPageCount(uuid, pages)
             }
+            uri.scheme == "putz" && uri.host == "mark_book_for_deletion" -> {  // CONTRACT: MARK_BOOK_FOR_DELETION
+                val uuid = uri.getQueryParameter("uuid")
+                if (uuid != null)
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkBook(uuid))
+            }
+            uri.scheme == "putz" && uri.host == "mark_formats_for_deletion" -> {  // CONTRACT: MARK_FORMATS_FOR_DELETION
+                val uuid = uri.getQueryParameter("uuid")
+                val formats = uri.getQueryParameter("formats")
+                    ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                if (uuid != null && formats.isNotEmpty())
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkFormats(uuid, formats))
+            }
+            uri.scheme == "putz" && uri.host == "confirm_delete_book" -> {  // CONTRACT: CONFIRM_DELETE_BOOK
+                val uuid = uri.getQueryParameter("uuid")
+                if (uuid != null)
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.ConfirmDeleteBook(uuid))
+            }
+            uri.scheme == "putz" && uri.host == "confirm_delete_formats" -> {  // CONTRACT: CONFIRM_DELETE_FORMATS
+                val uuid = uri.getQueryParameter("uuid")
+                val formats = uri.getQueryParameter("formats")
+                    ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                if (uuid != null && formats.isNotEmpty())
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.ConfirmDeleteFormats(uuid, formats))
+            }
+            uri.scheme == "putz" && uri.host == "cancel_delete" -> {  // CONTRACT: CANCEL_DELETION
+                val uuid = uri.getQueryParameter("uuid")
+                if (uuid != null)
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.Cancel(uuid))
+            }
             MagnetParser.isMagnetLink(uri.toString()) -> pendingMagnetRepository.set(uri.toString())
         }
     }
@@ -149,6 +183,7 @@ class MainActivity : ComponentActivity() {
                 is PendingClipboardAction.BatchTags -> pendingCommentsRepository.setBatchTags(action.uuids)
                 is PendingClipboardAction.GenerateCover -> pendingGenerateCoverRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.SetPageCount -> pendingSetPageCountRepository.set(action.uuid, action.pageCount)
+                is PendingClipboardAction.DeletionAction -> pendingDeletionActionRepository.set(action.action)
             }
         } catch (e: Exception) {
             // Clipboard access can fail on some devices/Android versions; silently ignore.

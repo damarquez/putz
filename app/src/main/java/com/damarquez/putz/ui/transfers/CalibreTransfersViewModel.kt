@@ -9,6 +9,7 @@ import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.CalibreRepository
+import com.damarquez.putz.data.repository.PendingDeletionAction
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
@@ -132,6 +133,25 @@ class CalibreTransfersViewModel @Inject constructor(
                 pageCount = pageCount,
                 googleAccount = account,
             )
+        }
+    }
+
+    fun handleDeletionAction(action: PendingDeletionAction) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            when (action) {
+                is PendingDeletionAction.MarkBook ->
+                    calibreRepository.sendMarkBookForDeletionRequest(action.uuid, account)
+                is PendingDeletionAction.MarkFormats ->
+                    calibreRepository.sendMarkFormatsForDeletionRequest(action.uuid, action.formats, account)
+                is PendingDeletionAction.ConfirmDeleteBook ->
+                    calibreRepository.sendConfirmDeleteBookRequest(action.uuid, account)
+                is PendingDeletionAction.ConfirmDeleteFormats ->
+                    calibreRepository.sendConfirmDeleteFormatsRequest(action.uuid, action.formats, account)
+                is PendingDeletionAction.Cancel ->
+                    calibreRepository.sendCancelDeletionRequest(action.uuid, account)
+            }
         }
     }
 

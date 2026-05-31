@@ -222,6 +222,53 @@ data class SetPageCountRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: MARK_BOOK_FOR_DELETION
+@Serializable
+data class MarkBookForDeletionRequest(
+    val action: String = "MARK_BOOK_FOR_DELETION",
+    val putio_file_id: Long,
+    val calibre_book_uuid: String,
+    val app_id: String? = null,
+)
+
+// CONTRACT: MARK_FORMATS_FOR_DELETION
+@Serializable
+data class MarkFormatsForDeletionRequest(
+    val action: String = "MARK_FORMATS_FOR_DELETION",
+    val putio_file_id: Long,
+    val calibre_book_uuid: String,
+    val formats: List<String>,
+    val app_id: String? = null,
+)
+
+// CONTRACT: CONFIRM_DELETE_BOOK
+@Serializable
+data class ConfirmDeleteBookRequest(
+    val action: String = "CONFIRM_DELETE_BOOK",
+    val putio_file_id: Long,
+    val calibre_book_uuid: String,
+    val app_id: String? = null,
+)
+
+// CONTRACT: CONFIRM_DELETE_FORMATS
+@Serializable
+data class ConfirmDeleteFormatsRequest(
+    val action: String = "CONFIRM_DELETE_FORMATS",
+    val putio_file_id: Long,
+    val calibre_book_uuid: String,
+    val formats: List<String>,
+    val app_id: String? = null,
+)
+
+// CONTRACT: CANCEL_DELETION
+@Serializable
+data class CancelDeletionRequest(
+    val action: String = "CANCEL_DELETION",
+    val putio_file_id: Long,
+    val calibre_book_uuid: String,
+    val app_id: String? = null,
+)
+
 // CONTRACT: REGISTER_TRANSFER_HISTORY
 @Serializable
 data class RegisterHistoryRequest(
@@ -1336,6 +1383,163 @@ class CalibreRepository @Inject constructor(
             putioFileId = putioFileId,
             fileName = "Set page count to $pageCount",
             title = "Set page count to $pageCount",
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: MARK_BOOK_FOR_DELETION
+    suspend fun sendMarkBookForDeletionRequest(calibreBookUuid: String, googleAccount: String) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = MarkBookForDeletionRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_markdel_$putioFileId.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Mark book for deletion",
+            title = "Mark book for deletion",
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: MARK_FORMATS_FOR_DELETION
+    suspend fun sendMarkFormatsForDeletionRequest(
+        calibreBookUuid: String,
+        formats: List<String>,
+        googleAccount: String,
+    ) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = MarkFormatsForDeletionRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuid = calibreBookUuid,
+            formats = formats,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_markfmt_$putioFileId.json", jsonStr)
+        val label = "Mark formats for deletion (${formats.joinToString(", ")})"
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = label,
+            title = label,
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: CONFIRM_DELETE_BOOK
+    suspend fun sendConfirmDeleteBookRequest(calibreBookUuid: String, googleAccount: String) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = ConfirmDeleteBookRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_confdel_$putioFileId.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Delete book from library",
+            title = "Delete book from library",
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: CONFIRM_DELETE_FORMATS
+    suspend fun sendConfirmDeleteFormatsRequest(
+        calibreBookUuid: String,
+        formats: List<String>,
+        googleAccount: String,
+    ) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = ConfirmDeleteFormatsRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuid = calibreBookUuid,
+            formats = formats,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_conffmt_$putioFileId.json", jsonStr)
+        val label = "Delete formats from library (${formats.joinToString(", ")})"
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = label,
+            title = label,
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: CANCEL_DELETION
+    suspend fun sendCancelDeletionRequest(calibreBookUuid: String, googleAccount: String) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CancelDeletionRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_canceldel_$putioFileId.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Cancel deletion",
+            title = "Cancel deletion",
             author = "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),

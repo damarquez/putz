@@ -43,6 +43,7 @@ import com.damarquez.putz.ui.GlobalSyncViewModel
 import androidx.compose.runtime.LaunchedEffect
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
+import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import kotlinx.coroutines.flow.combine
@@ -56,6 +57,7 @@ fun AppNavGraph(
     pendingCommentsRepository: PendingCommentsRepository,
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
+    pendingDeletionActionRepository: PendingDeletionActionRepository,
 ) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
@@ -65,13 +67,14 @@ fun AppNavGraph(
 
     LaunchedEffect(Unit) {
         combine(
-            pendingCoverRepository.flow,
-            pendingCommentsRepository.flow,
-            pendingGenerateCoverRepository.flow,
-            pendingSetPageCountRepository.flow,
-        ) { cover, comments, generateCover, setPageCount ->
-            cover != null || comments != null || generateCover != null || setPageCount != null
-        }.collect { hasAny ->
+            listOf(
+                pendingCoverRepository.flow,
+                pendingCommentsRepository.flow,
+                pendingGenerateCoverRepository.flow,
+                pendingSetPageCountRepository.flow,
+                pendingDeletionActionRepository.flow,
+            )
+        ) { values -> values.any { it != null } }.collect { hasAny ->
             if (hasAny) {
                 val alreadyOnScreen = navController.currentDestination?.route == Screen.CalibreTransfers.route
                 if (!alreadyOnScreen) {
@@ -374,6 +377,7 @@ fun AppNavGraph(
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
+                    pendingDeletionActionRepository = pendingDeletionActionRepository,
                 )
             }
         }

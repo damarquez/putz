@@ -67,6 +67,7 @@ import java.io.File
 import java.io.FileOutputStream
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
+import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.util.MetadataUtils
@@ -85,6 +86,7 @@ fun CalibreTransfersScreen(
     pendingCommentsRepository: PendingCommentsRepository,
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
+    pendingDeletionActionRepository: PendingDeletionActionRepository,
 ) {
     val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
@@ -176,6 +178,15 @@ fun CalibreTransfersScreen(
             if (pending != null) {
                 pendingSetPageCountRepository.clear()
                 viewModel.setPageCount(pending.uuid, pending.pageCount)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingDeletionActionRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingDeletionActionRepository.clear()
+                viewModel.handleDeletionAction(pending)
             }
         }
     }
