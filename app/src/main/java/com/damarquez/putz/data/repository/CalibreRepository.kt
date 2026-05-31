@@ -212,6 +212,16 @@ data class GlobalStatusProbeRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: SET_PAGE_COUNT
+@Serializable
+data class SetPageCountRequest(
+    val action: String = "SET_PAGE_COUNT",
+    val putio_file_id: Long,
+    val calibre_book_uuid: String,
+    val page_count: Int,
+    val app_id: String? = null,
+)
+
 // CONTRACT: REGISTER_TRANSFER_HISTORY
 @Serializable
 data class RegisterHistoryRequest(
@@ -1292,6 +1302,41 @@ class CalibreRepository @Inject constructor(
             fileName = "Generate cover for $title",
             title = "Generate cover for $title",
             author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: SET_PAGE_COUNT
+    suspend fun sendSetPageCountRequest(
+        calibreBookUuid: String,
+        pageCount: Int,
+        googleAccount: String,
+    ) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = SetPageCountRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuid = calibreBookUuid,
+            page_count = pageCount,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_setpages_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Set page count to $pageCount",
+            title = "Set page count to $pageCount",
+            author = "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),

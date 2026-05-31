@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
+import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import kotlinx.coroutines.flow.combine
 
 private const val ROOT_FOLDER_NAME = "Your Files"
@@ -54,6 +55,7 @@ fun AppNavGraph(
     pendingCoverRepository: PendingCoverRepository,
     pendingCommentsRepository: PendingCommentsRepository,
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
+    pendingSetPageCountRepository: PendingSetPageCountRepository,
 ) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
@@ -66,10 +68,11 @@ fun AppNavGraph(
             pendingCoverRepository.flow,
             pendingCommentsRepository.flow,
             pendingGenerateCoverRepository.flow,
-        ) { cover, comments, generateCover ->
-            Triple(cover, comments, generateCover)
-        }.collect { (cover, comments, generateCover) ->
-            if (cover != null || comments != null || generateCover != null) {
+            pendingSetPageCountRepository.flow,
+        ) { cover, comments, generateCover, setPageCount ->
+            cover != null || comments != null || generateCover != null || setPageCount != null
+        }.collect { hasAny ->
+            if (hasAny) {
                 val alreadyOnScreen = navController.currentDestination?.route == Screen.CalibreTransfers.route
                 if (!alreadyOnScreen) {
                     navController.navigate(Screen.CalibreTransfers.route) {
@@ -370,6 +373,7 @@ fun AppNavGraph(
                     pendingCoverRepository = pendingCoverRepository,
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
+                    pendingSetPageCountRepository = pendingSetPageCountRepository,
                 )
             }
         }

@@ -123,6 +123,18 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    fun setPageCount(uuid: String, pageCount: Int) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            calibreRepository.sendSetPageCountRequest(
+                calibreBookUuid = uuid,
+                pageCount = pageCount,
+                googleAccount = account,
+            )
+        }
+    }
+
     fun replaceCoverFromClipboard(uri: android.net.Uri, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
