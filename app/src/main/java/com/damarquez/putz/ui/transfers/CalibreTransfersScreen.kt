@@ -133,7 +133,12 @@ fun CalibreTransfersScreen(
                     val previewsDir = File(context.cacheDir, "previews")
                     if (!previewsDir.exists()) previewsDir.mkdirs()
 
-                    val tempFile = File(previewsDir, "clipboard_cover_temp.jpg")
+                    // Delete any previous clipboard cover files so Coil's cache key changes each
+                    // time — a fixed name would cause Coil to serve the stale cached image.
+                    previewsDir.listFiles { f -> f.name.startsWith("clipboard_cover_") }
+                        ?.forEach { it.delete() }
+
+                    val tempFile = File(previewsDir, "clipboard_cover_${System.currentTimeMillis()}.jpg")
                     val stream = context.contentResolver.openInputStream(uri)
                     if (stream == null) return@withContext null
                     stream.use { input ->
