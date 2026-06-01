@@ -41,6 +41,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import com.damarquez.putz.util.MetadataUtils
 import java.io.File
@@ -888,16 +891,17 @@ class FilesViewModel @Inject constructor(
             }
 
             if (files.all { it.isSynced }) {
-                // All files already in local mirror — use local copies directly
-                val audioFiles = buildList {
-                    for (file in files) {
-                        val localPath = calibreRepository.readStubLocalPath(file)
-                        if (localPath == null) {
-                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing or unreadable. Please retry."
-                            return@launch
-                        }
-                        add(file to AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
-                    }
+                // All files already in local mirror — fetch all stub paths in parallel (each is a put.io API call)
+                val stubResults = coroutineScope {
+                    files.map { file -> async { file to calibreRepository.readStubLocalPath(file) } }.awaitAll()
+                }
+                val failed = stubResults.firstOrNull { (_, path) -> path == null }?.first
+                if (failed != null) {
+                    _snackbarMessage.value = "Could not resolve local path for ${failed.displayName} — stub may be missing or unreadable. Please retry."
+                    return@launch
+                }
+                val audioFiles = stubResults.map { (file, localPath) ->
+                    file to AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath!!)
                 }
                 calibreRepository.addAudiobookPackTransfer(
                     files = audioFiles,
@@ -1110,6 +1114,228 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun sendPdfPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, calibreBookUuid: String? = null) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val tempId = files.first().id
+
+            if (files.all { it.isSynced }) {
+                val stubResults = coroutineScope {
+                    files.map { file -> async { file to calibreRepository.readStubLocalPath(file) } }.awaitAll()
+                }
+                val failed = stubResults.firstOrNull { (_, path) -> path == null }?.first
+                if (failed != null) {
+                    _snackbarMessage.value = "Could not resolve local path for ${failed.displayName} — stub may be missing or unreadable. Please retry."
+                    return@launch
+                }
+                val pdfFiles = stubResults.map { (file, localPath) ->
+                    file to AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath!!)
+                }
+                calibreRepository.addPdfPackTransfer(
+                    files = pdfFiles,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    assembleBook = assembleBook,
+                    calibreBookUuid = calibreBookUuid,
+                )
+                _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
+                return@launch
+            }
+
+            if (files.all { it.isLan } && files.none { it.isLocal }) {
+                val pdfFilePairs = files.mapNotNull { file ->
+                    val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                    if (conn == null || file.lanPath == null) {
+                        _snackbarMessage.value = "LAN connection info missing for ${file.name}"
+                        return@launch
+                    }
+                    file to AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath))
+                }
+                calibreRepository.addPdfPackTransfer(
+                    files = pdfFilePairs,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    assembleBook = assembleBook,
+                    calibreBookUuid = calibreBookUuid,
+                )
+                _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
+                return@launch
+            }
+
+            // Standard remote path (or mixed with device-local uploads)
+            val resolvedFiles = mutableListOf<AudiobookFile>()
+            for ((index, file) in files.withIndex()) {
+                when {
+                    file.isSynced -> {
+                        val localPath = calibreRepository.readStubLocalPath(file)
+                        if (localPath == null) {
+                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName}"
+                            return@launch
+                        }
+                        resolvedFiles.add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
+                    }
+                    file.isLan -> {
+                        val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                        if (conn == null || file.lanPath == null) {
+                            _snackbarMessage.value = "LAN connection missing for ${file.name}"
+                            return@launch
+                        }
+                        resolvedFiles.add(AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath)))
+                    }
+                    else -> {
+                        val id = uploadLocalFileIfNecessary(
+                            file, putioToken,
+                            progressKey = tempId,
+                            fileIndex = index + 1,
+                            totalFiles = files.size,
+                            clearProgressOnSuccess = index < files.size - 1,
+                        ) ?: return@launch
+                        resolvedFiles.add(AudiobookFile(id, file.name, filesRepository.getDownloadUrl(putioToken, id)))
+                    }
+                }
+            }
+            calibreRepository.updateUploadProgress(tempId, null)
+
+            calibreRepository.addPdfPackTransfer(
+                files = files.zip(resolvedFiles).map { (f, rf) -> f to rf },
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+                assembleBook = assembleBook,
+                calibreBookUuid = calibreBookUuid,
+            )
+            _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
+        }
+    }
+
+    fun appendPdfPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String) {
+        viewModelScope.launch {
+            calibreRepository.markAssemblyAppendPending(assemblyFileId)
+            try {
+                val putioToken = settingsRepository.authTokenFlow.first()
+
+                if (files.all { it.isSynced }) {
+                    val stubResults = coroutineScope {
+                        files.map { file -> async { file to calibreRepository.readStubLocalPath(file) } }.awaitAll()
+                    }
+                    val failed = stubResults.firstOrNull { (_, path) -> path == null }?.first
+                    if (failed != null) {
+                        _snackbarMessage.value = "Could not resolve local path for ${failed.displayName}"
+                        return@launch
+                    }
+                    val pdfFiles = stubResults.map { (file, localPath) ->
+                        AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath!!)
+                    }
+                    val newItem = CalibreBatchItem(
+                        type = "PDF_PACK",
+                        putio_file_id = files.first().syncedFileId,
+                        fileName = "Book.pdf",
+                        files = pdfFiles,
+                    )
+                    val added = calibreRepository.appendToAssembly(
+                        assemblyFileId = assemblyFileId,
+                        title = title,
+                        author = author,
+                        newItem = newItem,
+                        newFileIds = files.map { it.syncedFileId },
+                    )
+                    _snackbarMessage.value = if (added) "PDF pack added to assembly: $title"
+                        else "These PDFs are already in this assembly"
+                    return@launch
+                }
+
+                if (files.all { it.isLan } && files.none { it.isLocal }) {
+                    val pdfFiles = files.mapNotNull { file ->
+                        val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                        if (conn == null || file.lanPath == null) {
+                            _snackbarMessage.value = "LAN connection info missing for ${file.name}"
+                            return@launch
+                        }
+                        AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath))
+                    }
+                    val newItem = CalibreBatchItem(
+                        type = "PDF_PACK",
+                        putio_file_id = files.first().id,
+                        fileName = "Book.pdf",
+                        files = pdfFiles,
+                    )
+                    val added = calibreRepository.appendToAssembly(
+                        assemblyFileId = assemblyFileId,
+                        title = title,
+                        author = author,
+                        newItem = newItem,
+                        newFileIds = files.map { it.id },
+                    )
+                    _snackbarMessage.value = if (added) "PDF pack added to assembly: $title"
+                        else "These PDFs are already in this assembly"
+                    return@launch
+                }
+
+                val resolvedFiles = mutableListOf<AudiobookFile>()
+                val total = files.size
+                for ((index, file) in files.withIndex()) {
+                    when {
+                        file.isSynced -> {
+                            val localPath = calibreRepository.readStubLocalPath(file)
+                            if (localPath == null) {
+                                _snackbarMessage.value = "Could not resolve local path for ${file.displayName}"
+                                return@launch
+                            }
+                            resolvedFiles.add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
+                        }
+                        file.isLan -> {
+                            val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                            if (conn == null || file.lanPath == null) {
+                                _snackbarMessage.value = "LAN connection missing for ${file.name}"
+                                return@launch
+                            }
+                            resolvedFiles.add(AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath)))
+                        }
+                        else -> {
+                            val uploadedId = uploadLocalFileIfNecessary(
+                                file, putioToken,
+                                progressKey = assemblyFileId,
+                                fileIndex = index + 1,
+                                totalFiles = total,
+                                clearProgressOnSuccess = index < total - 1,
+                            ) ?: return@launch
+                            resolvedFiles.add(AudiobookFile(uploadedId, file.name, filesRepository.getDownloadUrl(putioToken, uploadedId)))
+                        }
+                    }
+                }
+                if (files.any { it.isLocal }) {
+                    calibreRepository.updateUploadProgress(assemblyFileId, null)
+                }
+
+                val newItem = CalibreBatchItem(
+                    type = "PDF_PACK",
+                    putio_file_id = resolvedFiles.first().putio_file_id,
+                    fileName = "Book.pdf",
+                    files = resolvedFiles,
+                )
+                val added = calibreRepository.appendToAssembly(
+                    assemblyFileId = assemblyFileId,
+                    title = title,
+                    author = author,
+                    newItem = newItem,
+                    newFileIds = resolvedFiles.map { it.putio_file_id },
+                )
+                _snackbarMessage.value = if (added) "PDF pack added to assembly: $title"
+                    else "These PDFs are already in this assembly"
+            } finally {
+                calibreRepository.clearAssemblyAppendPending(assemblyFileId)
+            }
+        }
+    }
+
     fun appendAudiobookPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String, isAltVersion: Boolean = false) {
         viewModelScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
@@ -1117,16 +1343,16 @@ class FilesViewModel @Inject constructor(
             val putioToken = settingsRepository.authTokenFlow.first()
 
             if (files.all { it.isSynced }) {
-                // All files already synced locally — use local copies directly
-                val audioFiles = buildList {
-                    for (file in files) {
-                        val localPath = calibreRepository.readStubLocalPath(file)
-                        if (localPath == null) {
-                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing or unreadable. Please retry."
-                            return@launch
-                        }
-                        add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
-                    }
+                val stubResults = coroutineScope {
+                    files.map { file -> async { file to calibreRepository.readStubLocalPath(file) } }.awaitAll()
+                }
+                val failed = stubResults.firstOrNull { (_, path) -> path == null }?.first
+                if (failed != null) {
+                    _snackbarMessage.value = "Could not resolve local path for ${failed.displayName} — stub may be missing or unreadable. Please retry."
+                    return@launch
+                }
+                val audioFiles = stubResults.map { (file, localPath) ->
+                    AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath!!)
                 }
                 val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
                 val newItem = CalibreBatchItem(

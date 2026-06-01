@@ -27,6 +27,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,11 +37,11 @@ import kotlin.random.Random
 // CONTRACT: ADD_BOOK_BATCH
 @Serializable
 data class CalibreBatchItem(
-    val type: String, // "SINGLE", "PACK", "ARCHIVE", "ARCHIVE_ENTRY"
+    val type: String, // "SINGLE", "PACK", "ARCHIVE", "ARCHIVE_ENTRY", "PDF_PACK"
     val putio_file_id: Long,
     val fileName: String,
     val download_url: String? = null,
-    val files: List<AudiobookFile>? = null, // For PACK
+    val files: List<AudiobookFile>? = null, // For PACK and PDF_PACK
     val archiveMode: String? = null, // For ARCHIVE
     val use_local: Boolean? = null,  // When true the daemon uses the local synced copy; no download needed
     val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
@@ -626,6 +629,67 @@ class CalibreRepository @Inject constructor(
         }
     }
 
+    suspend fun addPdfPackTransfer(
+        files: List<Pair<PutioFile, AudiobookFile>>,
+        title: String,
+        author: String,
+        googleAccount: String,
+        assembleBook: Boolean = false,
+        calibreBookUuid: String? = null,
+    ) {
+        val primaryFileId = files.first().first.id
+        val pdfFiles = files.map { (_, f) -> f }
+        val initialItem = CalibreBatchItem(
+            type = "PDF_PACK",
+            putio_file_id = primaryFileId,
+            fileName = "Book.pdf",
+            files = pdfFiles,
+        )
+        val transfer = CalibreTransferEntity(
+            putioFileId = primaryFileId,
+            fileName = "Book.pdf",
+            title = title,
+            author = author,
+            status = if (assembleBook) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = pdfFiles.joinToString(",") { it.putio_file_id.toString() },
+            batchData = json.encodeToString(listOf(initialItem)),
+            calibreBookUuid = calibreBookUuid,
+        )
+        calibreTransferDao.insertTransfer(transfer)
+
+        if (assembleBook) return
+
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            putio_file_id = primaryFileId,
+            title = title,
+            author = author,
+            items = listOf(initialItem),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
+
+        if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr,
+            ))
+        } else {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.FAILED,
+                errorMessage = "Failed to upload to GDrive",
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr,
+            ))
+        }
+    }
+
     suspend fun updateAudiobookAfterUpload(tempId: Long, audioFiles: List<AudiobookFile>, googleAccount: String) {
         val transfer = calibreTransferDao.getTransferById(tempId) ?: return
 
@@ -675,10 +739,10 @@ class CalibreRepository @Inject constructor(
         } ?: emptyList()
 
         val existingFileNames = currentItems.flatMap { item ->
-            if (item.type == "PACK") item.files?.map { it.fileName } ?: listOf(item.fileName)
+            if (item.type == "PACK" || item.type == "PDF_PACK") item.files?.map { it.fileName } ?: listOf(item.fileName)
             else listOf(item.fileName)
         }.toSet()
-        val incomingFileNames = if (newItem.type == "PACK")
+        val incomingFileNames = if (newItem.type == "PACK" || newItem.type == "PDF_PACK")
             newItem.files?.map { it.fileName } ?: listOf(newItem.fileName)
         else listOf(newItem.fileName)
         if (incomingFileNames.any { it in existingFileNames }) return false
@@ -1111,7 +1175,9 @@ class CalibreRepository @Inject constructor(
         db.use {
             for (transfer in transfers) {
                 val action = transfer.lastRequestPayload?.let { payload ->
-                    try { json.decodeFromString<CalibreBatchRequest>(payload).action } catch (_: Exception) { null }
+                    try {
+                        json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content
+                    } catch (_: Exception) { null }
                 }
                 val verified = when {
                     // Non-Calibre actions need no library check
@@ -1122,6 +1188,14 @@ class CalibreRepository @Inject constructor(
                     action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
+                    // Mark-for-deletion: verify the book is still present (daemon confirmed it exists)
+                    action == "MARK_BOOK_FOR_DELETION" -> checkBookUuidExists(db, transfer.calibreBookUuid)
+                    action == "MARK_FORMATS_FOR_DELETION" -> checkBookUuidExists(db, transfer.calibreBookUuid)
+                    // Confirm-delete: verify the book / formats are gone from the library
+                    action == "CONFIRM_DELETE_BOOK" -> !checkBookUuidExists(db, transfer.calibreBookUuid)
+                    action == "CONFIRM_DELETE_FORMATS" -> checkFormatsDeleted(db, transfer.calibreBookUuid, transfer.lastRequestPayload)
+                    // Cancel-deletion is a client-side acknowledgement; no library state changes
+                    action == "CANCEL_DELETION" -> true
                     else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
                 }
                 if (verified) {
@@ -1158,6 +1232,29 @@ class CalibreRepository @Inject constructor(
         return libraryFormats.containsAll(expectedFormats)
     }
 
+    private fun checkFormatsDeleted(
+        db: android.database.sqlite.SQLiteDatabase,
+        uuid: String,
+        lastRequestPayload: String?,
+    ): Boolean {
+        // If the book itself is gone the formats are definitely deleted too
+        val bookId = db.rawQuery("SELECT id FROM books WHERE uuid = ?", arrayOf(uuid)).use { cursor ->
+            if (!cursor.moveToFirst()) return true
+            cursor.getLong(0)
+        }
+        val formats = lastRequestPayload?.let { payload ->
+            try {
+                json.parseToJsonElement(payload).jsonObject["formats"]
+                    ?.jsonArray?.map { it.jsonPrimitive.content.uppercase() }?.toSet()
+            } catch (_: Exception) { null }
+        } ?: return false
+        if (formats.isEmpty()) return false
+        val libraryFormats = db.rawQuery(
+            "SELECT format FROM data WHERE book = ?", arrayOf(bookId.toString())
+        ).use { cursor -> buildSet { while (cursor.moveToNext()) add(cursor.getString(0)) } }
+        return formats.none { it in libraryFormats }
+    }
+
     private fun expectedFormats(batchDataJson: String?): Set<String> {
         val items = batchDataJson?.let {
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
@@ -1169,9 +1266,9 @@ class CalibreRepository @Inject constructor(
                 "ARCHIVE", "ARCHIVE_ENTRY" -> emptyList()
                 else -> {
                     val ext = item.fileName.substringAfterLast('.', "").uppercase()
-                    // Daemon converts PRC/MOBI to EPUB; Calibre auto-zips HTML/HTM on import
+                    // Daemon converts PRC to EPUB; Calibre auto-zips HTML/HTM on import
                     when {
-                        ext == "PRC" || ext == "MOBI" -> listOf("EPUB")
+                        ext == "PRC" -> listOf("EPUB")
                         ext == "HTML" || ext == "HTM" -> listOf("ZIP")
                         ext.isNotEmpty() && ext.length <= 5 && !ext.contains(' ') -> listOf(ext)
                         else -> emptyList()

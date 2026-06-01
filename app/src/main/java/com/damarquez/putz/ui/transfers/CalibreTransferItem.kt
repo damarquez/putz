@@ -176,7 +176,7 @@ fun CalibreTransferItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = dateStr,
+                    text = "$dateStr · ${transfer.putioFileId}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -197,6 +197,7 @@ fun CalibreTransferItem(
                         status = transfer.status,
                         uploadProgress = uploadProgress,
                         isAssemblyUploading = isAssemblyUploading,
+                        isAppendPending = isPendingAppend,
                         errorMessage = transfer.errorMessage,
                     )
                     Spacer(Modifier.weight(1f))
@@ -294,11 +295,12 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, errorMessage: String? = null) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null) {
     val (icon, color, label) = when (status) {
         CalibreTransferStatus.UPLOADING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
         CalibreTransferStatus.ASSEMBLED -> if (isAssemblyUploading) {
-            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
+            val activeLabel = uploadProgress ?: if (isAppendPending) "Working…" else "Uploading"
+            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, activeLabel)
         } else {
             Triple(Icons.Default.Sync, MaterialTheme.colorScheme.secondary, "Assembled")
         }

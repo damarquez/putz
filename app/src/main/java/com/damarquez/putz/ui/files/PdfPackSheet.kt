@@ -36,14 +36,14 @@ import com.damarquez.putz.data.model.PutioFile
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AudiobookPackSheet(
-    audioFiles: List<PutioFile>,
+fun PdfPackSheet(
+    pdfFiles: List<PutioFile>,
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
 ) {
-    var orderedFiles by remember(audioFiles) { mutableStateOf(audioFiles) }
-    var checkedIds by remember(audioFiles) { mutableStateOf(audioFiles.map { it.id }.toSet()) }
+    var orderedFiles by remember(pdfFiles) { mutableStateOf(pdfFiles) }
+    var checkedIds by remember(pdfFiles) { mutableStateOf(pdfFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
 
     ModalBottomSheet(
@@ -58,7 +58,7 @@ fun AudiobookPackSheet(
                 .padding(bottom = 32.dp),
         ) {
             Text(
-                text = "Select files for audiobook",
+                text = "Select PDFs to join",
                 style = MaterialTheme.typography.titleLarge,
             )
 
@@ -73,16 +73,18 @@ fun AudiobookPackSheet(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "${selectedFiles.size} of ${audioFiles.size} files selected",
+                text = "${selectedFiles.size} of ${pdfFiles.size} files selected",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(Modifier.height(8.dp))
 
-            LazyColumn(modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
                 itemsIndexed(orderedFiles, key = { _, file -> file.id }) { index, file ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -144,7 +146,7 @@ fun AudiobookPackSheet(
             Button(
                 onClick = { onConfirm(selectedFiles) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = selectedFiles.isNotEmpty(),
+                enabled = selectedFiles.size >= 2,
             ) {
                 Text("Continue")
             }

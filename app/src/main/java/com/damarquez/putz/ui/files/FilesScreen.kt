@@ -261,6 +261,13 @@ fun FilesScreen(
     var selectedPackFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
     val audiobookPackSheetState = rememberModalBottomSheetState()
 
+    // PDF pack flow
+    var pdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedPdfFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+    var selectedPdfFilesForAssembly by remember { mutableStateOf<List<PutioFile>?>(null) }
+    var isPdfPackAssembly by remember { mutableStateOf(false) }
+    val pdfPackSheetState = rememberModalBottomSheetState()
+
     // Folder audio picker flow (Create M4B from folder)
     var folderForAudioPicker by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFolderAudioFiles by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
@@ -278,6 +285,7 @@ fun FilesScreen(
         val isPack = selectedFileForAssembly!!.second
         val canShowPicker = when {
             isFolderAssembly -> selectedFolderAudioFilesForAssembly != null
+            isPdfPackAssembly -> selectedPdfFilesForAssembly != null
             isPack -> selectedPackFilesForAssembly != null
             else -> true
         }
@@ -287,7 +295,9 @@ fun FilesScreen(
                     selectedFileForAssembly = null
                     selectedPackFilesForAssembly = null
                     selectedFolderAudioFilesForAssembly = null
+                    selectedPdfFilesForAssembly = null
                     isFolderAssembly = false
+                    isPdfPackAssembly = false
                 },
                 title = { Text("Pick Assembly") },
                 text = {
@@ -311,7 +321,9 @@ fun FilesScreen(
                         selectedFileForAssembly = null
                         selectedPackFilesForAssembly = null
                         selectedFolderAudioFilesForAssembly = null
+                        selectedPdfFilesForAssembly = null
                         isFolderAssembly = false
+                        isPdfPackAssembly = false
                     }) { Text("Cancel") }
                 }
             )
@@ -321,6 +333,7 @@ fun FilesScreen(
         val (file, isPack) = selectedFileForAssembly!!
         val displayName = when {
             isFolderAssembly -> "${selectedFolderAudioFilesForAssembly?.size} audio files"
+            isPdfPackAssembly -> "${selectedPdfFilesForAssembly?.size} PDF files"
             isPack -> "${selectedPackFilesForAssembly?.size} audio files"
             else -> file.displayName
         }
@@ -333,12 +346,17 @@ fun FilesScreen(
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
                 selectedFolderAudioFilesForAssembly = null
+                selectedPdfFilesForAssembly = null
                 isFolderAssembly = false
+                isPdfPackAssembly = false
             },
             onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _, _ ->
                 when {
                     isFolderAssembly -> {
                         viewModel.appendFolderAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedFolderAudioFilesForAssembly!!, title, author, isAltVersion)
+                    }
+                    isPdfPackAssembly -> {
+                        viewModel.appendPdfPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPdfFilesForAssembly!!, title, author)
                     }
                     isPack -> {
                         viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
@@ -351,7 +369,9 @@ fun FilesScreen(
                 selectedFileForAssembly = null
                 selectedPackFilesForAssembly = null
                 selectedFolderAudioFilesForAssembly = null
+                selectedPdfFilesForAssembly = null
                 isFolderAssembly = false
+                isPdfPackAssembly = false
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -418,8 +438,8 @@ fun FilesScreen(
         AudiobookPackSheet(
             audioFiles = audioFiles,
             sheetState = audiobookPackSheetState,
-            onDismiss = { 
-                audiobookPackTriggerFile = null 
+            onDismiss = {
+                audiobookPackTriggerFile = null
                 selectedFileForAssembly = null
             },
             onConfirm = { files ->
@@ -429,6 +449,34 @@ fun FilesScreen(
                     selectedPackFiles = files
                 }
                 audiobookPackTriggerFile = null
+            },
+        )
+    }
+
+    if (pdfPackTriggerFile != null && selectedPdfFiles == null && selectedPdfFilesForAssembly == null) {
+        // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
+        val pdfFiles = remember(uiState) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isPdf(it.displayName) }
+                ?: emptyList()
+        }
+        PdfPackSheet(
+            pdfFiles = pdfFiles,
+            sheetState = pdfPackSheetState,
+            onDismiss = {
+                pdfPackTriggerFile = null
+                if (isPdfPackAssembly) {
+                    selectedFileForAssembly = null
+                    isPdfPackAssembly = false
+                }
+            },
+            onConfirm = { files ->
+                if (isPdfPackAssembly) {
+                    selectedPdfFilesForAssembly = files
+                } else {
+                    selectedPdfFiles = files
+                }
+                pdfPackTriggerFile = null
             },
         )
     }
@@ -446,6 +494,26 @@ fun FilesScreen(
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, _ ->
                 viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid)
                 selectedPackFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (selectedPdfFiles != null) {
+        val pdfFiles = selectedPdfFiles!!
+        val (initialTitle, initialAuthor) = remember(pdfFiles) {
+            MetadataUtils.extractMetadata(pdfFiles.first().name)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${pdfFiles.size} PDF files",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedPdfFiles = null },
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _ ->
+                viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid)
+                selectedPdfFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1062,6 +1130,12 @@ fun FilesScreen(
                                             if (isPack) {
                                                 audiobookPackTriggerFile = target
                                             }
+                                        },
+                                        onSendAsJoinedPdf = { pdfPackTriggerFile = it },
+                                        onAssembleIntoPdf = { target ->
+                                            selectedFileForAssembly = target to false
+                                            isPdfPackAssembly = true
+                                            pdfPackTriggerFile = target
                                         },
                                         onSendToPlex = {
                                             plexSelectedDestPath = ""

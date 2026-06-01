@@ -28,6 +28,12 @@ object MetadataUtils {
         return ext in MULTI_TRACK_AUDIO_EXTENSIONS
     }
 
+    /** True for PDF files that can be joined into a fused PDF. */
+    fun isPdf(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext == "pdf"
+    }
+
     fun isVideo(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS

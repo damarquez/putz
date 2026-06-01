@@ -74,6 +74,8 @@ fun FileItem(
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
+    onSendAsJoinedPdf: (PutioFile) -> Unit,
+    onAssembleIntoPdf: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
@@ -98,6 +100,7 @@ fun FileItem(
     // Use displayName for all labelling so .sk_synced is hidden
     val isEbook = MetadataUtils.isEbook(file.displayName)
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.displayName)
+    val isPdf = MetadataUtils.isPdf(file.displayName)
     val isVideo = fileType == PutioFileType.VIDEO || MetadataUtils.isVideo(file.displayName)
     val isSubtitle = file.displayName.endsWith(".srt", ignoreCase = true) ||
         file.displayName.endsWith(".ass", ignoreCase = true) ||
@@ -366,6 +369,26 @@ fun FileItem(
                                     )
                                 }
                             }
+                            if (isPdf) {
+                                DropdownMenuItem(
+                                    text = { Text("Send to Calibre as joined PDF") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsJoinedPdf(file)
+                                    },
+                                )
+                                if (hasPendingAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into fused PDF") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleIntoPdf(file)
+                                        },
+                                    )
+                                }
+                            }
                             if (isVideo && file.isSynced) {
                                 DropdownMenuItem(
                                     text = { Text("Send to Plex") },
@@ -417,7 +440,7 @@ fun FileItem(
                                     )
                                 }
                             }
-                            if (isEbook || isMultiTrackAudio || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || isRegularFolder) {
+                            if (isEbook || isMultiTrackAudio || isPdf || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || isRegularFolder) {
                                 HorizontalDivider()
                             }
                         }
