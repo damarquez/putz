@@ -45,6 +45,8 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.decodeFromString
 
 private val batchItemsJson = Json { ignoreUnknownKeys = true }
@@ -67,7 +69,7 @@ fun CalibreTransferItem(
     var showContextMenu by remember { mutableStateOf(false) }
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
     val dateStr = dateFormat.format(Date(transfer.addedAt))
-    val formatLabels: List<String> = remember(transfer.batchData, transfer.fileName) {
+    val formatLabels: List<String> = remember(transfer.batchData, transfer.fileName, transfer.lastRequestPayload) {
         val items = transfer.batchData?.let {
             try { batchItemsJson.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
         }
@@ -81,10 +83,36 @@ fun CalibreTransferItem(
                 }
             }.distinct()
         } else {
-            val ext = transfer.fileName.substringAfterLast('.', "")
-                .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
-                ?.uppercase() ?: "M4B"
-            listOf(ext)
+            val actionLabel = transfer.lastRequestPayload?.let { payload ->
+                try {
+                    when (batchItemsJson.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content) {
+                        "BATCH_ADD_TAGS" -> "TAGS"
+                        "UPDATE_COMMENTS" -> "META"
+                        "GENERATE_COVER" -> "GENC"
+                        "REPLACE_COVER" -> "RPLC"
+                        "SET_PAGE_COUNT" -> "PGS"
+                        "MARK_BOOK_FOR_DELETION", "MARK_FORMATS_FOR_DELETION" -> "MRK"
+                        "CONFIRM_DELETE_BOOK", "CONFIRM_DELETE_FORMATS" -> "DEL"
+                        "CANCEL_DELETION" -> "CLR"
+                        "FUSE_BOOKS" -> "FUSE"
+                        "MANAGE_VIRTUAL_LIBRARY" -> "VLIB"
+                        "PRIORITY_PUTIO_SYNC" -> "SYNC"
+                        "SEND_TO_PLEX" -> "PLX"
+                        "ADD_SUBTITLE_TO_MOVIE" -> "SUB"
+                        "REGISTER_TRANSFER_HISTORY" -> "HIST"
+                        "GLOBAL_STATUS_PROBE" -> "PROB"
+                        else -> null
+                    }
+                } catch (_: Exception) { null }
+            }
+            if (actionLabel != null) {
+                listOf(actionLabel)
+            } else {
+                val ext = transfer.fileName.substringAfterLast('.', "")
+                    .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
+                    ?.uppercase() ?: "M4B"
+                listOf(ext)
+            }
         }
     }
 
