@@ -58,6 +58,7 @@ fun AppNavGraph(
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
+    pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
 ) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
@@ -73,6 +74,7 @@ fun AppNavGraph(
                 pendingGenerateCoverRepository.flow,
                 pendingSetPageCountRepository.flow,
                 pendingDeletionActionRepository.flow,
+                pendingEditMetadataRepository.flow,
             )
         ) { values -> values.any { it != null } }.collect { hasAny ->
             if (hasAny) {
@@ -378,6 +380,7 @@ fun AppNavGraph(
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
+                    pendingEditMetadataRepository = pendingEditMetadataRepository,
                 )
             }
         }

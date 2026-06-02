@@ -13,6 +13,8 @@ import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionAction
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
+import com.damarquez.putz.data.repository.PendingEditMetadata
+import com.damarquez.putz.data.repository.PendingEditMetadataRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.oauth.OAuthManager
 import com.damarquez.putz.oauth.PendingMagnetRepository
@@ -34,6 +36,14 @@ private sealed class PendingClipboardAction {
     data class GenerateCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class SetPageCount(val uuid: String, val pageCount: Int) : PendingClipboardAction()
     data class DeletionAction(val action: PendingDeletionAction) : PendingClipboardAction()
+    data class EditMetadata(
+        val uuid: String,
+        val title: String?,
+        val author: String?,
+        val comments: String?,
+        val tags: String?,
+        val pageCount: Int?,
+    ) : PendingClipboardAction()
 }
 
 @AndroidEntryPoint
@@ -47,6 +57,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var pendingGenerateCoverRepository: PendingGenerateCoverRepository
     @Inject lateinit var pendingSetPageCountRepository: PendingSetPageCountRepository
     @Inject lateinit var pendingDeletionActionRepository: PendingDeletionActionRepository
+    @Inject lateinit var pendingEditMetadataRepository: PendingEditMetadataRepository
 
     private var pendingClipboardAction: PendingClipboardAction? = null
 
@@ -72,6 +83,7 @@ class MainActivity : ComponentActivity() {
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
+                    pendingEditMetadataRepository = pendingEditMetadataRepository,
                 )
             }
         }
@@ -123,6 +135,20 @@ class MainActivity : ComponentActivity() {
                 val pages = uri.getQueryParameter("pages")?.toIntOrNull()
                 if (uuid != null && pages != null && pages > 0)
                     pendingClipboardAction = PendingClipboardAction.SetPageCount(uuid, pages)
+            }
+            uri.scheme == "putz" && uri.host == "edit_metadata" -> {  // CONTRACT: edit_metadata deep link
+                val uuid = uri.getQueryParameter("uuid")
+                if (uuid != null) {
+                    val params = uri.queryParameterNames
+                    pendingClipboardAction = PendingClipboardAction.EditMetadata(
+                        uuid = uuid,
+                        title    = if ("title"    in params) uri.getQueryParameter("title")    else null,
+                        author   = if ("author"   in params) uri.getQueryParameter("author")   else null,
+                        comments = if ("comments" in params) uri.getQueryParameter("comments") else null,
+                        tags     = if ("tags"     in params) uri.getQueryParameter("tags")     else null,
+                        pageCount = uri.getQueryParameter("pages")?.toIntOrNull(),
+                    )
+                }
             }
             uri.scheme == "putz" && uri.host == "mark_book_for_deletion" -> {  // CONTRACT: MARK_BOOK_FOR_DELETION
                 val uuid = uri.getQueryParameter("uuid")
@@ -184,6 +210,9 @@ class MainActivity : ComponentActivity() {
                 is PendingClipboardAction.GenerateCover -> pendingGenerateCoverRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.SetPageCount -> pendingSetPageCountRepository.set(action.uuid, action.pageCount)
                 is PendingClipboardAction.DeletionAction -> pendingDeletionActionRepository.set(action.action)
+                is PendingClipboardAction.EditMetadata -> pendingEditMetadataRepository.set(
+                    PendingEditMetadata(action.uuid, action.title, action.author, action.comments, action.tags, action.pageCount)
+                )
             }
         } catch (e: Exception) {
             // Clipboard access can fail on some devices/Android versions; silently ignore.

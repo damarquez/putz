@@ -384,6 +384,55 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
+    // CONTRACT: UPDATE_COMMENTS (edit_metadata variant — sends all non-null fields together)
+    suspend fun sendEditMetadataRequest(pending: PendingEditMetadata, googleAccount: String) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+
+        @Serializable
+        data class EditMetadataRequest(
+            val action: String = "UPDATE_COMMENTS",
+            val putio_file_id: Long,
+            val calibre_book_uuid: String,
+            val title: String? = null,
+            val author: String? = null,
+            val comments: String? = null,
+            val tags: String? = null,
+            val page_count: Int? = null,
+            val items: List<CalibreBatchItem> = emptyList(),
+            val app_id: String? = null,
+        )
+
+        val request = EditMetadataRequest(
+            putio_file_id = putioFileId,
+            calibre_book_uuid = pending.uuid,
+            title = pending.title,
+            author = pending.author,
+            comments = pending.comments,
+            tags = pending.tags,
+            page_count = pending.pageCount,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_editmeta_$putioFileId.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Edit metadata",
+            title = pending.title ?: pending.uuid,
+            author = pending.author ?: "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            isTempUpload = true,
+            calibreBookUuid = pending.uuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
     // CONTRACT: BATCH_ADD_TAGS
     suspend fun sendBatchAddTagsRequest(
         uuids: List<String>,
@@ -490,8 +539,9 @@ class CalibreRepository @Inject constructor(
         )
         calibreTransferDao.insertTransfer(transfer)
 
+        // useLocal without local_path: park as PENDING so caller can resolve path before dispatching
         // useLocal/smbPath means we can dispatch immediately without a download URL
-        if (assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null)) return
+        if (assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null) || (useLocal && localPath == null)) return
 
         // Immediately try to upload request
         val appId = settingsRepository.getOrCreateAppId()
@@ -521,6 +571,48 @@ class CalibreRepository @Inject constructor(
                 lastRequestPayload = jsonStr
             ))
         }
+    }
+
+    // Called after addTransfer(useLocal=true, localPath=null) once the stub path is resolved.
+    // For ASSEMBLED transfers just persists the path; for PENDING transfers dispatches to GDrive.
+    suspend fun resolveLocalPathAndDispatch(fileId: Long, localPath: String?, googleAccount: String) {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return
+        if (transfer.status != CalibreTransferStatus.PENDING && transfer.status != CalibreTransferStatus.ASSEMBLED) return
+
+        val items = transfer.batchData?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
+        } ?: return
+        val updatedItems = items.map { item ->
+            if (item.use_local == true && item.local_path == null) item.copy(local_path = localPath) else item
+        }
+
+        if (transfer.status == CalibreTransferStatus.ASSEMBLED) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                batchData = json.encodeToString(updatedItems),
+                lastUpdatedAt = System.currentTimeMillis(),
+            ))
+            return
+        }
+
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            putio_file_id = transfer.putioFileId,
+            title = transfer.title,
+            author = transfer.author,
+            items = updatedItems,
+            calibre_book_uuid = transfer.calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_${transfer.putioFileId}.json", jsonStr)
+        calibreTransferDao.updateTransfer(transfer.copy(
+            batchData = json.encodeToString(updatedItems),
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            lastUpdatedAt = System.currentTimeMillis(),
+            lastRequestPayload = jsonStr,
+        ))
     }
 
     suspend fun updateTransferAfterUpload(fileId: Long, newPutioFileId: Long, downloadUrl: String, googleAccount: String) {
@@ -1744,7 +1836,7 @@ class CalibreRepository @Inject constructor(
                 else -> "ADD_BOOK_BATCH"
             }
 
-            if (action == "UPDATE_COMMENTS" && transfer.lastRequestPayload == null) {
+            if (action == "UPDATE_COMMENTS") {
                 return NetworkResult.Error("Original comment data was not saved and cannot be reconstructed")
             }
 

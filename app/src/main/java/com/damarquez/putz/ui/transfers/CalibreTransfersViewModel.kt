@@ -136,6 +136,14 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    fun sendEditMetadata(pending: com.damarquez.putz.data.repository.PendingEditMetadata) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            calibreRepository.sendEditMetadataRequest(pending, account)
+        }
+    }
+
     fun handleDeletionAction(action: PendingDeletionAction) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
@@ -234,7 +242,15 @@ class CalibreTransfersViewModel @Inject constructor(
                         val isFailedUpload = transfer.status == CalibreTransferStatus.FAILED &&
                                              transfer.errorMessage?.contains("upload to GDrive", ignoreCase = true) == true
 
-                        if (isFailedUpload && transfer.retryCount < 3 && now - transfer.lastUpdatedAt > 30 * 1000) {
+                        val neverDispatched = transfer.status == CalibreTransferStatus.PENDING &&
+                                              transfer.gdriveRequestId == null &&
+                                              !activeProgressKeys.contains(transfer.putioFileId) &&
+                                              now - transfer.lastUpdatedAt > 30_000
+                        if (neverDispatched) {
+                            // Record was saved but GDrive upload never happened (e.g. app killed
+                            // between DB write and dispatch). Retry dispatch from stored batchData.
+                            calibreRepository.retryTransfer(transfer.putioFileId, account)
+                        } else if (isFailedUpload && transfer.retryCount < 3 && now - transfer.lastUpdatedAt > 30_000) {
                             calibreRepository.retryTransfer(transfer.putioFileId, account)
                         } else if (isStuck && now - transfer.lastUpdatedAt > 5 * 60 * 1000) {
                             calibreRepository.sendProbeRequest(transfer.putioFileId, account)

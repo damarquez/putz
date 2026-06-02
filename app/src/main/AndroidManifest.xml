@@ -83,6 +83,14 @@
                 <data android:scheme="putz" android:host="set_page_count" />
             </intent-filter>
 
+            <!-- CONTRACT: edit_metadata deep link — putz://edit_metadata?uuid=UUID&title=...&author=...&comments=...&tags=...&pages=N -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="edit_metadata" />
+            </intent-filter>
+
             <!-- CONTRACT: MARK_BOOK_FOR_DELETION — putz://mark_book_for_deletion?uuid=UUID -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

@@ -79,7 +79,7 @@ import com.damarquez.putz.ui.GlobalSyncViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalibreTransfersScreen(
+fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     onNavigateUp: () -> Unit,
     viewModel: CalibreTransfersViewModel,
     pendingCoverRepository: PendingCoverRepository,
@@ -87,6 +87,7 @@ fun CalibreTransfersScreen(
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
+    pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
 ) {
     val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
@@ -183,6 +184,15 @@ fun CalibreTransfersScreen(
             if (pending != null) {
                 pendingSetPageCountRepository.clear()
                 viewModel.setPageCount(pending.uuid, pending.pageCount)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingEditMetadataRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingEditMetadataRepository.clear()
+                viewModel.sendEditMetadata(pending)
             }
         }
     }

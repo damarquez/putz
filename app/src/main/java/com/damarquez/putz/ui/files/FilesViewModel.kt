@@ -706,8 +706,8 @@ class FilesViewModel @Inject constructor(
             val putioToken = settingsRepository.authTokenFlow.first()
             
             if (file.isSynced) {
-                // File already in local repository — tell daemon to use local copy directly
-                val localPath = calibreRepository.readStubLocalPath(file)
+                // Save to DB immediately so the transfer is never silently lost if the
+                // coroutine is cancelled (e.g. navigating away). local_path is resolved below.
                 calibreRepository.addTransfer(
                     putioFileId = file.syncedFileId,
                     fileName = file.displayName,
@@ -720,9 +720,15 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     useLocal = true,
-                    localPath = localPath,
+                    localPath = null,
                 )
-                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
+                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer queued for $title"
+                // Resolve local path then dispatch (or just update batchData for assembled).
+                // Safe to cancel here — the DB record already exists and the polling loop
+                // will retry any PENDING transfer that was never dispatched.
+                val localPath = calibreRepository.readStubLocalPath(file)
+                calibreRepository.resolveLocalPathAndDispatch(file.syncedFileId, localPath, googleAccount)
+                if (!assembleBook) _snackbarMessage.value = "Transfer requested for $title"
                 return@launch
             } else if (file.isLan) {
                 val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
