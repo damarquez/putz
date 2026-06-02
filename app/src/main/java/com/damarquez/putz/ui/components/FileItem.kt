@@ -105,7 +105,7 @@ fun FileItem(
     val isSubtitle = file.displayName.endsWith(".srt", ignoreCase = true) ||
         file.displayName.endsWith(".ass", ignoreCase = true) ||
         file.displayName.endsWith(".sub", ignoreCase = true)
-    val isImage = fileType == PutioFileType.IMAGE
+    val isImage = fileType == PutioFileType.IMAGE || MetadataUtils.isImage(file.displayName)
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }

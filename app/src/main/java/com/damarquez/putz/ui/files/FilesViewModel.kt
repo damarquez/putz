@@ -1493,19 +1493,40 @@ class FilesViewModel @Inject constructor(
 
     fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
         viewModelScope.launch {
-            val account = accountInfo.value?.mail ?: return@launch
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) return@launch
             val token = settingsRepository.authTokenFlow.first()
-            val downloadUrl = filesRepository.getDownloadUrl(token, file.id)
+
+            val downloadUrl: String?
+            val useLocal: Boolean
+            val localPath: String?
+
+            if (file.isSynced) {
+                downloadUrl = null
+                useLocal = true
+                localPath = calibreRepository.readStubLocalPath(file)
+            } else {
+                downloadUrl = try {
+                    filesRepository.getDownloadUrl(token, file.syncedFileId)
+                } catch (e: Exception) {
+                    _snackbarMessage.value = "Failed to get download URL: ${e.message}"
+                    return@launch
+                }
+                useLocal = false
+                localPath = null
+            }
 
             calibreRepository.sendReplaceCoverRequest(
-                putioFileId = file.id,
-                fileName = file.name,
+                putioFileId = file.syncedFileId,
+                fileName = file.displayName,
                 title = title,
                 author = author,
                 calibreBookId = calibreBookId,
-                googleAccount = account,
+                googleAccount = googleAccount,
                 downloadUrl = downloadUrl,
-                calibreBookUuid = calibreBookUuid
+                calibreBookUuid = calibreBookUuid,
+                useLocal = useLocal,
+                localPath = localPath,
             )
             _snackbarMessage.value = "Cover replacement request sent"
         }

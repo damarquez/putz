@@ -124,7 +124,7 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
-    fun setPageCount(uuid: String, pageCount: Int) {
+    fun setPageCount(uuid: String, pageCount: Int, title: String? = null, author: String? = null) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
@@ -132,6 +132,8 @@ class CalibreTransfersViewModel @Inject constructor(
                 calibreBookUuid = uuid,
                 pageCount = pageCount,
                 googleAccount = account,
+                title = title,
+                author = author,
             )
         }
     }
@@ -150,15 +152,15 @@ class CalibreTransfersViewModel @Inject constructor(
             if (account.isBlank()) return@launch
             when (action) {
                 is PendingDeletionAction.MarkBook ->
-                    calibreRepository.sendMarkBookForDeletionRequest(action.uuid, account)
+                    calibreRepository.sendMarkBookForDeletionRequest(action.uuid, account, action.title, action.author)
                 is PendingDeletionAction.MarkFormats ->
-                    calibreRepository.sendMarkFormatsForDeletionRequest(action.uuid, action.formats, account)
+                    calibreRepository.sendMarkFormatsForDeletionRequest(action.uuid, action.formats, account, action.title, action.author)
                 is PendingDeletionAction.ConfirmDeleteBook ->
-                    calibreRepository.sendConfirmDeleteBookRequest(action.uuid, account)
+                    calibreRepository.sendConfirmDeleteBookRequest(action.uuid, account, action.title, action.author)
                 is PendingDeletionAction.ConfirmDeleteFormats ->
-                    calibreRepository.sendConfirmDeleteFormatsRequest(action.uuid, action.formats, account)
+                    calibreRepository.sendConfirmDeleteFormatsRequest(action.uuid, action.formats, account, action.title, action.author)
                 is PendingDeletionAction.Cancel ->
-                    calibreRepository.sendCancelDeletionRequest(action.uuid, account)
+                    calibreRepository.sendCancelDeletionRequest(action.uuid, account, action.title, action.author)
             }
         }
     }

@@ -183,7 +183,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
         pendingSetPageCountRepository.flow.collect { pending ->
             if (pending != null) {
                 pendingSetPageCountRepository.clear()
-                viewModel.setPageCount(pending.uuid, pending.pageCount)
+                viewModel.setPageCount(pending.uuid, pending.pageCount, pending.title, pending.author)
             }
         }
     }

@@ -34,7 +34,7 @@ private sealed class PendingClipboardAction {
     data class Tags(val uuid: String, val autoAddTags: String?) : PendingClipboardAction()
     data class BatchTags(val uuids: List<String>) : PendingClipboardAction()
     data class GenerateCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
-    data class SetPageCount(val uuid: String, val pageCount: Int) : PendingClipboardAction()
+    data class SetPageCount(val uuid: String, val pageCount: Int, val title: String? = null, val author: String? = null) : PendingClipboardAction()
     data class DeletionAction(val action: PendingDeletionAction) : PendingClipboardAction()
     data class EditMetadata(
         val uuid: String,
@@ -134,7 +134,11 @@ class MainActivity : ComponentActivity() {
                 val uuid = uri.getQueryParameter("uuid")
                 val pages = uri.getQueryParameter("pages")?.toIntOrNull()
                 if (uuid != null && pages != null && pages > 0)
-                    pendingClipboardAction = PendingClipboardAction.SetPageCount(uuid, pages)
+                    pendingClipboardAction = PendingClipboardAction.SetPageCount(
+                        uuid, pages,
+                        title = uri.getQueryParameter("title"),
+                        author = uri.getQueryParameter("author"),
+                    )
             }
             uri.scheme == "putz" && uri.host == "edit_metadata" -> {  // CONTRACT: edit_metadata deep link
                 val uuid = uri.getQueryParameter("uuid")
@@ -153,31 +157,51 @@ class MainActivity : ComponentActivity() {
             uri.scheme == "putz" && uri.host == "mark_book_for_deletion" -> {  // CONTRACT: MARK_BOOK_FOR_DELETION
                 val uuid = uri.getQueryParameter("uuid")
                 if (uuid != null)
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkBook(uuid))
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkBook(
+                        uuid,
+                        title = uri.getQueryParameter("title"),
+                        author = uri.getQueryParameter("author"),
+                    ))
             }
             uri.scheme == "putz" && uri.host == "mark_formats_for_deletion" -> {  // CONTRACT: MARK_FORMATS_FOR_DELETION
                 val uuid = uri.getQueryParameter("uuid")
                 val formats = uri.getQueryParameter("formats")
                     ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                 if (uuid != null && formats.isNotEmpty())
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkFormats(uuid, formats))
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkFormats(
+                        uuid, formats,
+                        title = uri.getQueryParameter("title"),
+                        author = uri.getQueryParameter("author"),
+                    ))
             }
             uri.scheme == "putz" && uri.host == "confirm_delete_book" -> {  // CONTRACT: CONFIRM_DELETE_BOOK
                 val uuid = uri.getQueryParameter("uuid")
                 if (uuid != null)
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.ConfirmDeleteBook(uuid))
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.ConfirmDeleteBook(
+                        uuid,
+                        title = uri.getQueryParameter("title"),
+                        author = uri.getQueryParameter("author"),
+                    ))
             }
             uri.scheme == "putz" && uri.host == "confirm_delete_formats" -> {  // CONTRACT: CONFIRM_DELETE_FORMATS
                 val uuid = uri.getQueryParameter("uuid")
                 val formats = uri.getQueryParameter("formats")
                     ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
                 if (uuid != null && formats.isNotEmpty())
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.ConfirmDeleteFormats(uuid, formats))
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.ConfirmDeleteFormats(
+                        uuid, formats,
+                        title = uri.getQueryParameter("title"),
+                        author = uri.getQueryParameter("author"),
+                    ))
             }
             uri.scheme == "putz" && uri.host == "cancel_delete" -> {  // CONTRACT: CANCEL_DELETION
                 val uuid = uri.getQueryParameter("uuid")
                 if (uuid != null)
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.Cancel(uuid))
+                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.Cancel(
+                        uuid,
+                        title = uri.getQueryParameter("title"),
+                        author = uri.getQueryParameter("author"),
+                    ))
             }
             MagnetParser.isMagnetLink(uri.toString()) -> pendingMagnetRepository.set(uri.toString())
         }
@@ -208,7 +232,7 @@ class MainActivity : ComponentActivity() {
                 is PendingClipboardAction.Tags -> pendingCommentsRepository.setTagsOnly(action.uuid, action.autoAddTags)
                 is PendingClipboardAction.BatchTags -> pendingCommentsRepository.setBatchTags(action.uuids)
                 is PendingClipboardAction.GenerateCover -> pendingGenerateCoverRepository.set(action.uuid, action.title, action.author)
-                is PendingClipboardAction.SetPageCount -> pendingSetPageCountRepository.set(action.uuid, action.pageCount)
+                is PendingClipboardAction.SetPageCount -> pendingSetPageCountRepository.set(action.uuid, action.pageCount, action.title, action.author)
                 is PendingClipboardAction.DeletionAction -> pendingDeletionActionRepository.set(action.action)
                 is PendingClipboardAction.EditMetadata -> pendingEditMetadataRepository.set(
                     PendingEditMetadata(action.uuid, action.title, action.author, action.comments, action.tags, action.pageCount)

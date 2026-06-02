@@ -418,7 +418,7 @@ class CalibreRepository @Inject constructor(
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = "Edit metadata",
-            title = pending.title ?: pending.uuid,
+            title = pending.title ?: "",
             author = pending.author ?: "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
@@ -1469,14 +1469,18 @@ class CalibreRepository @Inject constructor(
         author: String,
         calibreBookId: Long,
         googleAccount: String,
-        downloadUrl: String,
+        downloadUrl: String? = null,
         calibreBookUuid: String? = null,
+        useLocal: Boolean = false,
+        localPath: String? = null,
     ) {
         val item = CalibreBatchItem(
             type = "SINGLE",
             putio_file_id = putioFileId,
             fileName = fileName,
             download_url = downloadUrl,
+            use_local = if (useLocal) true else null,
+            local_path = localPath,
         )
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
@@ -1556,6 +1560,8 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         pageCount: Int,
         googleAccount: String,
+        title: String? = null,
+        author: String? = null,
     ) {
         val putioFileId = System.currentTimeMillis()
         val appId = settingsRepository.getOrCreateAppId()
@@ -1571,8 +1577,8 @@ class CalibreRepository @Inject constructor(
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = "Set page count to $pageCount",
-            title = "Set page count to $pageCount",
-            author = "",
+            title = title ?: "Set page count to $pageCount",
+            author = author ?: "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
@@ -1587,7 +1593,7 @@ class CalibreRepository @Inject constructor(
     }
 
     // CONTRACT: MARK_BOOK_FOR_DELETION
-    suspend fun sendMarkBookForDeletionRequest(calibreBookUuid: String, googleAccount: String) {
+    suspend fun sendMarkBookForDeletionRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
         val putioFileId = System.currentTimeMillis()
         val appId = settingsRepository.getOrCreateAppId()
         val request = MarkBookForDeletionRequest(
@@ -1600,8 +1606,8 @@ class CalibreRepository @Inject constructor(
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = "Mark book for deletion",
-            title = "Mark book for deletion",
-            author = "",
+            title = title ?: "Mark book for deletion",
+            author = author ?: "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
@@ -1620,6 +1626,8 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         formats: List<String>,
         googleAccount: String,
+        title: String? = null,
+        author: String? = null,
     ) {
         val putioFileId = System.currentTimeMillis()
         val appId = settingsRepository.getOrCreateAppId()
@@ -1635,8 +1643,8 @@ class CalibreRepository @Inject constructor(
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = label,
-            title = label,
-            author = "",
+            title = title ?: label,
+            author = author ?: "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
@@ -1651,7 +1659,7 @@ class CalibreRepository @Inject constructor(
     }
 
     // CONTRACT: CONFIRM_DELETE_BOOK
-    suspend fun sendConfirmDeleteBookRequest(calibreBookUuid: String, googleAccount: String) {
+    suspend fun sendConfirmDeleteBookRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
         val putioFileId = System.currentTimeMillis()
         val appId = settingsRepository.getOrCreateAppId()
         val request = ConfirmDeleteBookRequest(
@@ -1664,8 +1672,8 @@ class CalibreRepository @Inject constructor(
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = "Delete book from library",
-            title = "Delete book from library",
-            author = "",
+            title = title ?: "Delete book from library",
+            author = author ?: "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
@@ -1684,6 +1692,8 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         formats: List<String>,
         googleAccount: String,
+        title: String? = null,
+        author: String? = null,
     ) {
         val putioFileId = System.currentTimeMillis()
         val appId = settingsRepository.getOrCreateAppId()
@@ -1699,8 +1709,8 @@ class CalibreRepository @Inject constructor(
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = label,
-            title = label,
-            author = "",
+            title = title ?: label,
+            author = author ?: "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
@@ -1715,7 +1725,7 @@ class CalibreRepository @Inject constructor(
     }
 
     // CONTRACT: CANCEL_DELETION
-    suspend fun sendCancelDeletionRequest(calibreBookUuid: String, googleAccount: String) {
+    suspend fun sendCancelDeletionRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
         val putioFileId = System.currentTimeMillis()
         val appId = settingsRepository.getOrCreateAppId()
         val request = CancelDeletionRequest(
@@ -1728,8 +1738,8 @@ class CalibreRepository @Inject constructor(
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = "Cancel deletion",
-            title = "Cancel deletion",
-            author = "",
+            title = title ?: "Cancel deletion",
+            author = author ?: "",
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
