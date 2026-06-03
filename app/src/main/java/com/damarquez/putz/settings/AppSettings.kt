@@ -25,6 +25,9 @@ object AppSettingsKeys {
     // Plex library — which LAN connection + root path hosts the Plex Movies library
     val PLEX_LIBRARY_LAN_CONNECTION_ID = longPreferencesKey("plex_library_lan_connection_id")
     val PLEX_LIBRARY_LAN_PATH = stringPreferencesKey("plex_library_lan_path")
+    // Plexamp (music) library — which LAN connection + root path hosts the music library
+    val PLEXAMP_LIBRARY_LAN_CONNECTION_ID = longPreferencesKey("plexamp_library_lan_connection_id")
+    val PLEXAMP_LIBRARY_LAN_PATH = stringPreferencesKey("plexamp_library_lan_path")
     // Direct LAN / Tailscale daemon access
     val LAN_ENABLED = booleanPreferencesKey("lan_enabled")
     val LAN_HOST = stringPreferencesKey("lan_host")

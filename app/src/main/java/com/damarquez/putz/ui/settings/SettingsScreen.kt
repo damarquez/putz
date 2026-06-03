@@ -65,11 +65,15 @@ fun SettingsScreen(
     val putioLocalLanPath by viewModel.putioLocalLanPath.collectAsState()
     val plexLibraryLanConnectionId by viewModel.plexLibraryLanConnectionId.collectAsState()
     val plexLibraryLanPath by viewModel.plexLibraryLanPath.collectAsState()
+    val plexampLibraryLanConnectionId by viewModel.plexampLibraryLanConnectionId.collectAsState()
+    val plexampLibraryLanPath by viewModel.plexampLibraryLanPath.collectAsState()
     val lanConnections by viewModel.lanConnections.collectAsState()
     var showLanConnectionPicker by remember { mutableStateOf(false) }
     var editingLanPath by remember { mutableStateOf<String?>(null) }
     var showPlexLanConnectionPicker by remember { mutableStateOf(false) }
+    var showPlexampLanConnectionPicker by remember { mutableStateOf(false) }
     val plexRootPickerState by viewModel.plexRootPickerState.collectAsState()
+    val plexampRootPickerState by viewModel.plexampRootPickerState.collectAsState()
     val daemonLanEnabled by viewModel.daemonLanEnabled.collectAsState()
     val daemonLanHostEdit by viewModel.daemonLanHostEdit.collectAsState()
     val daemonLanPortEdit by viewModel.daemonLanPortEdit.collectAsState()
@@ -368,6 +372,72 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            SettingsSectionHeader("Plexamp Library")
+            val selectedPlexampConn = lanConnections.find { it.id == plexampLibraryLanConnectionId }
+            ButtonRow(
+                label = if (selectedPlexampConn != null) "LAN connection: ${selectedPlexampConn.label}" else "Select LAN connection…",
+                onClick = { showPlexampLanConnectionPicker = true }
+            )
+            if (selectedPlexampConn != null) {
+                ButtonRow(
+                    label = if (plexampLibraryLanPath.isNotBlank()) "Library root: /${plexampLibraryLanPath}" else "Browse for library root…",
+                    onClick = { viewModel.openPlexampRootPicker() }
+                )
+                ButtonRow(
+                    label = "Remove Plexamp library",
+                    onClick = {
+                        viewModel.setPlexampLibraryLanConnection(null)
+                        viewModel.setPlexampLibraryLanPath("")
+                    },
+                    isError = true
+                )
+            }
+
+            if (showPlexampLanConnectionPicker) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showPlexampLanConnectionPicker = false },
+                    title = { Text("Select LAN connection for Plexamp") },
+                    text = {
+                        Column {
+                            if (lanConnections.isEmpty()) {
+                                Text("No LAN connections configured. Add one in LAN Files settings first.")
+                            } else {
+                                lanConnections.forEach { conn ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.setPlexampLibraryLanConnection(conn.id)
+                                                showPlexampLanConnectionPicker = false
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(
+                                            selected = conn.id == plexampLibraryLanConnectionId,
+                                            onClick = {
+                                                viewModel.setPlexampLibraryLanConnection(conn.id)
+                                                showPlexampLanConnectionPicker = false
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(conn.label, style = MaterialTheme.typography.bodyLarge)
+                                            Text("\\\\${conn.host}\\${conn.shareName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showPlexampLanConnectionPicker = false }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
             SettingsSectionHeader("Sidekick Daemon (Tailscale)")
             Row(
                 modifier = Modifier
@@ -450,6 +520,16 @@ fun SettingsScreen(
             onNavigateUp = { viewModel.plexRootPickerNavigateUp() },
             onNavigateInto = { folder -> viewModel.browsePlexRootFolder(folder) },
             onSelect = { path -> viewModel.selectPlexRootPath(path) },
+        )
+    }
+
+    plexampRootPickerState?.let { pickerState ->
+        com.damarquez.putz.ui.files.PlexFolderPickerSheet(
+            state = pickerState,
+            onDismiss = { viewModel.dismissPlexampRootPicker() },
+            onNavigateUp = { viewModel.plexampRootPickerNavigateUp() },
+            onNavigateInto = { folder -> viewModel.browsePlexampRootFolder(folder) },
+            onSelect = { path -> viewModel.selectPlexampRootPath(path) },
         )
     }
 }

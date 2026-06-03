@@ -242,6 +242,13 @@ fun FilesScreen(
     var plexSelectedDestPath by remember { mutableStateOf("") }
     val plexPickerState by viewModel.plexPickerState.collectAsState()
 
+    // Plexamp (music) flow
+    var selectedFilesForPlexamp by remember { mutableStateOf<List<PutioFile>?>(null) }
+    var plexampSelectedDestPath by remember { mutableStateOf("") }
+    var plexampInitialAlbumName by remember { mutableStateOf("") }
+    val plexampPickerState by viewModel.plexampPickerState.collectAsState()
+    val plexampFolderFiles by viewModel.plexampFolderFiles.collectAsState()
+
     // Plex subtitle assembly flow
     val pendingPlexAssemblies by viewModel.pendingPlexAssemblies.collectAsState()
     var subtitleForAssembly by remember { mutableStateOf<PutioFile?>(null) }
@@ -553,6 +560,51 @@ fun FilesScreen(
             onSelect = { relativePath ->
                 plexSelectedDestPath = relativePath
                 viewModel.dismissPlexPicker()
+            },
+        )
+    }
+
+    // Consume folder scan results from the ViewModel
+    LaunchedEffect(plexampFolderFiles) {
+        plexampFolderFiles?.let { (albumHint, files) ->
+            plexampInitialAlbumName = albumHint
+            plexampSelectedDestPath = ""
+            selectedFilesForPlexamp = files
+            viewModel.dismissPlexampFolderFiles()
+        }
+    }
+
+    selectedFilesForPlexamp?.let { files ->
+        val displayName = if (files.size == 1) files.first().displayName else "${files.size} audio files"
+        PlexampConfirmationSheet(
+            displayName = displayName,
+            initialArtistName = "",
+            initialAlbumName = plexampInitialAlbumName,
+            selectedDestPath = plexampSelectedDestPath,
+            onDismiss = {
+                selectedFilesForPlexamp = null
+                plexampSelectedDestPath = ""
+                plexampInitialAlbumName = ""
+            },
+            onBrowse = { viewModel.openPlexampFolderPicker() },
+            onConfirm = { artistName, albumName, destPath, createFolder ->
+                viewModel.sendToPlexamp(files, artistName, albumName, createFolder, destPath)
+                selectedFilesForPlexamp = null
+                plexampSelectedDestPath = ""
+                plexampInitialAlbumName = ""
+            },
+        )
+    }
+
+    plexampPickerState?.let { pickerState ->
+        PlexFolderPickerSheet(
+            state = pickerState,
+            onDismiss = { viewModel.dismissPlexampPicker() },
+            onNavigateUp = { viewModel.plexampPickerNavigateUp() },
+            onNavigateInto = { folder -> viewModel.browsePlexampFolder(folder) },
+            onSelect = { relativePath ->
+                plexampSelectedDestPath = relativePath
+                viewModel.dismissPlexampPicker()
             },
         )
     }
@@ -1147,6 +1199,15 @@ fun FilesScreen(
                                             selectedMovieFile = null
                                             selectedMovieFolderPath = ""
                                             viewModel.openMovieBrowser()
+                                        },
+                                        onSendToPlexamp = { target ->
+                                            if (target.isFolder) {
+                                                viewModel.scanFolderForPlexamp(target)
+                                            } else {
+                                                plexampInitialAlbumName = ""
+                                                plexampSelectedDestPath = ""
+                                                selectedFilesForPlexamp = listOf(target)
+                                            }
                                         },
                                         onCreateM4bFromFolder = { folder ->
                                             folderForAudioPicker = folder

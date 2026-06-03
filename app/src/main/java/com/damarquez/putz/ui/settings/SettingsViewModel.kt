@@ -51,6 +51,12 @@ class SettingsViewModel @Inject constructor(
     val plexLibraryLanPath = settingsRepository.plexLibraryLanPathFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
+    val plexampLibraryLanConnectionId = settingsRepository.plexampLibraryLanConnectionIdFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val plexampLibraryLanPath = settingsRepository.plexampLibraryLanPathFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
     val lanConnections = lanFilesRepository.getConnections()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -146,6 +152,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.savePlexLibraryLanPath(path) }
     }
 
+    fun setPlexampLibraryLanConnection(connectionId: Long?) {
+        viewModelScope.launch { settingsRepository.savePlexampLibraryLanConnectionId(connectionId) }
+    }
+
+    fun setPlexampLibraryLanPath(path: String) {
+        viewModelScope.launch { settingsRepository.savePlexampLibraryLanPath(path) }
+    }
+
     private val _plexRootPickerState = MutableStateFlow<LanFolderPickerState?>(null)
     val plexRootPickerState: StateFlow<LanFolderPickerState?> = _plexRootPickerState.asStateFlow()
 
@@ -211,6 +225,74 @@ class SettingsViewModel @Inject constructor(
         } catch (e: Exception) {
             val current = _plexRootPickerState.value ?: return
             _plexRootPickerState.value = current.copy(isLoading = false, error = e.message ?: "Failed to load folders")
+        }
+    }
+
+    private val _plexampRootPickerState = MutableStateFlow<LanFolderPickerState?>(null)
+    val plexampRootPickerState: StateFlow<LanFolderPickerState?> = _plexampRootPickerState.asStateFlow()
+
+    fun openPlexampRootPicker() {
+        val connectionId = plexampLibraryLanConnectionId.value ?: return
+        val initialState = LanFolderPickerState(
+            connectionId = connectionId,
+            rootPath = "",
+            currentPath = "",
+            isLoading = true,
+        )
+        _plexampRootPickerState.value = initialState
+        viewModelScope.launch { loadPlexampRootFolders(connectionId, "") }
+    }
+
+    fun browsePlexampRootFolder(folder: com.damarquez.putz.data.model.PutioFile) {
+        val current = _plexampRootPickerState.value ?: return
+        val newPath = if (current.currentPath.isEmpty()) folder.name
+            else "${current.currentPath}/${folder.name}"
+        _plexampRootPickerState.value = current.copy(
+            pathStack = current.pathStack + current.currentPath,
+            currentPath = newPath,
+            folders = emptyList(),
+            isLoading = true,
+            error = null,
+        )
+        viewModelScope.launch { loadPlexampRootFolders(current.connectionId, newPath) }
+    }
+
+    fun plexampRootPickerNavigateUp() {
+        val current = _plexampRootPickerState.value ?: return
+        if (!current.canNavigateUp) return
+        val previousPath = current.pathStack.last()
+        _plexampRootPickerState.value = current.copy(
+            pathStack = current.pathStack.dropLast(1),
+            currentPath = previousPath,
+            folders = emptyList(),
+            isLoading = true,
+            error = null,
+        )
+        viewModelScope.launch { loadPlexampRootFolders(current.connectionId, previousPath) }
+    }
+
+    fun dismissPlexampRootPicker() {
+        _plexampRootPickerState.value = null
+    }
+
+    fun selectPlexampRootPath(path: String) {
+        _plexampRootPickerState.value = null
+        viewModelScope.launch { settingsRepository.savePlexampLibraryLanPath(path) }
+    }
+
+    private suspend fun loadPlexampRootFolders(connectionId: Long, path: String) {
+        try {
+            val files = lanFilesRepository.listDirectory(connectionId, path).first()
+            val folders = files.filter { it.isFolder }
+            val current = _plexampRootPickerState.value ?: return
+            _plexampRootPickerState.value = current.copy(
+                folders = folders,
+                isLoading = false,
+                error = null,
+            )
+        } catch (e: Exception) {
+            val current = _plexampRootPickerState.value ?: return
+            _plexampRootPickerState.value = current.copy(isLoading = false, error = e.message ?: "Failed to load folders")
         }
     }
 

@@ -76,6 +76,14 @@ class SettingsRepository @Inject constructor(
         prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_PATH] ?: ""
     }
 
+    val plexampLibraryLanConnectionIdFlow: Flow<Long?> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.PLEXAMP_LIBRARY_LAN_CONNECTION_ID]
+    }
+
+    val plexampLibraryLanPathFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.PLEXAMP_LIBRARY_LAN_PATH] ?: ""
+    }
+
     val lanEnabledFlow: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[AppSettingsKeys.LAN_ENABLED] ?: false
     }
@@ -162,6 +170,20 @@ class SettingsRepository @Inject constructor(
         dataStore.edit { prefs ->
             if (path.isBlank()) prefs.remove(AppSettingsKeys.PLEX_LIBRARY_LAN_PATH)
             else prefs[AppSettingsKeys.PLEX_LIBRARY_LAN_PATH] = path.trim()
+        }
+    }
+
+    suspend fun savePlexampLibraryLanConnectionId(id: Long?) {
+        dataStore.edit { prefs ->
+            if (id == null) prefs.remove(AppSettingsKeys.PLEXAMP_LIBRARY_LAN_CONNECTION_ID)
+            else prefs[AppSettingsKeys.PLEXAMP_LIBRARY_LAN_CONNECTION_ID] = id
+        }
+    }
+
+    suspend fun savePlexampLibraryLanPath(path: String) {
+        dataStore.edit { prefs ->
+            if (path.isBlank()) prefs.remove(AppSettingsKeys.PLEXAMP_LIBRARY_LAN_PATH)
+            else prefs[AppSettingsKeys.PLEXAMP_LIBRARY_LAN_PATH] = path.trim()
         }
     }
 

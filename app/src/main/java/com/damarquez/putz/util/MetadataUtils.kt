@@ -8,6 +8,7 @@ object MetadataUtils {
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "heic", "heif")
     private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac")
     private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "wmv", "m4v", "ts", "webm", "flv", "mpg", "mpeg", "divx")
+    private val PLEXAMP_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac", "aac", "wav", "ogg", "opus", "wma", "ape", "alac", "aiff", "dsf")
 
     private fun cleanStubSuffix(fileName: String): String {
         return fileName.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
@@ -43,6 +44,11 @@ object MetadataUtils {
     fun isVideo(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS
+    }
+
+    fun isAudio(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext in PLEXAMP_AUDIO_EXTENSIONS
     }
 
     /** Parse movie title and year from a video filename (e.g. "The.Matrix.1999.mkv" → "The Matrix", "1999"). */

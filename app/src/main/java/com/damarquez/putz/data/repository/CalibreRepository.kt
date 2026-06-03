@@ -158,6 +158,28 @@ data class PlexAddSubtitleRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: SEND_TO_PLEXAMP
+@Serializable
+data class PlexampItem(
+    val putio_file_id: Long,     // CONTRACT: stub convention — original file ID (from stub filename for synced files)
+    val fileName: String,
+    val use_local: Boolean? = null,
+    val local_path: String? = null,
+    val stub_putio_id: Long? = null, // CONTRACT: stub convention — actual put.io ID of the stub (for daemon to delete after processing)
+)
+
+@Serializable
+data class PlexampTransferRequest(
+    val action: String = "SEND_TO_PLEXAMP",
+    val putio_file_id: Long,
+    val artist_name: String,
+    val album_name: String,
+    val create_folder: Boolean = true,
+    val dest_path: String = "",
+    val items: List<PlexampItem>,
+    val app_id: String? = null,
+)
+
 // CONTRACT: PRIORITY_PUTIO_SYNC
 @Serializable
 data class PrioritySyncRequest(
@@ -954,7 +976,7 @@ class CalibreRepository @Inject constructor(
                                 "MARK_BOOK_FOR_DELETION", "MARK_FORMATS_FOR_DELETION", "CANCEL_DELETION"
                             )
                             val libraryVerified = newStatus == CalibreTransferStatus.COMPLETED &&
-                                (transfer.transferType == "PLEX" || response.action in selfVerifyingActions)
+                                (transfer.transferType == "PLEX" || transfer.transferType == "PLEXAMP" || response.action in selfVerifyingActions)
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 status = newStatus,
                                 errorMessage = response.error,
@@ -1156,6 +1178,74 @@ class CalibreRepository @Inject constructor(
         } else {
             NetworkResult.Error("Could not upload Plex request to Google Drive")
         }
+    }
+
+    private suspend fun retryPlexampTransfer(transfer: CalibreTransferEntity, googleAccount: String): NetworkResult<Unit> {
+        val payload = transfer.lastRequestPayload
+            ?: return NetworkResult.Error("Original Plexamp request payload was not saved and cannot be reconstructed")
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_plexamp_${transfer.putioFileId}.json", payload)
+        return if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+                retryCount = if (transfer.status == CalibreTransferStatus.FAILED) transfer.retryCount + 1 else transfer.retryCount,
+                errorMessage = null,
+                lastRequestPayload = payload,
+            ))
+            NetworkResult.Success(Unit)
+        } else {
+            NetworkResult.Error("Could not upload Plexamp request to Google Drive")
+        }
+    }
+
+    // CONTRACT: SEND_TO_PLEXAMP
+    suspend fun sendToPlexamp(
+        files: List<PutioFile>,
+        artistName: String,
+        albumName: String,
+        createFolder: Boolean,
+        destPath: String,
+        googleAccount: String,
+    ) {
+        val anchorId = files.first().syncedFileId
+        val appId = settingsRepository.getOrCreateAppId()
+        val items = files.map { file ->
+            val localPath = readStubLocalPath(file)
+            PlexampItem(
+                putio_file_id = file.syncedFileId,
+                fileName = file.displayName,
+                use_local = if (localPath != null) true else null,
+                local_path = localPath,
+                stub_putio_id = if (file.isSynced) file.id else null,
+            )
+        }
+        val request = PlexampTransferRequest(
+            putio_file_id = anchorId,
+            artist_name = artistName,
+            album_name = albumName,
+            create_folder = createFolder,
+            dest_path = destPath,
+            items = items,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_plexamp_$anchorId.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = anchorId,
+            fileName = files.first().displayName,
+            title = "$artistName — $albumName",
+            author = if (createFolder) artistName else destPath.ifBlank { "Plexamp root" },
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = files.map { it.syncedFileId }.distinct().joinToString(","),
+            transferType = "PLEXAMP",
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
     // CONTRACT: FUSE_BOOKS
@@ -1829,6 +1919,7 @@ class CalibreRepository @Inject constructor(
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return NetworkResult.Error("Transfer not found")
 
         if (transfer.transferType == "PLEX") return retryPlexTransfer(transfer, googleAccount)
+        if (transfer.transferType == "PLEXAMP") return retryPlexampTransfer(transfer, googleAccount)
 
         val payload = transfer.lastRequestPayload ?: run {
             // Reconstruct if missing (for legacy transfers created before lastRequestPayload was added)

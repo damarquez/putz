@@ -79,6 +79,7 @@ fun FileItem(
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
+    onSendToPlexamp: (PutioFile) -> Unit,
     onCreateM4bFromFolder: (PutioFile) -> Unit,
     onAssembleFolderToCalibre: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
@@ -102,6 +103,7 @@ fun FileItem(
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.displayName)
     val isPdf = MetadataUtils.isPdf(file.displayName)
     val isVideo = fileType == PutioFileType.VIDEO || MetadataUtils.isVideo(file.displayName)
+    val isAudio = MetadataUtils.isAudio(file.displayName)
     val isSubtitle = file.displayName.endsWith(".srt", ignoreCase = true) ||
         file.displayName.endsWith(".ass", ignoreCase = true) ||
         file.displayName.endsWith(".sub", ignoreCase = true)
@@ -419,6 +421,16 @@ fun FileItem(
                                     },
                                 )
                             }
+                            if (isAudio && file.isSynced) {
+                                DropdownMenuItem(
+                                    text = { Text("Send to Plexamp") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendToPlexamp(file)
+                                    },
+                                )
+                            }
                             val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments
                             if (isRegularFolder) {
                                 DropdownMenuItem(
@@ -439,8 +451,16 @@ fun FileItem(
                                         },
                                     )
                                 }
+                                DropdownMenuItem(
+                                    text = { Text("Send folder to Plexamp") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendToPlexamp(file)
+                                    },
+                                )
                             }
-                            if (isEbook || isMultiTrackAudio || isPdf || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || isRegularFolder) {
+                            if (isEbook || isMultiTrackAudio || isPdf || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder) {
                                 HorizontalDivider()
                             }
                         }

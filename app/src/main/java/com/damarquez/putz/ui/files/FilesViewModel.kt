@@ -1791,6 +1791,132 @@ class FilesViewModel @Inject constructor(
 
     fun dismissMovieBrowser() { _movieBrowserState.value = null }
 
+    // Plexamp (music library) folder picker
+    private val _plexampPickerState = MutableStateFlow<LanFolderPickerState?>(null)
+    val plexampPickerState: StateFlow<LanFolderPickerState?> = _plexampPickerState.asStateFlow()
+
+    fun openPlexampFolderPicker() {
+        viewModelScope.launch {
+            val connectionId = settingsRepository.plexampLibraryLanConnectionIdFlow.first()
+            val rootPath = settingsRepository.plexampLibraryLanPathFlow.first()
+            if (connectionId == null) {
+                _snackbarMessage.value = "Plexamp library LAN connection not configured in Settings"
+                return@launch
+            }
+            val initialState = LanFolderPickerState(
+                connectionId = connectionId,
+                rootPath = rootPath,
+                currentPath = rootPath,
+                isLoading = true,
+            )
+            _plexampPickerState.value = initialState
+            loadPlexampFolders(connectionId, rootPath)
+        }
+    }
+
+    fun browsePlexampFolder(folder: PutioFile) {
+        val current = _plexampPickerState.value ?: return
+        val newPath = if (current.currentPath.isEmpty()) folder.name else "${current.currentPath}/${folder.name}"
+        _plexampPickerState.value = current.copy(
+            pathStack = current.pathStack + current.currentPath,
+            currentPath = newPath,
+            folders = emptyList(),
+            files = emptyList(),
+            isLoading = true,
+            error = null,
+        )
+        loadPlexampFolders(current.connectionId, newPath)
+    }
+
+    fun plexampPickerNavigateUp() {
+        val current = _plexampPickerState.value ?: return
+        if (!current.canNavigateUp) return
+        val previousPath = current.pathStack.last()
+        _plexampPickerState.value = current.copy(
+            pathStack = current.pathStack.dropLast(1),
+            currentPath = previousPath,
+            folders = emptyList(),
+            files = emptyList(),
+            isLoading = true,
+            error = null,
+        )
+        loadPlexampFolders(current.connectionId, previousPath)
+    }
+
+    fun dismissPlexampPicker() { _plexampPickerState.value = null }
+
+    // (albumName, files) emitted when a folder scan for Plexamp completes; consumed once by FilesScreen
+    private val _plexampFolderFiles = MutableStateFlow<Pair<String, List<PutioFile>>?>(null)
+    val plexampFolderFiles: StateFlow<Pair<String, List<PutioFile>>?> = _plexampFolderFiles.asStateFlow()
+
+    fun scanFolderForPlexamp(folder: PutioFile) {
+        viewModelScope.launch {
+            try {
+                val audioFiles = fetchAudioFilesForPlexamp(folder)
+                if (audioFiles.isEmpty()) {
+                    _snackbarMessage.value = "No audio files found in '${folder.name}'"
+                } else {
+                    _plexampFolderFiles.value = folder.name to audioFiles
+                }
+            } catch (e: Exception) {
+                _snackbarMessage.value = "Failed to scan folder: ${e.message}"
+            }
+        }
+    }
+
+    fun dismissPlexampFolderFiles() { _plexampFolderFiles.value = null }
+
+    fun sendToPlexamp(files: List<PutioFile>, artistName: String, albumName: String, createFolder: Boolean, destPath: String) {
+        viewModelScope.launch {
+            val account = googleAccount.value
+            if (account.isBlank()) {
+                _snackbarMessage.value = "Google account not configured"
+                return@launch
+            }
+            calibreRepository.sendToPlexamp(files, artistName, albumName, createFolder, destPath, account)
+            _snackbarMessage.value = "Plexamp transfer request sent"
+        }
+    }
+
+    private suspend fun fetchAudioFilesForPlexamp(folder: PutioFile): List<PutioFile> {
+        val token = settingsRepository.authTokenFlow.first()
+        val result = mutableListOf<PutioFile>()
+        val queue = ArrayDeque<PutioFile>()
+        queue.add(folder)
+        while (queue.isNotEmpty()) {
+            val currentFolder = queue.removeFirst()
+            val children = when {
+                currentFolder.isLocal -> currentFolder.localUri?.let { localFilesRepository.listLocalFolder(it).first() } ?: emptyList()
+                currentFolder.isLan -> currentFolder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, currentFolder.lanPath ?: "", includeAllFiles = true).first() } ?: emptyList()
+                else -> filesRepository.listFiles(token, currentFolder.id).dataOrNull()?.first ?: emptyList()
+            }
+            for (child in children) {
+                if (child.isFolder) queue.add(child)
+                else if (MetadataUtils.isAudio(child.displayName)) result.add(child)
+            }
+        }
+        result.sortBy { it.displayName }
+        return result
+    }
+
+    private fun loadPlexampFolders(connectionId: Long, path: String) {
+        viewModelScope.launch {
+            try {
+                val folders = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = false).first()
+                val current = _plexampPickerState.value ?: return@launch
+                _plexampPickerState.value = current.copy(
+                    folders = folders.filter { it.isFolder },
+                    files = emptyList(),
+                    isLoading = false,
+                    error = null,
+                )
+            } catch (e: Exception) {
+                val current = _plexampPickerState.value ?: return@launch
+                _plexampPickerState.value = current.copy(isLoading = false, error = e.message ?: "Failed to load folders")
+            }
+        }
+    }
+
     private val _folderAudioPickerState = MutableStateFlow<FolderAudioPickerState?>(null)
     val folderAudioPickerState: StateFlow<FolderAudioPickerState?> = _folderAudioPickerState.asStateFlow()
 
