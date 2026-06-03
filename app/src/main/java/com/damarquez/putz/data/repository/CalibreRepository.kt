@@ -113,6 +113,7 @@ data class PlexAssemblyItem(
     val fileName: String,
     val item_type: String = "MOVIE", // "MOVIE" or "SUBTITLE"
     val language: String? = null,
+    val use_local: Boolean? = null,  // When true the daemon resolves the file from the local mirror repo
     val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
     val stub_putio_id: Long? = null, // CONTRACT: stub convention — actual put.io ID of the stub (for daemon to delete after processing)
 )
@@ -945,11 +946,15 @@ class CalibreRepository @Inject constructor(
                         val isProcessingUpdate = newStatus == CalibreTransferStatus.PROCESSING && transfer.status == CalibreTransferStatus.PROCESSING
 
                         if (isNewerStatus || isSameStatusFailure || isProcessingUpdate) {
-                            // Plex transfers are verified by the daemon before it sends COMPLETED
-                            // (it checks file existence and physically moves the files), so no
-                            // library-sync check is needed on the Putz side.
+                            // These action types are self-verifying: the daemon's COMPLETED
+                            // response is the only confirmation needed (no library state change
+                            // to cross-check). Mark requests just confirm feasibility; cancel is
+                            // a client-side acknowledgement; Plex verifies files physically.
+                            val selfVerifyingActions = setOf(
+                                "MARK_BOOK_FOR_DELETION", "MARK_FORMATS_FOR_DELETION", "CANCEL_DELETION"
+                            )
                             val libraryVerified = newStatus == CalibreTransferStatus.COMPLETED &&
-                                transfer.transferType == "PLEX"
+                                (transfer.transferType == "PLEX" || response.action in selfVerifyingActions)
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 status = newStatus,
                                 errorMessage = response.error,
@@ -1006,6 +1011,7 @@ class CalibreRepository @Inject constructor(
             putio_file_id = file.syncedFileId,
             fileName = displayName,
             item_type = "MOVIE",
+            use_local = if (localPath != null) true else null,
             local_path = localPath,
             stub_putio_id = if (file.isSynced) file.id else null,
         )
@@ -1063,6 +1069,7 @@ class CalibreRepository @Inject constructor(
             fileName = subtitle.displayName,
             item_type = "SUBTITLE",
             language = language,
+            use_local = if (localPath != null) true else null,
             local_path = localPath,
             stub_putio_id = if (subtitle.isSynced) subtitle.id else null,
         )
@@ -1280,9 +1287,10 @@ class CalibreRepository @Inject constructor(
                     action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
-                    // Mark-for-deletion: verify the book is still present (daemon confirmed it exists)
-                    action == "MARK_BOOK_FOR_DELETION" -> checkBookUuidExists(db, transfer.calibreBookUuid)
-                    action == "MARK_FORMATS_FOR_DELETION" -> checkBookUuidExists(db, transfer.calibreBookUuid)
+                    // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the
+                    // book may have since been deleted, so don't require it to still exist.
+                    action == "MARK_BOOK_FOR_DELETION" -> true
+                    action == "MARK_FORMATS_FOR_DELETION" -> true
                     // Confirm-delete: verify the book / formats are gone from the library
                     action == "CONFIRM_DELETE_BOOK" -> !checkBookUuidExists(db, transfer.calibreBookUuid)
                     action == "CONFIRM_DELETE_FORMATS" -> checkFormatsDeleted(db, transfer.calibreBookUuid, transfer.lastRequestPayload)
