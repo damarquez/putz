@@ -52,6 +52,30 @@ class CalibreTransfersViewModel @Inject constructor(
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing = _isSyncing.asStateFlow()
 
+    private val _pendingDriveSyncConfirmation = MutableStateFlow(false)
+    val pendingDriveSyncConfirmation: StateFlow<Boolean> = _pendingDriveSyncConfirmation
+
+    fun requestSync() {
+        viewModelScope.launch {
+            val lanEnabled = settingsRepository.lanEnabledFlow.first()
+            val lanReachable = lanEnabled && lanDaemonTransport.isReachable()
+            if (lanEnabled && !lanReachable) {
+                _pendingDriveSyncConfirmation.value = true
+            } else {
+                syncMetadata()
+            }
+        }
+    }
+
+    fun confirmDriveSync() {
+        _pendingDriveSyncConfirmation.value = false
+        syncMetadata()
+    }
+
+    fun dismissDriveSyncConfirmation() {
+        _pendingDriveSyncConfirmation.value = false
+    }
+
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 

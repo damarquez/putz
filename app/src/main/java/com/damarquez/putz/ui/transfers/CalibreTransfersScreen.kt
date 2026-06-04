@@ -108,6 +108,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     val googleAccount by syncViewModel.googleAccount.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val isSyncing by viewModel.isSyncing.collectAsState(initial = false)
+    val pendingDriveSyncConfirmation by viewModel.pendingDriveSyncConfirmation.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -483,7 +484,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                     }
 
                     IconButton(
-                        onClick = { viewModel.syncMetadata() },
+                        onClick = { viewModel.requestSync() },
                         enabled = !isSyncing && isGoogleSignedIn
                     ) {
                         BadgedBox(
@@ -629,5 +630,19 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 }
             }
         }
+    }
+
+    if (pendingDriveSyncConfirmation) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissDriveSyncConfirmation() },
+            title = { Text("Sync via Google Drive?") },
+            text = { Text("Tailscale LAN is not reachable. Are you sure you want to sync using Google Drive?") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmDriveSync() }) { Text("Sync") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissDriveSyncConfirmation() }) { Text("Cancel") }
+            },
+        )
     }
 }
