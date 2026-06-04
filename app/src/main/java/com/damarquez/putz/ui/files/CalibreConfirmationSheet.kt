@@ -513,6 +513,10 @@ fun CalibreConfirmationSheet(
                             onClick = {
                                 val (surname, given) = author.split(",", limit = 2)
                                 author = "${given.trim()} ${surname.trim()}"
+                                    .split(" ")
+                                    .joinToString(" ") { word ->
+                                        word.lowercase().replaceFirstChar { it.uppercaseChar() }
+                                    }
                             }
                         ) {
                             Icon(
