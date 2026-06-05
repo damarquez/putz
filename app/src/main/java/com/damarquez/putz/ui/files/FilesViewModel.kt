@@ -195,6 +195,9 @@ class FilesViewModel @Inject constructor(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+    private val _openParentFolderEvent = MutableSharedFlow<Triple<Long, String, Long>>()
+    val openParentFolderEvent: SharedFlow<Triple<Long, String, Long>> = _openParentFolderEvent.asSharedFlow()
+
     data class PutioArchiveEvent(
         val fileId: Long,           // CONTRACT: stub convention — original file ID (syncedFileId) for requests
         val stubFileId: Long,       // CONTRACT: stub convention — actual put.io ID of the stub (for deletion and content reading)
@@ -2135,7 +2138,22 @@ class FilesViewModel @Inject constructor(
     }
 
     fun onHighlightHandled() {
-        // We can't easily modify SavedStateHandle once read, 
+        // We can't easily modify SavedStateHandle once read,
         // but the Screen can use this to stop the highlighting effect.
+    }
+
+    fun openParentFolder(file: PutioFile) {
+        viewModelScope.launch {
+            val parentFolderId = file.parentId
+            if (parentFolderId <= 0L) {
+                _openParentFolderEvent.emit(Triple(0L, "Your Files", file.id))
+                return@launch
+            }
+            val token = settingsRepository.authTokenFlow.first()
+            when (val result = filesRepository.getFile(token, parentFolderId)) {
+                is NetworkResult.Success -> _openParentFolderEvent.emit(Triple(parentFolderId, result.data.name, file.id))
+                else -> _openParentFolderEvent.emit(Triple(parentFolderId, "Folder", file.id))
+            }
+        }
     }
 }

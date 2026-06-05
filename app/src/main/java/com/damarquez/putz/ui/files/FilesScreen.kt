@@ -109,6 +109,7 @@ import androidx.compose.material3.NavigationRailItemDefaults
 @Composable
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?, String?) -> Unit,
+    onNavigateToFolderHighlighted: (folderId: Long, folderName: String, highlightId: Long) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
     onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean) -> Unit,
     onNavigateToTrash: () -> Unit,
@@ -166,6 +167,12 @@ fun FilesScreen(
     LaunchedEffect(isSearchMode) {
         if (isSearchMode) {
             searchFocusRequester.requestFocus()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.openParentFolderEvent.collect { (folderId, folderName, highlightId) ->
+            onNavigateToFolderHighlighted(folderId, folderName, highlightId)
         }
     }
 
@@ -1229,6 +1236,8 @@ fun FilesScreen(
                                         isHighlighted = file.id == currentHighlightId,
                                         hasPendingAssemblies = pendingAssemblies.isNotEmpty(),
                                         isFolderAllSynced = file.isFolder && file.id in allSyncedFolderIds,
+                                        isInSearchResults = isSearchMode,
+                                        onOpenParentFolder = { viewModel.openParentFolder(file) },
                                     )
                                 }
                             }

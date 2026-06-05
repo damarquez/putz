@@ -244,6 +244,11 @@ fun AppNavGraph(
                             )
                         )
                     },
+                    onNavigateToFolderHighlighted = { folderId, folderName, highlightId ->
+                        navController.navigate(
+                            Screen.Files.createRoute(folderId, folderName, highlightId = highlightId)
+                        )
+                    },
                     onNavigateToArchive = { localUri, lanConnectionId, lanPath, archiveName ->
                         navController.navigate(
                             Screen.Archive.createRoute(

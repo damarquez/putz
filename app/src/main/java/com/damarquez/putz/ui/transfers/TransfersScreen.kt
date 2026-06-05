@@ -54,6 +54,7 @@ import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.navigation.Screen
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -266,7 +267,9 @@ private fun synthesizeHistoryEntry(merged: MergedTransfer): HistoryFileEntry =
         infoHash = merged.transfer.hash ?: "",
         label = merged.appDisplayName,
         status = merged.transfer.status,
-        addedAt = System.currentTimeMillis() / 1000L,
+        addedAt = merged.transfer.createdAt
+            ?.let { runCatching { Instant.parse(it).epochSecond }.getOrNull() }
+            ?: (System.currentTimeMillis() / 1000L),
         magnetUri = merged.magnetLink,
         putioId = merged.transfer.id,
         putioName = merged.transfer.name.takeIf { it != merged.appDisplayName },

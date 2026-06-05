@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
@@ -93,6 +94,8 @@ fun FileItem(
     hasPendingAssemblies: Boolean = false,
     isHighlighted: Boolean = false,
     isFolderAllSynced: Boolean = false,
+    isInSearchResults: Boolean = false,
+    onOpenParentFolder: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val styling = LocalAppStyling.current
@@ -283,6 +286,19 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
+                        if (isInSearchResults && onOpenParentFolder != null && !file.isSpecialRootFolder) {
+                            DropdownMenuItem(
+                                text = { Text("Open parent folder") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.FolderOpen, contentDescription = null)
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onOpenParentFolder()
+                                },
+                            )
+                            HorizontalDivider()
+                        }
                         if (!file.isFolder && !file.isTrash && !isRegularRemote) {
                             DropdownMenuItem(
                                 text = { Text("Preview") },
@@ -485,7 +501,7 @@ fun FileItem(
                                 },
                             )
                         }
-                        if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !isRegularRemote) {
+                        if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !isRegularRemote) {
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = {
