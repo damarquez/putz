@@ -853,16 +853,35 @@ class CalibreRepository @Inject constructor(
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: emptyList()
 
+        // Auto-apply _bkp when the incoming SINGLE item's format is already taken in the assembly.
+        // Reject if both the base slot and the _bkp slot are already occupied.
+        var effectiveItem = newItem
+        if (newItem.type == "SINGLE") {
+            val ext = newItem.fileName.substringAfterLast('.', "")
+            if (ext.isNotEmpty() && !ext.uppercase().endsWith("_BKP")) {
+                val existingFormats = currentItems
+                    .filter { it.type == "SINGLE" }
+                    .map { it.fileName.substringAfterLast('.', "").uppercase() }
+                    .toSet()
+                if (ext.uppercase() in existingFormats) {
+                    if ((ext.uppercase() + "_BKP") in existingFormats) return false
+                    effectiveItem = newItem.copy(
+                        fileName = newItem.fileName.substringBeforeLast('.') + "." + ext + "_bkp"
+                    )
+                }
+            }
+        }
+
         val existingFileNames = currentItems.flatMap { item ->
             if (item.type == "PACK" || item.type == "PDF_PACK") item.files?.map { it.fileName } ?: listOf(item.fileName)
             else listOf(item.fileName)
         }.toSet()
-        val incomingFileNames = if (newItem.type == "PACK" || newItem.type == "PDF_PACK")
-            newItem.files?.map { it.fileName } ?: listOf(newItem.fileName)
-        else listOf(newItem.fileName)
+        val incomingFileNames = if (effectiveItem.type == "PACK" || effectiveItem.type == "PDF_PACK")
+            effectiveItem.files?.map { it.fileName } ?: listOf(effectiveItem.fileName)
+        else listOf(effectiveItem.fileName)
         if (incomingFileNames.any { it in existingFileNames }) return false
 
-        val updatedItems = currentItems + newItem
+        val updatedItems = currentItems + effectiveItem
         val updatedIds = (transfer.parsedFileIds() + newFileIds).distinct()
 
         calibreTransferDao.updateTransfer(transfer.copy(

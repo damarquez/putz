@@ -27,6 +27,8 @@ object FileIconProvider {
         "fb2" -> R.drawable.ic_file_fb2
         "mkv" -> R.drawable.ic_file_mkv
         "mp4" -> R.drawable.ic_file_mp4
+        "azw3" -> R.drawable.ic_file_azw3
+        "djvu" -> R.drawable.ic_file_djvu
         else   -> null
     }
 }

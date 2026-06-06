@@ -709,11 +709,15 @@ class FilesViewModel @Inject constructor(
             val putioToken = settingsRepository.authTokenFlow.first()
             
             if (file.isSynced) {
+                val syncedFileName = if (isAltVersion) {
+                    val ext = file.displayName.substringAfterLast('.', "")
+                    if (ext.isNotEmpty()) file.displayName.substringBeforeLast('.') + "." + ext + "_bkp" else file.displayName
+                } else file.displayName
                 // Save to DB immediately so the transfer is never silently lost if the
                 // coroutine is cancelled (e.g. navigating away). local_path is resolved below.
                 calibreRepository.addTransfer(
                     putioFileId = file.syncedFileId,
-                    fileName = file.displayName,
+                    fileName = syncedFileName,
                     title = title,
                     author = author,
                     googleAccount = googleAccount,
