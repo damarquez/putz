@@ -354,12 +354,11 @@ class CalibreTransfersViewModel @Inject constructor(
 
     fun deleteOrDetach(transfer: CalibreTransferEntity) {
         viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
             if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
                 localFilesRepository.detachOrHide(transfer.sourceLocalUri)
-            } else {
-                val token = settingsRepository.authTokenFlow.first()
-                calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
             }
+            calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
             calibreRepository.removeTransfer(transfer.putioFileId)
         }
     }
