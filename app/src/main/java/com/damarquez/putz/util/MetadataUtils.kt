@@ -41,6 +41,12 @@ object MetadataUtils {
         return ext == "pdf"
     }
 
+    /** True for EPUB files that can be joined into a fused EPUB. */
+    fun isEpub(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext == "epub"
+    }
+
     fun isVideo(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS

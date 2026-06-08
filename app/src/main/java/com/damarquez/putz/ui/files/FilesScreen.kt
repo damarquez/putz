@@ -282,6 +282,11 @@ fun FilesScreen(
     var isPdfPackAssembly by remember { mutableStateOf(false) }
     val pdfPackSheetState = rememberModalBottomSheetState()
 
+    // EPUB pack flow
+    var epubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedEpubFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+    val epubPackSheetState = rememberModalBottomSheetState()
+
     // Folder audio picker flow (Create M4B from folder)
     var folderForAudioPicker by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFolderAudioFiles by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
@@ -528,6 +533,43 @@ fun FilesScreen(
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _ ->
                 viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid)
                 selectedPdfFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (epubPackTriggerFile != null && selectedEpubFiles == null) {
+        val epubFiles = remember(uiState) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isEpub(it.displayName) }
+                ?: emptyList()
+        }
+        EpubPackSheet(
+            epubFiles = epubFiles,
+            sheetState = epubPackSheetState,
+            onDismiss = { epubPackTriggerFile = null },
+            onConfirm = { files ->
+                selectedEpubFiles = files
+                epubPackTriggerFile = null
+            },
+        )
+    }
+
+    if (selectedEpubFiles != null) {
+        val epubFiles = selectedEpubFiles!!
+        val (initialTitle, initialAuthor) = remember(epubFiles) {
+            MetadataUtils.extractMetadata(epubFiles.first().name)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${epubFiles.size} EPUB files",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedEpubFiles = null },
+            onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+                viewModel.sendEpubPack(epubFiles, title, author, uuid)
+                selectedEpubFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1191,6 +1233,7 @@ fun FilesScreen(
                                             }
                                         },
                                         onSendAsJoinedPdf = { pdfPackTriggerFile = it },
+                                        onSendAsJoinedEpub = { epubPackTriggerFile = it },
                                         onAssembleIntoPdf = { target ->
                                             selectedFileForAssembly = target to false
                                             isPdfPackAssembly = true

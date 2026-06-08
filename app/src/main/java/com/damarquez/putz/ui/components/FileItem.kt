@@ -77,6 +77,7 @@ fun FileItem(
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
     onSendAsJoinedPdf: (PutioFile) -> Unit,
     onAssembleIntoPdf: (PutioFile) -> Unit,
+    onSendAsJoinedEpub: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
@@ -105,6 +106,7 @@ fun FileItem(
     val isEbook = MetadataUtils.isEbook(file.displayName)
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.displayName)
     val isPdf = MetadataUtils.isPdf(file.displayName)
+    val isEpub = MetadataUtils.isEpub(file.displayName)
     val isVideo = fileType == PutioFileType.VIDEO || MetadataUtils.isVideo(file.displayName)
     val isAudio = MetadataUtils.isAudio(file.displayName)
     val isSubtitle = file.displayName.endsWith(".srt", ignoreCase = true) ||
@@ -406,6 +408,16 @@ fun FileItem(
                                         },
                                     )
                                 }
+                            }
+                            if (isEpub) {
+                                DropdownMenuItem(
+                                    text = { Text("Send to Calibre as joined EPUB") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsJoinedEpub(file)
+                                    },
+                                )
                             }
                             if (isVideo && file.isSynced) {
                                 DropdownMenuItem(

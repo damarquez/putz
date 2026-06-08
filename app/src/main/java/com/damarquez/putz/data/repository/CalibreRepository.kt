@@ -37,7 +37,7 @@ import kotlin.random.Random
 // CONTRACT: ADD_BOOK_BATCH
 @Serializable
 data class CalibreBatchItem(
-    val type: String, // "SINGLE", "PACK", "ARCHIVE", "ARCHIVE_ENTRY", "PDF_PACK"
+    val type: String, // "SINGLE", "PACK", "ARCHIVE", "ARCHIVE_ENTRY", "PDF_PACK", "EPUB_PACK"
     val putio_file_id: Long,
     val fileName: String,
     val download_url: String? = null,
@@ -775,6 +775,64 @@ class CalibreRepository @Inject constructor(
         calibreTransferDao.insertTransfer(transfer)
 
         if (assembleBook) return
+
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            putio_file_id = primaryFileId,
+            title = title,
+            author = author,
+            items = listOf(initialItem),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
+
+        if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr,
+            ))
+        } else {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.FAILED,
+                errorMessage = "Failed to upload to GDrive",
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr,
+            ))
+        }
+    }
+
+    suspend fun addEpubPackTransfer(
+        files: List<Pair<PutioFile, AudiobookFile>>,
+        title: String,
+        author: String,
+        googleAccount: String,
+        calibreBookUuid: String? = null,
+    ) {
+        val primaryFileId = files.first().first.id
+        val epubFiles = files.map { (_, f) -> f }
+        val initialItem = CalibreBatchItem(
+            type = "EPUB_PACK",
+            putio_file_id = primaryFileId,
+            fileName = "Book.epub",
+            files = epubFiles,
+        )
+        val transfer = CalibreTransferEntity(
+            putioFileId = primaryFileId,
+            fileName = "Book.epub",
+            title = title,
+            author = author,
+            status = CalibreTransferStatus.PENDING,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = epubFiles.joinToString(",") { it.putio_file_id.toString() },
+            batchData = json.encodeToString(listOf(initialItem)),
+            calibreBookUuid = calibreBookUuid,
+        )
+        calibreTransferDao.insertTransfer(transfer)
 
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(

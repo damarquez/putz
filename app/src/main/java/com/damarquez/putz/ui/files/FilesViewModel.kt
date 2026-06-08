@@ -1229,6 +1229,104 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun sendEpubPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val tempId = files.first().id
+
+            if (files.all { it.isSynced }) {
+                val stubResults = coroutineScope {
+                    files.map { file -> async { file to calibreRepository.readStubLocalPath(file) } }.awaitAll()
+                }
+                val failed = stubResults.firstOrNull { (_, path) -> path == null }?.first
+                if (failed != null) {
+                    _snackbarMessage.value = "Could not resolve local path for ${failed.displayName} — stub may be missing or unreadable. Please retry."
+                    return@launch
+                }
+                val epubFiles = stubResults.map { (file, localPath) ->
+                    file to AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath!!)
+                }
+                calibreRepository.addEpubPackTransfer(
+                    files = epubFiles,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    calibreBookUuid = calibreBookUuid,
+                )
+                _snackbarMessage.value = "EPUB join transfer requested"
+                return@launch
+            }
+
+            if (files.all { it.isLan } && files.none { it.isLocal }) {
+                val epubFilePairs = files.mapNotNull { file ->
+                    val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                    if (conn == null || file.lanPath == null) {
+                        _snackbarMessage.value = "LAN connection info missing for ${file.name}"
+                        return@launch
+                    }
+                    file to AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath))
+                }
+                calibreRepository.addEpubPackTransfer(
+                    files = epubFilePairs,
+                    title = title,
+                    author = author,
+                    googleAccount = googleAccount,
+                    calibreBookUuid = calibreBookUuid,
+                )
+                _snackbarMessage.value = "EPUB join transfer requested"
+                return@launch
+            }
+
+            val resolvedFiles = mutableListOf<AudiobookFile>()
+            for ((index, file) in files.withIndex()) {
+                when {
+                    file.isSynced -> {
+                        val localPath = calibreRepository.readStubLocalPath(file)
+                        if (localPath == null) {
+                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName}"
+                            return@launch
+                        }
+                        resolvedFiles.add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
+                    }
+                    file.isLan -> {
+                        val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                        if (conn == null || file.lanPath == null) {
+                            _snackbarMessage.value = "LAN connection missing for ${file.name}"
+                            return@launch
+                        }
+                        resolvedFiles.add(AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath)))
+                    }
+                    else -> {
+                        val id = uploadLocalFileIfNecessary(
+                            file, putioToken,
+                            progressKey = tempId,
+                            fileIndex = index + 1,
+                            totalFiles = files.size,
+                            clearProgressOnSuccess = index < files.size - 1,
+                        ) ?: return@launch
+                        resolvedFiles.add(AudiobookFile(id, file.name, filesRepository.getDownloadUrl(putioToken, id)))
+                    }
+                }
+            }
+            calibreRepository.updateUploadProgress(tempId, null)
+
+            calibreRepository.addEpubPackTransfer(
+                files = files.zip(resolvedFiles).map { (f, rf) -> f to rf },
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+                calibreBookUuid = calibreBookUuid,
+            )
+            _snackbarMessage.value = "EPUB join transfer requested"
+        }
+    }
+
     fun appendPdfPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String) {
         viewModelScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
