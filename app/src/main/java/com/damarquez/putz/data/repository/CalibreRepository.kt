@@ -47,6 +47,7 @@ data class CalibreBatchItem(
     val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
     val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
     val archive_entry: String? = null, // For ARCHIVE_ENTRY: path of the entry within the archive file
+    val protected: Boolean? = null,  // When true the daemon encrypts the file before adding to Calibre
 )
 // CONTRACT: ADD_BOOK_BATCH, probe pattern
 @Serializable
@@ -525,6 +526,7 @@ class CalibreRepository @Inject constructor(
         smbPath: String? = null,
         archiveEntry: String? = null,
         localPath: String? = null,   // CONTRACT: stub convention — relative path within the local mirror repo
+        isProtected: Boolean = false,
     ) {
         val initialItem = CalibreBatchItem(
             type = when {
@@ -540,6 +542,7 @@ class CalibreRepository @Inject constructor(
             local_path = localPath,
             smb_path = smbPath,
             archive_entry = archiveEntry,
+            protected = if (isProtected) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
@@ -911,6 +914,9 @@ class CalibreRepository @Inject constructor(
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: emptyList()
 
+        // Inherit encryption flag from the assembly's first item so all formats are consistently protected.
+        val inheritedProtected = currentItems.firstOrNull()?.protected
+
         // Auto-apply _bkp when the incoming SINGLE item's format is already taken in the assembly.
         // Reject if both the base slot and the _bkp slot are already occupied.
         var effectiveItem = newItem
@@ -939,6 +945,7 @@ class CalibreRepository @Inject constructor(
         else listOf(effectiveItem.fileName)
         if (incomingFileNames.any { it in existingFileNames }) return false
 
+        if (inheritedProtected != null) effectiveItem = effectiveItem.copy(protected = inheritedProtected)
         val updatedItems = currentItems + effectiveItem
         val updatedIds = (transfer.parsedFileIds() + newFileIds).distinct()
 
@@ -1453,6 +1460,7 @@ class CalibreRepository @Inject constructor(
                     transfer.calibreBookUuid == null -> true
                     action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                    action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
                     // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the
                     // book may have since been deleted, so don't require it to still exist.
@@ -1716,6 +1724,45 @@ class CalibreRepository @Inject constructor(
             putioFileId = putioFileId,
             fileName = "Generate cover for $title",
             title = "Generate cover for $title",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: PROTECT_BOOK
+    suspend fun sendProtectBookRequest(
+        title: String,
+        author: String,
+        calibreBookUuid: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            action = "PROTECT_BOOK",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = emptyList(),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_protect_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Protect $title",
+            title = "Protect $title",
             author = author,
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),

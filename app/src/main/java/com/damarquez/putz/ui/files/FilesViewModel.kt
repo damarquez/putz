@@ -698,7 +698,7 @@ class FilesViewModel @Inject constructor(
         return null
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -728,6 +728,7 @@ class FilesViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     useLocal = true,
                     localPath = null,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer queued for $title"
                 // Resolve local path then dispatch (or just update batchData for assembled).
@@ -759,6 +760,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     smbPath = buildUncPath(conn.host, conn.shareName, file.lanPath),
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
             } else if (file.isLocal) {
@@ -776,6 +778,7 @@ class FilesViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     isUploading = true,
                     localUrisJson = file.localUri?.let { """["$it"]""" },
+                    isProtected = isProtected,
                 )
 
                 val uploadedId = uploadLocalFileIfNecessary(file, putioToken, progressKey = file.id)
@@ -818,7 +821,8 @@ class FilesViewModel @Inject constructor(
                                 isTempUpload = true,
                                 sourceLocalUri = file.localUri,
                                 assembleBook = true,
-                                calibreBookUuid = calibreBookUuid
+                                calibreBookUuid = calibreBookUuid,
+                                isProtected = isProtected,
                             )
                         }
                     } else {
@@ -860,7 +864,8 @@ class FilesViewModel @Inject constructor(
                     isTempUpload = false,
                     sourceLocalUri = null,
                     assembleBook = assembleBook,
-                    calibreBookUuid = calibreBookUuid
+                    calibreBookUuid = calibreBookUuid,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
             }

@@ -369,7 +369,7 @@ fun FilesScreen(
                 isFolderAssembly = false
                 isPdfPackAssembly = false
             },
-            onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _, _ ->
+            onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _, _, _ ->
                 when {
                     isFolderAssembly -> {
                         viewModel.appendFolderAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedFolderAudioFilesForAssembly!!, title, author, isAltVersion)
@@ -413,8 +413,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedFileForCalibre = null },
-            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, _ ->
-                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid)
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, _, isProtected ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected)
                 selectedFileForCalibre = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -434,7 +434,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedFileForCover = null },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _ ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCover(imageFile, title, author, matchedId ?: 0L, uuid)
                 }
@@ -510,7 +510,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, _ ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, _, _ ->
                 viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid)
                 selectedPackFiles = null
             },
@@ -530,7 +530,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPdfFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _ ->
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _ ->
                 viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid)
                 selectedPdfFiles = null
             },
@@ -567,7 +567,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedEpubFiles = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+            onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
                 viewModel.sendEpubPack(epubFiles, title, author, uuid)
                 selectedEpubFiles = null
             },
@@ -693,7 +693,7 @@ fun FilesScreen(
                 selectedFolderAudioFiles = null
                 folderForAudioPicker = null
             },
-            onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+            onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
                 viewModel.sendFolderAudiobookPack(files, title, author, uuid)
                 selectedFolderAudioFiles = null
                 folderForAudioPicker = null

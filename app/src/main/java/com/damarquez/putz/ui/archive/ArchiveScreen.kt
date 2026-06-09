@@ -341,7 +341,7 @@ fun ArchiveScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { entryForCalibre = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _ ->
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _ ->
                 viewModel.sendEntryToCalibre(entry, title, author, assembleBook, null, uuid)
                 entryForCalibre = null
             },
@@ -363,7 +363,7 @@ fun ArchiveScreen(
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
                 onDismiss = { entryForAssembly = null },
-                onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+                onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
                     viewModel.sendEntryToCalibre(entry, title, author, assembleBook = true, assemblyFileId = null, calibreBookUuid = uuid)
                     entryForAssembly = null
                 },
@@ -408,7 +408,7 @@ fun ArchiveScreen(
             initialTitle = assembly.title,
             initialAuthor = assembly.author,
             onDismiss = { targetAssembly = null; entryForAssembly = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, _ ->
+            onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
                 viewModel.sendEntryToCalibre(entry, title, author, assembleBook = true, assemblyFileId = assembly.putioFileId, calibreBookUuid = uuid)
                 targetAssembly = null
                 entryForAssembly = null

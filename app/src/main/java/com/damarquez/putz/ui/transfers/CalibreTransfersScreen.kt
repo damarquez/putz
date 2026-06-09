@@ -69,6 +69,7 @@ import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
+import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.util.MetadataUtils
 import com.damarquez.putz.data.local.CalibreTransferEntity
@@ -88,6 +89,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     pendingSetPageCountRepository: PendingSetPageCountRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
+    pendingProtectBookRepository: PendingProtectBookRepository,
 ) {
     val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
@@ -181,6 +183,15 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     }
 
     LaunchedEffect(Unit) {
+        pendingProtectBookRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingProtectBookRepository.clear()
+                viewModel.protectBook(pending.uuid, pending.title, pending.author)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
         pendingSetPageCountRepository.flow.collect { pending ->
             if (pending != null) {
                 pendingSetPageCountRepository.clear()
@@ -256,7 +267,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 clipboardImageUri = null
                 prefilledUuid = null
             },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _ ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCoverFromClipboard(clipboardImageUri!!, title, author, matchedId ?: 0L, uuid)
                 }
@@ -284,7 +295,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 prefilledUuid = null
                 pendingCommentsRepository.clear()
             },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, comments, tags ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, comments, tags, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCommentsFromClipboard(comments, tags, title, author, matchedId ?: 0L, uuid)
                 }

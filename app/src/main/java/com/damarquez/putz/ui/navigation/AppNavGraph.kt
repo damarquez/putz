@@ -45,6 +45,7 @@ import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
+import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import kotlinx.coroutines.flow.combine
 
@@ -59,6 +60,7 @@ fun AppNavGraph(
     pendingSetPageCountRepository: PendingSetPageCountRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
+    pendingProtectBookRepository: PendingProtectBookRepository,
 ) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
@@ -72,6 +74,7 @@ fun AppNavGraph(
                 pendingCoverRepository.flow,
                 pendingCommentsRepository.flow,
                 pendingGenerateCoverRepository.flow,
+                pendingProtectBookRepository.flow,
                 pendingSetPageCountRepository.flow,
                 pendingDeletionActionRepository.flow,
                 pendingEditMetadataRepository.flow,
@@ -383,6 +386,7 @@ fun AppNavGraph(
                     pendingCoverRepository = pendingCoverRepository,
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
+                    pendingProtectBookRepository = pendingProtectBookRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
                     pendingEditMetadataRepository = pendingEditMetadataRepository,

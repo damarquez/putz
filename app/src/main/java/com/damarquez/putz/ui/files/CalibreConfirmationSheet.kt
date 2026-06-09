@@ -70,7 +70,7 @@ fun CalibreConfirmationSheet(
     initialTitle: String,
     initialAuthor: String,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?) -> Unit,
+    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean) -> Unit,
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     isArchive: Boolean = false,
@@ -122,6 +122,7 @@ fun CalibreConfirmationSheet(
     var archiveMode by remember { mutableStateOf("default") }
     var assembleBook by remember { mutableStateOf(forceAssemble) }
     var isAltVersion by remember { mutableStateOf(false) }
+    var isProtected by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val titleAuthorLocked = isReplaceCover
     val requiresUuidMatch = isReplaceCover
@@ -503,6 +504,7 @@ fun CalibreConfirmationSheet(
                                     uuid.trim().ifBlank { null },
                                     if (isUpdateComments && includeComments) comments.trim() else null,
                                     if (isUpdateComments) tags.trim().ifBlank { null } else null,
+                                    isProtected,
                                 )
                             }
                         }),
@@ -572,6 +574,28 @@ fun CalibreConfirmationSheet(
                             onCheckedChange = { assembleBook = it }
                         )
                     }
+
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Encrypt format",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                text = "Daemon encrypts file before adding to Calibre",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = isProtected,
+                            onCheckedChange = { isProtected = it }
+                        )
+                    }
                 }
 
                 if (isArchive && !isReplaceCover && !isUpdateComments) {
@@ -599,18 +623,19 @@ fun CalibreConfirmationSheet(
                 Spacer(Modifier.height(24.dp))
 
                 Button(
-                    onClick = { 
+                    onClick = {
                         onConfirm(
-                            if (isReplaceCover) matchedBookTitle ?: title.trim() else title.trim(), 
-                            if (isReplaceCover) matchedBookAuthor ?: author.trim().ifBlank { "Unknown" } else author.trim().ifBlank { "Unknown" }, 
-                            if (isArchive) archiveMode else null, 
-                            assembleBook, 
-                            isAltVersion, 
-                            matchedBookId, 
+                            if (isReplaceCover) matchedBookTitle ?: title.trim() else title.trim(),
+                            if (isReplaceCover) matchedBookAuthor ?: author.trim().ifBlank { "Unknown" } else author.trim().ifBlank { "Unknown" },
+                            if (isArchive) archiveMode else null,
+                            assembleBook,
+                            isAltVersion,
+                            matchedBookId,
                             uuid.trim().ifBlank { null },
                             if (isUpdateComments && includeComments) comments.trim() else null,
                             if (isUpdateComments) tags.trim().ifBlank { null } else null,
-                        ) 
+                            isProtected,
+                        )
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = title.isNotBlank() &&
