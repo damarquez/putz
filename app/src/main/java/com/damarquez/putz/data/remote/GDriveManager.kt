@@ -122,13 +122,18 @@ class GDriveManager @Inject constructor(
             
             val requestsFolderId = findFolder(service, "requests", rootFolderId) ?: createFolder(service, "requests", rootFolderId)
 
-            val tempFile = File(context.cacheDir, fileName).apply { writeText(content) }
-            val metadata = com.google.api.services.drive.model.File().apply {
-                name = fileName
-                parents = listOf(requestsFolderId)
+            val tempFile = File.createTempFile("upload_", "_$fileName", context.cacheDir)
+                .apply { writeText(content) }
+            val uploaded = try {
+                val metadata = com.google.api.services.drive.model.File().apply {
+                    name = fileName
+                    parents = listOf(requestsFolderId)
+                }
+                val mediaContent = FileContent("application/json", tempFile)
+                service.files().create(metadata, mediaContent).setFields("id").execute()
+            } finally {
+                tempFile.delete()
             }
-            val mediaContent = FileContent("application/json", tempFile)
-            val uploaded = service.files().create(metadata, mediaContent).setFields("id").execute()
             Log.d("GDriveManager", "Upload successful, ID: ${uploaded.id}")
             uploaded.id
         } catch (e: Exception) {

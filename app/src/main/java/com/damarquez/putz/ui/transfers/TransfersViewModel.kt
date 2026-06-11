@@ -6,6 +6,7 @@ import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.TransferGroup
+import com.damarquez.putz.data.model.TransferStatus
 import com.damarquez.putz.data.model.group
 import com.damarquez.putz.data.model.isActive
 import com.damarquez.putz.data.repository.CalibreRepository
@@ -113,9 +114,18 @@ class TransfersViewModel @Inject constructor(
                     is NetworkResult.Success -> {
                         val transfers = result.data
                         _uiState.value = TransfersUiState.Success(grouped = buildGroupedMap(transfers))
-                        val hasActive = transfers.any { it.transfer.isActive() }
                         registerTransferHistory(transfers, token)
-                        delay(if (hasActive) POLL_ACTIVE_MS else POLL_IDLE_MS)
+
+                        val seeding = transfers.filter {
+                            TransferStatus.from(it.transfer.status) == TransferStatus.SEEDING && !it.isStopped
+                        }
+                        if (seeding.isNotEmpty()) {
+                            seeding.forEach { transfersRepository.stopTransfer(token, it.transfer.id) }
+                            // re-poll immediately so the UI reflects the cancellations
+                        } else {
+                            val hasActive = transfers.any { it.transfer.isActive() }
+                            delay(if (hasActive) POLL_ACTIVE_MS else POLL_IDLE_MS)
+                        }
                     }
                     is NetworkResult.Error -> {
                         if (_uiState.value !is TransfersUiState.Success) {

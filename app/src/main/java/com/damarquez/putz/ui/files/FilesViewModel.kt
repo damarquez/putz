@@ -261,7 +261,11 @@ class FilesViewModel @Inject constructor(
                         }
                         FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
                     }
-                    // CONTRACT: stub convention — serve the real file from the LAN mirror, not the put.io stub
+                    // CONTRACT: stub convention — preview requires LAN; downloading the stub itself is useless
+                    file.isSynced && (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) -> {
+                        _snackbarMessage.value = "Preview not available — LAN connection required"
+                        return@launch
+                    }
                     file.isSynced -> {
                         val targetFile = File(File(context.cacheDir, "previews"), file.displayName)
                         if (!targetFile.exists()) {
