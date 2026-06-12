@@ -48,6 +48,9 @@ data class CalibreTransferEntity(
     /** Newline-separated warnings reported by the daemon on a COMPLETED transfer. */
     val warnings: String? = null,
 
+    /** Comma-separated tags to append to the book on the daemon side (always merged with existing). */
+    val tags: String? = null,
+
     /** "CALIBRE" or "PLEX". Used to route dispatch and display logic. */
     val transferType: String = "CALIBRE",
 

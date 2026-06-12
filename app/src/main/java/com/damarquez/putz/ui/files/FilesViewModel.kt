@@ -702,7 +702,7 @@ class FilesViewModel @Inject constructor(
         return null
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -733,6 +733,7 @@ class FilesViewModel @Inject constructor(
                     useLocal = true,
                     localPath = null,
                     isProtected = isProtected,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer queued for $title"
                 // Resolve local path then dispatch (or just update batchData for assembled).
@@ -765,6 +766,7 @@ class FilesViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     smbPath = buildUncPath(conn.host, conn.shareName, file.lanPath),
                     isProtected = isProtected,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
             } else if (file.isLocal) {
@@ -783,6 +785,7 @@ class FilesViewModel @Inject constructor(
                     isUploading = true,
                     localUrisJson = file.localUri?.let { """["$it"]""" },
                     isProtected = isProtected,
+                    tags = tags,
                 )
 
                 val uploadedId = uploadLocalFileIfNecessary(file, putioToken, progressKey = file.id)
@@ -827,6 +830,7 @@ class FilesViewModel @Inject constructor(
                                 assembleBook = true,
                                 calibreBookUuid = calibreBookUuid,
                                 isProtected = isProtected,
+                                tags = tags,
                             )
                         }
                     } else {
@@ -870,13 +874,14 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     isProtected = isProtected,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
             }
         }
     }
 
-    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null) {
+    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, tags: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -907,6 +912,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
                     calibreBookUuid = calibreBookUuid,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
                 return@launch
@@ -933,6 +939,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
                     calibreBookUuid = calibreBookUuid,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
                 return@launch
@@ -952,6 +959,7 @@ class FilesViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     isUploading = true,
                     localUrisJson = localUrisJson,
+                    tags = tags,
                 )
 
                 // Resolve each file: LAN files use SMB path directly; device-local files are uploaded.
@@ -1007,7 +1015,8 @@ class FilesViewModel @Inject constructor(
                         googleAccount = googleAccount,
                         assembleBook = true,
                         customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
-                        calibreBookUuid = calibreBookUuid
+                        calibreBookUuid = calibreBookUuid,
+                        tags = tags,
                     )
                 } else {
                     calibreRepository.updateAudiobookAfterUpload(tempId, resolvedAudioFiles, googleAccount)
@@ -1026,7 +1035,8 @@ class FilesViewModel @Inject constructor(
                     googleAccount = googleAccount,
                     assembleBook = assembleBook,
                     customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
-                    calibreBookUuid = calibreBookUuid
+                    calibreBookUuid = calibreBookUuid,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
             }
@@ -1136,7 +1146,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun sendPdfPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, calibreBookUuid: String? = null) {
+    fun sendPdfPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, calibreBookUuid: String? = null, tags: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -1166,6 +1176,7 @@ class FilesViewModel @Inject constructor(
                     googleAccount = googleAccount,
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
                 return@launch
@@ -1187,6 +1198,7 @@ class FilesViewModel @Inject constructor(
                     googleAccount = googleAccount,
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
+                    tags = tags,
                 )
                 _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
                 return@launch
@@ -1233,12 +1245,13 @@ class FilesViewModel @Inject constructor(
                 googleAccount = googleAccount,
                 assembleBook = assembleBook,
                 calibreBookUuid = calibreBookUuid,
+                tags = tags,
             )
             _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
         }
     }
 
-    fun sendEpubPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null) {
+    fun sendEpubPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -1267,6 +1280,7 @@ class FilesViewModel @Inject constructor(
                     author = author,
                     googleAccount = googleAccount,
                     calibreBookUuid = calibreBookUuid,
+                    tags = tags,
                 )
                 _snackbarMessage.value = "EPUB join transfer requested"
                 return@launch
@@ -1287,6 +1301,7 @@ class FilesViewModel @Inject constructor(
                     author = author,
                     googleAccount = googleAccount,
                     calibreBookUuid = calibreBookUuid,
+                    tags = tags,
                 )
                 _snackbarMessage.value = "EPUB join transfer requested"
                 return@launch
@@ -1331,6 +1346,7 @@ class FilesViewModel @Inject constructor(
                 author = author,
                 googleAccount = googleAccount,
                 calibreBookUuid = calibreBookUuid,
+                tags = tags,
             )
             _snackbarMessage.value = "EPUB join transfer requested"
         }
@@ -2080,7 +2096,7 @@ class FilesViewModel @Inject constructor(
         return result
     }
 
-    fun sendFolderAudiobookPack(selectedFiles: List<FolderAudioFile>, title: String, author: String, calibreBookUuid: String? = null) {
+    fun sendFolderAudiobookPack(selectedFiles: List<FolderAudioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -2130,6 +2146,7 @@ class FilesViewModel @Inject constructor(
                 author = author,
                 googleAccount = googleAccount,
                 calibreBookUuid = calibreBookUuid,
+                tags = tags,
             )
             _snackbarMessage.value = "Audiobook transfer requested for $title"
         }

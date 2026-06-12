@@ -527,6 +527,7 @@ class CalibreRepository @Inject constructor(
         archiveEntry: String? = null,
         localPath: String? = null,   // CONTRACT: stub convention — relative path within the local mirror repo
         isProtected: Boolean = false,
+        tags: String? = null,
     ) {
         val initialItem = CalibreBatchItem(
             type = when {
@@ -562,6 +563,7 @@ class CalibreRepository @Inject constructor(
             batchData = json.encodeToString(listOf(initialItem)),
             calibreBookUuid = calibreBookUuid,
             localUrisJson = localUrisJson,
+            tags = tags?.ifBlank { null },
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -578,6 +580,7 @@ class CalibreRepository @Inject constructor(
             items = listOf(initialItem),
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
+            tags = tags?.ifBlank { null },
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$putioFileId.json", jsonStr)
@@ -628,6 +631,7 @@ class CalibreRepository @Inject constructor(
             items = updatedItems,
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
+            tags = transfer.tags,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount, "req_${transfer.putioFileId}.json", jsonStr)
@@ -660,6 +664,7 @@ class CalibreRepository @Inject constructor(
             items = updatedItems,
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
+            tags = transfer.tags,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPutioFileId.json", jsonStr)
@@ -687,6 +692,7 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String? = null,
         isUploading: Boolean = false,
         localUrisJson: String? = null,
+        tags: String? = null,
     ) {
         val primaryFileId = files.first().first.id
         val audioFiles = files.map { (_, audioFile) -> audioFile }
@@ -713,6 +719,7 @@ class CalibreRepository @Inject constructor(
             batchData = json.encodeToString(listOf(initialItem)),
             calibreBookUuid = calibreBookUuid,
             localUrisJson = localUrisJson,
+            tags = tags?.ifBlank { null },
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -726,6 +733,7 @@ class CalibreRepository @Inject constructor(
             items = listOf(initialItem),
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
+            tags = tags?.ifBlank { null },
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$primaryFileId.json", jsonStr)
@@ -754,6 +762,7 @@ class CalibreRepository @Inject constructor(
         googleAccount: String,
         assembleBook: Boolean = false,
         calibreBookUuid: String? = null,
+        tags: String? = null,
     ) {
         val primaryFileId = files.first().first.id
         val pdfFiles = files.map { (_, f) -> f }
@@ -774,6 +783,7 @@ class CalibreRepository @Inject constructor(
             allPutioFileIds = pdfFiles.joinToString(",") { it.putio_file_id.toString() },
             batchData = json.encodeToString(listOf(initialItem)),
             calibreBookUuid = calibreBookUuid,
+            tags = tags?.ifBlank { null },
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -787,6 +797,7 @@ class CalibreRepository @Inject constructor(
             items = listOf(initialItem),
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
+            tags = tags?.ifBlank { null },
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
@@ -814,6 +825,7 @@ class CalibreRepository @Inject constructor(
         author: String,
         googleAccount: String,
         calibreBookUuid: String? = null,
+        tags: String? = null,
     ) {
         val primaryFileId = files.first().first.id
         val epubFiles = files.map { (_, f) -> f }
@@ -834,6 +846,7 @@ class CalibreRepository @Inject constructor(
             allPutioFileIds = epubFiles.joinToString(",") { it.putio_file_id.toString() },
             batchData = json.encodeToString(listOf(initialItem)),
             calibreBookUuid = calibreBookUuid,
+            tags = tags?.ifBlank { null },
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -845,6 +858,7 @@ class CalibreRepository @Inject constructor(
             items = listOf(initialItem),
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
+            tags = tags?.ifBlank { null },
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
@@ -885,6 +899,7 @@ class CalibreRepository @Inject constructor(
             items = items,
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
+            tags = transfer.tags,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPrimaryId.json", jsonStr)
@@ -2083,20 +2098,27 @@ class CalibreRepository @Inject constructor(
                 calibre_book_uuid = transfer.calibreBookUuid,
                 calibre_book_id = transfer.calibreBookId?.toLong(),
                 app_id = appId,
+                tags = transfer.tags,
             )
             json.encodeToString(request)
         }
 
         // If calibreBookId was saved from a previous COMPLETED response but isn't in the stored
         // payload yet (legacy requests), inject it so the daemon can skip string matching.
-        val finalPayload = if (transfer.calibreBookId != null) {
+        // Also inject tags if the stored payload predates that field.
+        val finalPayload = run {
+            var current = payload
             try {
-                val req = json.decodeFromString<CalibreBatchRequest>(payload)
-                if (req.calibre_book_id == null)
-                    json.encodeToString(req.copy(calibre_book_id = transfer.calibreBookId.toLong()))
-                else payload
-            } catch (_: Exception) { payload }
-        } else payload
+                val req = json.decodeFromString<CalibreBatchRequest>(current)
+                var updated = req
+                if (transfer.calibreBookId != null && req.calibre_book_id == null)
+                    updated = updated.copy(calibre_book_id = transfer.calibreBookId.toLong())
+                if (transfer.tags != null && req.tags == null)
+                    updated = updated.copy(tags = transfer.tags)
+                if (updated !== req) current = json.encodeToString(updated)
+            } catch (_: Exception) {}
+            current
+        }
 
         android.util.Log.d("CalibreRepository", "Retrying transfer $fileId for $googleAccount")
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_${transfer.putioFileId}.json", finalPayload)

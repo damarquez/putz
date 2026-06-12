@@ -413,8 +413,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedFileForCalibre = null },
-            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, _, isProtected ->
-                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected)
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, tags)
                 selectedFileForCalibre = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -510,8 +510,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, _, _ ->
-                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, _ ->
+                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid, tags)
                 selectedPackFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -530,8 +530,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPdfFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _ ->
-                viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid)
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, _ ->
+                viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid, tags)
                 selectedPdfFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -567,8 +567,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedEpubFiles = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
-                viewModel.sendEpubPack(epubFiles, title, author, uuid)
+            onConfirm = { title, author, _, _, _, _, uuid, _, tags, _ ->
+                viewModel.sendEpubPack(epubFiles, title, author, uuid, tags)
                 selectedEpubFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -693,8 +693,8 @@ fun FilesScreen(
                 selectedFolderAudioFiles = null
                 folderForAudioPicker = null
             },
-            onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
-                viewModel.sendFolderAudiobookPack(files, title, author, uuid)
+            onConfirm = { title, author, _, _, _, _, uuid, _, tags, _ ->
+                viewModel.sendFolderAudiobookPack(files, title, author, uuid, tags)
                 selectedFolderAudioFiles = null
                 folderForAudioPicker = null
             },

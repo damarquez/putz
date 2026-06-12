@@ -91,6 +91,7 @@ fun CalibreConfirmationSheet(
     var uuid by remember { mutableStateOf(initialUuid) }
     var comments by remember { mutableStateOf(initialComments) }
     var tags by remember { mutableStateOf(initialTags) }
+    var additionalTags by remember { mutableStateOf("") }
 
     LaunchedEffect(initialUuid) {
         if (initialUuid.isNotBlank()) {
@@ -218,7 +219,7 @@ fun CalibreConfirmationSheet(
                 }
 
                 if (matchedBookId != null) {
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -266,7 +267,7 @@ fun CalibreConfirmationSheet(
                         )
                     }
                 } else if (uuidFromTransfer && selectedTransferRef != null) {
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
@@ -282,7 +283,7 @@ fun CalibreConfirmationSheet(
                         )
                     }
                 } else if (isReplaceCover || isUpdateComments || (uuid.isNotBlank() && !isUuidValidating)) {
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Warning,
@@ -323,7 +324,7 @@ fun CalibreConfirmationSheet(
                     )
                 }
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(8.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -401,7 +402,7 @@ fun CalibreConfirmationSheet(
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(4.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -455,11 +456,12 @@ fun CalibreConfirmationSheet(
                 }
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(28.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Spacer(Modifier.weight(1f))
                     IconButton(
+                        modifier = Modifier.size(28.dp),
                         onClick = { val tmp = title; title = author; author = tmp },
                         enabled = !titleAuthorLocked
                     ) {
@@ -503,7 +505,7 @@ fun CalibreConfirmationSheet(
                                     matchedBookId,
                                     uuid.trim().ifBlank { null },
                                     if (isUpdateComments && includeComments) comments.trim() else null,
-                                    if (isUpdateComments) tags.trim().ifBlank { null } else null,
+                                    if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                                     isProtected,
                                 )
                             }
@@ -528,6 +530,19 @@ fun CalibreConfirmationSheet(
                             )
                         }
                     }
+                }
+
+                if (!isReplaceCover && !isUpdateComments) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = additionalTags,
+                        onValueChange = { additionalTags = it },
+                        label = { Text("Tags (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("Programming, Python, Reference") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
                 }
 
                 if (!forceAssemble && !isReplaceCover && !isUpdateComments) {
@@ -633,7 +648,7 @@ fun CalibreConfirmationSheet(
                             matchedBookId,
                             uuid.trim().ifBlank { null },
                             if (isUpdateComments && includeComments) comments.trim() else null,
-                            if (isUpdateComments) tags.trim().ifBlank { null } else null,
+                            if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                             isProtected,
                         )
                     },

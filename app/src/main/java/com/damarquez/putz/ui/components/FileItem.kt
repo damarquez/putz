@@ -63,6 +63,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -261,10 +265,28 @@ fun FileItem(
                 if (!file.isFolder) {
                     Text(
                         text = buildString {
-                            append(fileType.apiValue.lowercase().replaceFirstChar { it.uppercase() })
-                            if (file.size > 0) {
-                                append("  •  ")
-                                append(formatFileSize(file.size))
+                            if (file.isSynced) {
+                                if (file.size > 0) append(formatFileSize(file.size))
+                                val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                                val formatted = file.createdAt?.let { raw ->
+                                    runCatching {
+                                        OffsetDateTime.parse(raw)
+                                            .atZoneSameInstant(ZoneId.systemDefault())
+                                            .format(fmt)
+                                    }.recoverCatching {
+                                        LocalDateTime.parse(raw).format(fmt)
+                                    }.getOrNull()
+                                }
+                                if (formatted != null) {
+                                    if (isNotEmpty()) append("  •  ")
+                                    append(formatted)
+                                }
+                            } else {
+                                append(fileType.apiValue.lowercase().replaceFirstChar { it.uppercase() })
+                                if (file.size > 0) {
+                                    append("  •  ")
+                                    append(formatFileSize(file.size))
+                                }
                             }
                         },
                         style = MaterialTheme.typography.labelSmall,
