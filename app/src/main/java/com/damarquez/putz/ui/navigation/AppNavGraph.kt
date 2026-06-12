@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -29,6 +30,7 @@ import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.archive.ArchiveScreen
 import com.damarquez.putz.ui.auth.AuthScreen
 import com.damarquez.putz.ui.files.FilesScreen
+import com.damarquez.putz.ui.search.SearchScreen
 import com.damarquez.putz.ui.settings.LanConnectionsScreen
 import com.damarquez.putz.ui.trash.TrashScreen
 import com.damarquez.putz.ui.settings.SettingsScreen
@@ -100,12 +102,14 @@ fun AppNavGraph(
 
     val showBottomNav = currentRoute == Screen.Files.route ||
                         currentRoute == Screen.Transfers.route ||
+                        currentRoute == Screen.Search.route ||
                         currentRoute == Screen.CalibreTransfers.route ||
                         currentRoute == Screen.Archive.route
 
     // Tab selection state
     val filesSelected = currentRoute == Screen.Files.route || currentRoute == Screen.Archive.route
     val transfersSelected = currentRoute == Screen.Transfers.route
+    val searchSelected = currentRoute == Screen.Search.route
     val calibreSelected = currentRoute == Screen.CalibreTransfers.route
 
     Scaffold(
@@ -152,6 +156,20 @@ fun AppNavGraph(
                         },
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Transfers") },
                         label = { Text("Put.io Transfers") },
+                    )
+                    NavigationBarItem(
+                        selected = searchSelected,
+                        onClick = {
+                            if (!searchSelected) {
+                                // Pop any other tab entry to keep Files stack intact
+                                navController.popBackStack(route = Screen.Files.route, inclusive = false)
+                                navController.navigate(Screen.Search.route) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        },
+                        icon = { Icon(Icons.Default.TravelExplore, contentDescription = "Find Content") },
+                        label = { Text("Find Content") },
                     )
                     NavigationBarItem(
                         selected = calibreSelected,
@@ -354,6 +372,10 @@ fun AppNavGraph(
                     },
                     onNavigateToHistory = { navController.navigate(Screen.TransferHistory.route) },
                 )
+            }
+
+            composable(Screen.Search.route) {
+                SearchScreen(viewModel = hiltViewModel())
             }
 
             composable(Screen.TransferHistory.route) {

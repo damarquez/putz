@@ -79,6 +79,8 @@ fun SettingsScreen(
     val daemonLanPortEdit by viewModel.daemonLanPortEdit.collectAsState()
     val daemonLanApiKeyEdit by viewModel.daemonLanApiKeyEdit.collectAsState()
     val daemonLanReachable by viewModel.daemonLanReachable.collectAsState()
+    val jackettBaseUrlEdit by viewModel.jackettBaseUrlEdit.collectAsState()
+    val jackettApiKeyEdit by viewModel.jackettApiKeyEdit.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showGoogleSignOutConfirm by remember { mutableStateOf(false) }
@@ -484,6 +486,35 @@ fun SettingsScreen(
                         null  -> Unit
                     }
                 }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            SettingsSectionHeader("Torrent Search (Jackett)")
+            Text(
+                text = "Used by the Find Content tab to search non-video content. Point it at your self-hosted Jackett instance.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            OutlinedTextField(
+                value = jackettBaseUrlEdit,
+                onValueChange = viewModel::onJackettBaseUrlChange,
+                label = { Text("Jackett URL") },
+                placeholder = { Text("http://192.168.1.10:9117") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            OutlinedTextField(
+                value = jackettApiKeyEdit,
+                onValueChange = viewModel::onJackettApiKeyChange,
+                label = { Text("API Key") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                TextButton(onClick = viewModel::saveJackettSettings) { Text("Save") }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

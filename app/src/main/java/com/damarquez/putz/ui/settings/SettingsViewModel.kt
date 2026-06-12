@@ -78,11 +78,29 @@ class SettingsViewModel @Inject constructor(
     private val _daemonLanReachable = MutableStateFlow<Boolean?>(null)
     val daemonLanReachable: StateFlow<Boolean?> = _daemonLanReachable.asStateFlow()
 
+    private val _jackettBaseUrl = MutableStateFlow("")
+    val jackettBaseUrlEdit: StateFlow<String> = _jackettBaseUrl.asStateFlow()
+    private val _jackettApiKey = MutableStateFlow("")
+    val jackettApiKeyEdit: StateFlow<String> = _jackettApiKey.asStateFlow()
+
     init {
         viewModelScope.launch {
             _daemonLanHost.value = settingsRepository.lanHostFlow.first()
             _daemonLanPort.value = settingsRepository.lanPortFlow.first().toString()
             _daemonLanApiKey.value = settingsRepository.lanApiKeyFlow.first()
+            _jackettBaseUrl.value = settingsRepository.jackettBaseUrlFlow.first()
+            _jackettApiKey.value = settingsRepository.jackettApiKeyFlow.first()
+        }
+    }
+
+    fun onJackettBaseUrlChange(v: String) { _jackettBaseUrl.value = v }
+    fun onJackettApiKeyChange(v: String) { _jackettApiKey.value = v }
+
+    fun saveJackettSettings() {
+        viewModelScope.launch {
+            settingsRepository.saveJackettBaseUrl(_jackettBaseUrl.value)
+            settingsRepository.saveJackettApiKey(_jackettApiKey.value)
+            _snackbarMessage.value = "Jackett settings saved"
         }
     }
 

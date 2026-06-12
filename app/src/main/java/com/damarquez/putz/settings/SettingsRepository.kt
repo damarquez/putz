@@ -209,6 +209,28 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    val jackettBaseUrlFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.JACKETT_BASE_URL] ?: ""
+    }
+
+    val jackettApiKeyFlow: Flow<String> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.JACKETT_API_KEY] ?: ""
+    }
+
+    suspend fun saveJackettBaseUrl(url: String) {
+        dataStore.edit { prefs ->
+            if (url.isBlank()) prefs.remove(AppSettingsKeys.JACKETT_BASE_URL)
+            else prefs[AppSettingsKeys.JACKETT_BASE_URL] = url.trim()
+        }
+    }
+
+    suspend fun saveJackettApiKey(key: String) {
+        dataStore.edit { prefs ->
+            if (key.isBlank()) prefs.remove(AppSettingsKeys.JACKETT_API_KEY)
+            else prefs[AppSettingsKeys.JACKETT_API_KEY] = key.trim()
+        }
+    }
+
     val historyFileIdFlow: Flow<Long?> = dataStore.data.map { prefs ->
         prefs[AppSettingsKeys.TRANSFER_HISTORY_FILE_ID]
     }

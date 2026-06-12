@@ -75,6 +75,8 @@ sealed class Screen(val route: String) {
 
     data object Transfers : Screen("transfers")
 
+    data object Search : Screen("find_content")
+
     data object Trash : Screen("trash")
 
     data object Settings : Screen("settings")
