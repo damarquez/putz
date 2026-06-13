@@ -76,7 +76,7 @@ sealed class ArchiveUiState {
 
 @HiltViewModel
 class ArchiveViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     @ApplicationContext private val context: Context,
     private val archiveRepository: ArchiveRepository,
     val lanFilesRepository: LanFilesRepository,
@@ -146,11 +146,13 @@ class ArchiveViewModel @Inject constructor(
             }
             runCatching { archiveRepository.listEntries(resolvedSource) }
                 .onSuccess { entries ->
+                    val restoredDir = savedStateHandle.get<String>(KEY_CURRENT_DIR) ?: ""
+                    val restoredStack = savedStateHandle.get<ArrayList<String>>(KEY_DIR_STACK) ?: arrayListOf()
                     _uiState.value = ArchiveUiState.Success(
                         allEntries = entries,
-                        currentDir = "",
-                        dirStack = emptyList(),
-                        visibleEntries = directChildren("", entries),
+                        currentDir = restoredDir,
+                        dirStack = restoredStack,
+                        visibleEntries = directChildren(restoredDir, entries),
                     )
                 }
                 .onFailure { e ->
@@ -162,9 +164,12 @@ class ArchiveViewModel @Inject constructor(
     fun enterDirectory(entry: ArchiveEntry) {
         val s = _uiState.value as? ArchiveUiState.Success ?: return
         val newDir = entry.path
+        val newStack = s.dirStack + s.currentDir
+        savedStateHandle[KEY_CURRENT_DIR] = newDir
+        savedStateHandle[KEY_DIR_STACK] = ArrayList(newStack)
         _uiState.value = s.copy(
             currentDir = newDir,
-            dirStack = s.dirStack + s.currentDir,
+            dirStack = newStack,
             visibleEntries = directChildren(newDir, s.allEntries),
             selectedEntries = emptySet(),
         )
@@ -174,9 +179,12 @@ class ArchiveViewModel @Inject constructor(
         val s = _uiState.value as? ArchiveUiState.Success ?: return false
         if (s.dirStack.isEmpty()) return false
         val parentDir = s.dirStack.last()
+        val newStack = s.dirStack.dropLast(1)
+        savedStateHandle[KEY_CURRENT_DIR] = parentDir
+        savedStateHandle[KEY_DIR_STACK] = ArrayList(newStack)
         _uiState.value = s.copy(
             currentDir = parentDir,
-            dirStack = s.dirStack.dropLast(1),
+            dirStack = newStack,
             visibleEntries = directChildren(parentDir, s.allEntries),
             selectedEntries = emptySet(),
         )
@@ -592,6 +600,11 @@ class ArchiveViewModel @Inject constructor(
     private fun buildUncPath(host: String, shareName: String, path: String): String {
         val normalized = path.replace('/', '\\').trimStart('\\')
         return "\\\\$host\\$shareName\\$normalized"
+    }
+
+    companion object {
+        private const val KEY_CURRENT_DIR = "archive_current_dir"
+        private const val KEY_DIR_STACK = "archive_dir_stack"
     }
 
     private fun directChildren(dir: String, all: List<ArchiveEntry>): List<ArchiveEntry> {

@@ -112,6 +112,10 @@ fun AppNavGraph(
     val searchSelected = currentRoute == Screen.Search.route
     val calibreSelected = currentRoute == Screen.CalibreTransfers.route
 
+    // True when the current screen is a non-Files tab (Transfers, Search, Calibre).
+    // These are always at the top of the back stack — pop one entry to return to Files/Archive.
+    val isOnNonFilesTab = transfersSelected || searchSelected || calibreSelected
+
     Scaffold(
         bottomBar = {
             AnimatedVisibility(
@@ -124,18 +128,14 @@ fun AppNavGraph(
                         selected = filesSelected,
                         onClick = {
                             if (filesSelected) {
-                                // Already on Files — tap again to pop back to root
+                                // Already on Files/Archive — tap again to pop back to root
                                 navController.popBackStack(
                                     route = Screen.Files.createRoute(0L, ROOT_FOLDER_NAME),
                                     inclusive = false,
                                 )
                             } else {
-                                // Pop the current tab entry to reveal the Files back stack
-                                if (!navController.popBackStack(
-                                        route = Screen.Files.route,
-                                        inclusive = false,
-                                    )
-                                ) {
+                                // On a non-Files tab: pop that single entry to reveal Files/Archive back stack
+                                if (!navController.popBackStack()) {
                                     navController.navigate(Screen.Files.createRoute(0L, ROOT_FOLDER_NAME))
                                 }
                             }
@@ -147,8 +147,8 @@ fun AppNavGraph(
                         selected = transfersSelected,
                         onClick = {
                             if (!transfersSelected) {
-                                // Pop any other tab entry (e.g. Calibre) to keep Files stack intact
-                                navController.popBackStack(route = Screen.Files.route, inclusive = false)
+                                // If on another non-Files tab, pop it first so we don't stack tabs
+                                if (isOnNonFilesTab) navController.popBackStack()
                                 navController.navigate(Screen.Transfers.route) {
                                     launchSingleTop = true
                                 }
@@ -161,8 +161,7 @@ fun AppNavGraph(
                         selected = searchSelected,
                         onClick = {
                             if (!searchSelected) {
-                                // Pop any other tab entry to keep Files stack intact
-                                navController.popBackStack(route = Screen.Files.route, inclusive = false)
+                                if (isOnNonFilesTab) navController.popBackStack()
                                 navController.navigate(Screen.Search.route) {
                                     launchSingleTop = true
                                 }
@@ -175,8 +174,7 @@ fun AppNavGraph(
                         selected = calibreSelected,
                         onClick = {
                             if (!calibreSelected) {
-                                // Pop any other tab entry (e.g. Transfers) to keep Files stack intact
-                                navController.popBackStack(route = Screen.Files.route, inclusive = false)
+                                if (isOnNonFilesTab) navController.popBackStack()
                                 navController.navigate(Screen.CalibreTransfers.route) {
                                     launchSingleTop = true
                                 }
