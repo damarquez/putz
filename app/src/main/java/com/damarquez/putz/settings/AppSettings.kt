@@ -40,4 +40,7 @@ object AppSettingsKeys {
     val APP_ID = stringPreferencesKey("app_id")
     // put.io file ID of the transfer history JSON uploaded by the daemon
     val TRANSFER_HISTORY_FILE_ID = longPreferencesKey("transfer_history_file_id")
+    // Last successfully fetched history JSON — survives process death so the screen
+    // never shows an error on first open after restart while awaiting a fresh heartbeat
+    val TRANSFER_HISTORY_CACHE = stringPreferencesKey("transfer_history_cache")
 }

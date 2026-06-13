@@ -303,6 +303,9 @@ data class RegisterHistoryRequest(
     val putio_file_id: Long,
     val info_hash: String,
     val label: String,
+    // Epoch-ms when this label was last explicitly set by the user.
+    // Null / 0 means "background poll" — the daemon keeps whichever label is newer.
+    val label_updated_at: Long? = null,
     val putio_name: String? = null,
     val magnet_uri: String? = null,
     val putio_id: Long? = null,
@@ -1019,6 +1022,7 @@ class CalibreRepository @Inject constructor(
         putioTransferId: Long,
         infoHash: String,
         label: String,
+        labelUpdatedAt: Long? = null,
         putioName: String?,
         magnetUri: String?,
         putioId: Long?,
@@ -1031,6 +1035,7 @@ class CalibreRepository @Inject constructor(
             putio_file_id = putioTransferId,
             info_hash = infoHash,
             label = label,
+            label_updated_at = labelUpdatedAt,
             putio_name = putioName,
             magnet_uri = magnetUri,
             putio_id = putioId,

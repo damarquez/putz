@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.TransferHistoryRepository
+import com.damarquez.putz.data.repository.TransfersRepository
 import com.damarquez.putz.security.SecureStorage
 import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,11 +13,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class SearchState(val query: String, val inFiles: Boolean)
 
 sealed class HistoryUiState {
     data object Loading : HistoryUiState()
@@ -28,6 +32,7 @@ sealed class HistoryUiState {
 class TransferHistoryViewModel @Inject constructor(
     private val calibreRepository: CalibreRepository,
     private val historyRepository: TransferHistoryRepository,
+    private val transfersRepository: TransfersRepository,
     private val settingsRepository: SettingsRepository,
     private val secureStorage: SecureStorage,
 ) : ViewModel() {
@@ -38,7 +43,10 @@ class TransferHistoryViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    val filteredEntries: StateFlow<List<HistoryFileEntry>> = combine(_uiState, _searchQuery) { state, query ->
+    private val _searchInFiles = MutableStateFlow(false)
+    val searchInFiles: StateFlow<Boolean> = _searchInFiles.asStateFlow()
+
+    val filteredEntries: StateFlow<List<HistoryFileEntry>> = combine(_uiState, _searchQuery, _searchInFiles) { state, query, inFiles ->
         val entries = (state as? HistoryUiState.Success)?.entries ?: return@combine emptyList()
         if (query.isBlank()) entries
         else {
@@ -47,31 +55,58 @@ class TransferHistoryViewModel @Inject constructor(
                 e.label.lowercase().contains(q) ||
                 e.resolvedName?.lowercase()?.contains(q) == true ||
                 e.putioName?.lowercase()?.contains(q) == true ||
-                e.infoHash.lowercase().contains(q)
+                e.infoHash.lowercase().contains(q) ||
+                (inFiles && e.files?.any { it.name.lowercase().contains(q) } == true)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setSearchQuery(query: String) { _searchQuery.value = query }
+    fun setSearchInFiles(enabled: Boolean) { _searchInFiles.value = enabled }
 
     init {
-        loadHistory()
+        // Trigger a load immediately and again whenever the daemon heartbeat delivers a new
+        // history file ID (e.g. after the daemon uploads a fresh version of the JSON).
+        viewModelScope.launch {
+            settingsRepository.historyFileIdFlow
+                .distinctUntilChanged()
+                .collect { loadHistory() }
+        }
     }
 
     fun loadHistory() {
         viewModelScope.launch {
-            _uiState.value = HistoryUiState.Loading
             val token = secureStorage.authTokenFlow.value
             if (token.isBlank()) {
-                _uiState.value = HistoryUiState.Error("Not authenticated")
+                _uiState.value = HistoryUiState.Error("Not authenticated with put.io")
                 return@launch
             }
+
+            // Don't flash a spinner when we already have data — refresh silently
+            if (_uiState.value !is HistoryUiState.Success) {
+                _uiState.value = HistoryUiState.Loading
+            }
+
+            val fileId = settingsRepository.historyFileIdFlow.first()
+            if (fileId == null) {
+                // No heartbeat received yet. Show persisted cache if we have one so the
+                // screen isn't blank; otherwise keep the spinner — the flow observer above
+                // will call loadHistory() again as soon as a heartbeat arrives.
+                val cached = historyRepository.getCachedHistory()
+                if (cached != null) {
+                    _uiState.value = HistoryUiState.Success(cached.entries.sortedByDescending { it.addedAt })
+                }
+                return@launch
+            }
+
             val history = historyRepository.fetchHistory(token)
-            _uiState.value = when {
-                history == null -> HistoryUiState.Error(
-                    "History not available — make sure the daemon is running and has a put.io token configured"
-                )
-                else -> HistoryUiState.Success(history.entries.sortedByDescending { it.addedAt })
+            when {
+                history != null ->
+                    _uiState.value = HistoryUiState.Success(history.entries.sortedByDescending { it.addedAt })
+                _uiState.value is HistoryUiState.Success ->
+                    Unit // Keep stale cached data visible; silently swallow the refresh failure
+                else ->
+                    _uiState.value = HistoryUiState.Error("Could not load history — pull to refresh")
             }
         }
     }
@@ -88,16 +123,23 @@ class TransferHistoryViewModel @Inject constructor(
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) return@launch
+
+            val now = System.currentTimeMillis()
             calibreRepository.registerTransferHistory(
-                putioTransferId = entry.putioId ?: System.currentTimeMillis(),
+                putioTransferId = entry.putioId ?: now,
                 infoHash = infoHash,
                 label = newLabel,
+                labelUpdatedAt = now,
                 putioName = entry.putioName,
                 magnetUri = entry.magnetUri,
                 putioId = entry.putioId,
                 status = entry.status,
                 googleAccount = googleAccount,
             )
+
+            // Sync the local transfer display name so subsequent background polls from this
+            // device don't overwrite this edit by re-registering the old label.
+            entry.putioId?.let { transfersRepository.updateDisplayName(it, newLabel) }
         }
     }
 }

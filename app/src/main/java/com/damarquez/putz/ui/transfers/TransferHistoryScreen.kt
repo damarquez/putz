@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -75,6 +77,7 @@ fun TransferHistoryScreen(
     val uiState by viewModel.uiState.collectAsState()
     val filteredEntries by viewModel.filteredEntries.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchInFiles by viewModel.searchInFiles.collectAsState()
 
     var isSearchActive by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
@@ -164,6 +167,21 @@ fun TransferHistoryScreen(
                         }
                     },
                     actions = {
+                        val toggleBg = if (searchInFiles)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                .compositeOver(MaterialTheme.colorScheme.surface)
+                        else Color.Transparent
+                        IconButton(
+                            onClick = { viewModel.setSearchInFiles(!searchInFiles) },
+                            modifier = Modifier.background(toggleBg, shape = RoundedCornerShape(8.dp)),
+                        ) {
+                            Icon(
+                                Icons.Default.Description,
+                                contentDescription = if (searchInFiles) "Stop searching file names" else "Also search file names",
+                                tint = if (searchInFiles) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.setSearchQuery("") }) {
                                 Icon(Icons.Default.Close, contentDescription = "Clear search")

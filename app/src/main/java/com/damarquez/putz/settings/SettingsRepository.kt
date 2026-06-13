@@ -242,6 +242,17 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    val historyJsonCacheFlow: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.TRANSFER_HISTORY_CACHE]
+    }
+
+    suspend fun saveHistoryJsonCache(json: String?) {
+        dataStore.edit { prefs ->
+            if (json == null) prefs.remove(AppSettingsKeys.TRANSFER_HISTORY_CACHE)
+            else prefs[AppSettingsKeys.TRANSFER_HISTORY_CACHE] = json
+        }
+    }
+
     suspend fun getOrCreateAppId(): String {
         val existing = dataStore.data.map { it[AppSettingsKeys.APP_ID] }.first()
         if (!existing.isNullOrBlank()) return existing

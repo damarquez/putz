@@ -7,6 +7,7 @@ import com.damarquez.putz.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -18,21 +19,26 @@ class TransferHistoryRepository @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // Survives back-navigation because this class is a singleton.
-    // Returned when a fresh fetch fails so users never see a spurious "not available" error
-    // during the brief window when the daemon is rotating the history file on put.io.
-    private var cache: TransferHistoryJson? = null
-
-    // CONTRACT: REGISTER_TRANSFER_HISTORY — fetch the history JSON from put.io by stored file ID
+    // CONTRACT: REGISTER_TRANSFER_HISTORY — fetch the history JSON from put.io by stored file ID.
+    // Returns fresh data on success, persisted cache on any failure, null if neither is available.
     suspend fun fetchHistory(token: String): TransferHistoryJson? {
-        val fileId = settingsRepository.historyFileIdFlow.first() ?: return cache
+        val fileId = settingsRepository.historyFileIdFlow.first() ?: return getCachedHistory()
         return withContext(Dispatchers.IO) {
             val result = putioApiClient.downloadFileAsString(token, fileId)
             val fresh = (result as? NetworkResult.Success)?.data?.let { body ->
                 try { json.decodeFromString<TransferHistoryJson>(body) } catch (_: Exception) { null }
             }
-            if (fresh != null) cache = fresh
-            fresh ?: cache
+            if (fresh != null) {
+                settingsRepository.saveHistoryJsonCache(json.encodeToString(fresh))
+                fresh
+            } else {
+                getCachedHistory()
+            }
         }
     }
+
+    suspend fun getCachedHistory(): TransferHistoryJson? =
+        settingsRepository.historyJsonCacheFlow.first()?.let { raw ->
+            try { json.decodeFromString<TransferHistoryJson>(raw) } catch (_: Exception) { null }
+        }
 }
