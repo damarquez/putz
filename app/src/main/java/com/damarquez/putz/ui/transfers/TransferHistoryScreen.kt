@@ -59,6 +59,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -130,6 +132,7 @@ fun TransferHistoryScreen(
         ) {
             HistoryDetailSheet(
                 entry = selectedEntry!!,
+                searchQuery = searchQuery,
                 onEditLabel = {
                     editLabelValue = selectedEntry!!.label
                     editingEntry = selectedEntry
@@ -343,10 +346,12 @@ private fun MetadataSourceBadge(entry: HistoryFileEntry) {
 @Composable
 internal fun HistoryDetailSheet(
     entry: HistoryFileEntry,
+    searchQuery: String = "",
     onEditLabel: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.getDefault()) }
+    val highlightColor = Color(0xFF00C853).copy(alpha = 0.45f)
 
     Column(
         modifier = Modifier
@@ -356,12 +361,12 @@ internal fun HistoryDetailSheet(
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
             Text(
-                text = entry.resolvedName ?: entry.label,
+                text = highlightText(entry.resolvedName ?: entry.label, searchQuery, highlightColor),
                 style = MaterialTheme.typography.titleLarge,
             )
             if (entry.resolvedName != null && entry.resolvedName != entry.label) {
                 Text(
-                    text = "Label: ${entry.label}",
+                    text = highlightText("Label: ${entry.label}", searchQuery, highlightColor),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp),
@@ -474,7 +479,7 @@ internal fun HistoryDetailSheet(
                     )
                 },
             )
-            files.forEach { file -> FileEntryRow(file) }
+            files.forEach { file -> FileEntryRow(file, highlight = searchQuery) }
         }
 
         HorizontalDivider()
@@ -499,11 +504,12 @@ internal fun HistoryDetailSheet(
 }
 
 @Composable
-internal fun FileEntryRow(file: HistoryEntryFile) {
+internal fun FileEntryRow(file: HistoryEntryFile, highlight: String = "") {
+    val highlightColor = Color(0xFF00C853).copy(alpha = 0.45f)
     ListItem(
         headlineContent = {
             Text(
-                text = file.name,
+                text = highlightText(file.name, highlight, highlightColor),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -530,4 +536,20 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_000_000L -> "%.0f MB".format(bytes / 1_000_000.0)
     bytes >= 1_000L -> "%.0f KB".format(bytes / 1_000.0)
     else -> "$bytes B"
+}
+
+private fun highlightText(text: String, query: String, highlightColor: Color): AnnotatedString {
+    if (query.isBlank()) return AnnotatedString(text)
+    return buildAnnotatedString {
+        append(text)
+        val lower = text.lowercase()
+        val q = query.trim().lowercase()
+        var start = 0
+        while (true) {
+            val idx = lower.indexOf(q, start)
+            if (idx == -1) break
+            addStyle(SpanStyle(background = highlightColor), idx, idx + q.length)
+            start = idx + q.length
+        }
+    }
 }
