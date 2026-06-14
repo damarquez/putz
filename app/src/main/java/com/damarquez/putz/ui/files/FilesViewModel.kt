@@ -91,6 +91,9 @@ class FilesViewModel @Inject constructor(
     val lanPath: String? = savedStateHandle[Screen.Files.ARG_LAN_PATH]
     val argTab: String? = savedStateHandle[Screen.Files.ARG_TAB]
 
+    // True when viewing .putz_hidden or any folder nested inside it (propagated via tab="hidden")
+    val isInHiddenScope: Boolean = argTab == "hidden" || folderName == ".putz_hidden"
+
     private val _currentTab = MutableStateFlow(
         if (argTab != null) {
             try { FilesTab.valueOf(argTab) } catch (e: Exception) { FilesTab.CLOUD }
@@ -1752,6 +1755,17 @@ class FilesViewModel @Inject constructor(
                     }
                     NetworkResult.Loading -> Unit
                 }
+            }
+        }
+    }
+
+    fun renameFile(file: PutioFile, newName: String) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            when (val result = filesRepository.renameFile(token, file.id, newName)) {
+                is NetworkResult.Success -> loadFiles(isRefresh = true)
+                is NetworkResult.Error -> _snackbarMessage.value = "Rename failed: ${result.message}"
+                NetworkResult.Loading -> Unit
             }
         }
     }

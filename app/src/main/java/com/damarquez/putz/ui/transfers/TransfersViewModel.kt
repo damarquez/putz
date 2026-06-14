@@ -41,7 +41,7 @@ sealed class AddTransferState {
     data object Submitting : AddTransferState()
     data class Failed(val message: String) : AddTransferState()
     /** Magnet was found in transfer history; user must confirm before adding. */
-    data class HistoryMatch(val entry: HistoryFileEntry, val magnetOrUrl: String) : AddTransferState()
+    data class HistoryMatch(val entry: HistoryFileEntry, val magnetOrUrl: String, val hideFromDaemon: Boolean = false) : AddTransferState()
 }
 
 sealed class TransfersNavigationEvent {
@@ -182,7 +182,7 @@ class TransfersViewModel @Inject constructor(
         _addState.value = AddTransferState.Idle
     }
 
-    fun submitTransfer(magnetOrUrl: String) {
+    fun submitTransfer(magnetOrUrl: String, hideFromDaemon: Boolean = false) {
         if (_addState.value is AddTransferState.Submitting) return
         // Check transfer history for duplicates before submitting
         if (MagnetParser.isMagnetLink(magnetOrUrl)) {
@@ -190,21 +190,22 @@ class TransfersViewModel @Inject constructor(
             if (hash != null) {
                 val match = historyByHash[hash]
                 if (match != null) {
-                    _addState.value = AddTransferState.HistoryMatch(match, magnetOrUrl)
+                    _addState.value = AddTransferState.HistoryMatch(match, magnetOrUrl, hideFromDaemon)
                     return
                 }
             }
         }
-        doSubmitTransfer(magnetOrUrl)
+        doSubmitTransfer(magnetOrUrl, hideFromDaemon)
     }
 
-    fun submitTransferAnyway(magnetOrUrl: String) = doSubmitTransfer(magnetOrUrl)
+    fun submitTransferAnyway(magnetOrUrl: String, hideFromDaemon: Boolean = false) = doSubmitTransfer(magnetOrUrl, hideFromDaemon)
 
-    private fun doSubmitTransfer(magnetOrUrl: String) {
+    private fun doSubmitTransfer(magnetOrUrl: String, hideFromDaemon: Boolean = false) {
         _addState.value = AddTransferState.Submitting
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
-            when (val result = transfersRepository.addTransfer(token, magnetOrUrl)) {
+            val saveParentId = if (hideFromDaemon) transfersRepository.getOrCreateHiddenFolderId(token) else 0L
+            when (val result = transfersRepository.addTransfer(token, magnetOrUrl, saveParentId)) {
                 is NetworkResult.Success -> {
                     _showAddSheet.value = false
                     _addState.value = AddTransferState.Idle

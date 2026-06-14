@@ -241,8 +241,8 @@ fun TransfersScreen(
             prefill = prefillMagnet,
             addState = addState,
             onDismiss = { viewModel.dismissAddSheet() },
-            onSubmit = { viewModel.submitTransfer(it) },
-            onSubmitAnyway = { viewModel.submitTransferAnyway(it) },
+            onSubmit = { magnet, hide -> viewModel.submitTransfer(magnet, hide) },
+            onSubmitAnyway = { magnet, hide -> viewModel.submitTransferAnyway(magnet, hide) },
         )
     }
 }

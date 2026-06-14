@@ -155,8 +155,11 @@ fun FilesScreen(
     var selectedFiles by remember { mutableStateOf<Set<PutioFile>>(emptySet()) }
     val isSelectionMode = selectedFiles.isNotEmpty()
     var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
+    var fileToRename by remember { mutableStateOf<PutioFile?>(null) }
+    var renameValue by remember { mutableStateOf("") }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
+    val isInHiddenScope = viewModel.isInHiddenScope
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -837,6 +840,30 @@ fun FilesScreen(
         )
     }
 
+    fileToRename?.let { file ->
+        AlertDialog(
+            onDismissRequest = { fileToRename = null },
+            title = { Text("Rename") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = renameValue,
+                    onValueChange = { renameValue = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (renameValue.isNotBlank()) viewModel.renameFile(file, renameValue.trim())
+                    fileToRename = null
+                }) { Text("Rename") }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToRename = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     fileToDelete?.let { file ->
         AlertDialog(
             onDismissRequest = { fileToDelete = null },
@@ -1252,7 +1279,7 @@ fun FilesScreen(
                                                     file.localUri,
                                                     file.lanConnectionId ?: -1L,
                                                     file.lanPath,
-                                                    currentTab.name,
+                                                    if (isInHiddenScope) "hidden" else currentTab.name,
                                                 )
                                             } else if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.displayName)) {
                                                 onNavigateToArchive(
@@ -1318,6 +1345,11 @@ fun FilesScreen(
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },
                                         onDelete = { fileToDelete = file },
+                                        onRename = { f ->
+                                            renameValue = f.name
+                                            fileToRename = f
+                                        },
+                                        isInHiddenFolder = isInHiddenScope && !file.isFolder,
                                         isSelected = file in selectedFiles,
                                         isSelectionMode = isSelectionMode,
                                         isGoogleSignedIn = isGoogleSignedIn,

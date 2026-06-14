@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -50,10 +52,11 @@ fun AddTransferSheet(
     prefill: String,
     addState: AddTransferState,
     onDismiss: () -> Unit,
-    onSubmit: (String) -> Unit,
-    onSubmitAnyway: (String) -> Unit = {},
+    onSubmit: (String, Boolean) -> Unit,
+    onSubmitAnyway: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     var input by remember(prefill) { mutableStateOf(prefill) }
+    var hideFromDaemon by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
     val isSubmitting = addState is AddTransferState.Submitting
@@ -102,7 +105,7 @@ fun AddTransferSheet(
                 supportingText = errorMessage?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = {
-                    if (input.isNotBlank() && !isSubmitting) onSubmit(input.trim())
+                    if (input.isNotBlank() && !isSubmitting) onSubmit(input.trim(), hideFromDaemon)
                 }),
                 maxLines = 3,
                 singleLine = false,
@@ -162,11 +165,36 @@ fun AddTransferSheet(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Hide from daemon",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = "Save to .putz_hidden — daemon won't auto-download or stub",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(
+                    checked = hideFromDaemon,
+                    onCheckedChange = { hideFromDaemon = it },
+                    enabled = !isSubmitting,
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
 
             if (isHistoryMatch && historyMatch != null) {
                 Button(
-                    onClick = { onSubmitAnyway(historyMatch.magnetOrUrl) },
+                    onClick = { onSubmitAnyway(historyMatch.magnetOrUrl, hideFromDaemon) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
@@ -182,7 +210,7 @@ fun AddTransferSheet(
                 }
             } else {
                 Button(
-                    onClick = { onSubmit(input.trim()) },
+                    onClick = { onSubmit(input.trim(), hideFromDaemon) },
                     enabled = input.isNotBlank() && !isSubmitting,
                     modifier = Modifier.fillMaxWidth(),
                 ) {

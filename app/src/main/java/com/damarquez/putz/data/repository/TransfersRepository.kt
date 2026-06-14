@@ -102,6 +102,18 @@ class TransfersRepository @Inject constructor(
         }
     }
 
+    suspend fun getOrCreateHiddenFolderId(token: String): Long = withContext(Dispatchers.IO) {
+        val (files, _) = when (val r = apiClient.listFiles(token, 0L)) {
+            is NetworkResult.Success -> r.data
+            else -> return@withContext 0L
+        }
+        files.firstOrNull { it.name == HIDDEN_FOLDER_NAME && it.isFolder }?.id
+            ?: when (val r = apiClient.createFolder(token, 0L, HIDDEN_FOLDER_NAME)) {
+                is NetworkResult.Success -> r.data.id
+                else -> 0L
+            }
+    }
+
     suspend fun addTransfer(
         token: String,
         magnetOrUrl: String,
@@ -257,6 +269,8 @@ class TransfersRepository @Inject constructor(
     }
 
     companion object {
+        const val HIDDEN_FOLDER_NAME = ".putz_hidden"
+
         private val RESOLVING_STATUSES = setOf(
             TransferStatus.DOWNLOADING,
             TransferStatus.SEEDING,

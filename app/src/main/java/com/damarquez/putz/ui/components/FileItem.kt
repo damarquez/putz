@@ -94,6 +94,7 @@ fun FileItem(
     onDownload: (PutioFile) -> Unit,
     onCopyLink: (PutioFile) -> Unit,
     onDelete: () -> Unit,
+    onRename: ((PutioFile) -> Unit)? = null,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isGoogleSignedIn: Boolean = false,
@@ -101,6 +102,7 @@ fun FileItem(
     isHighlighted: Boolean = false,
     isFolderAllSynced: Boolean = false,
     isInSearchResults: Boolean = false,
+    isInHiddenFolder: Boolean = false,
     onOpenParentFolder: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -123,6 +125,7 @@ fun FileItem(
     var showMenu by remember { mutableStateOf(false) }
 
     // CONTRACT: Putz file state — drives menu visibility; see CONTRACTS.md §19
+    // Hidden-folder files are treated like regular remote (dimmed) but have a different menu
     val isRegularRemote = !file.isLocal && !file.isLan && !file.isTrash && !file.isFolder
         && !file.isSpecialRootFolder && !file.isSynced && !file.isPutzAttachments
 
@@ -132,11 +135,11 @@ fun FileItem(
         ?.uppercase()
 
     val specialBandColor: Color? = when {
-        file.isSpecialRootFolder || file.isPutzAttachments || file.isPutzHistory -> Color(0xFF757575)
+        file.isSpecialRootFolder || file.isPutzAttachments || file.isPutzHistory || file.isPutzHidden -> Color(0xFF757575)
         else -> null
     }
     val foregroundColor: Color? = when {
-        file.isSpecialRootFolder || file.isPutzAttachments || file.isPutzHistory -> Color.White
+        file.isSpecialRootFolder || file.isPutzAttachments || file.isPutzHistory || file.isPutzHidden -> Color.White
         else -> null
     }
 
@@ -311,6 +314,36 @@ fun FileItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
+                        if (isInHiddenFolder && !file.isFolder) {
+                            // Hidden folder: only download, rename, delete
+                            DropdownMenuItem(
+                                text = { Text("Download") },
+                                onClick = {
+                                    showMenu = false
+                                    onDownload(file)
+                                },
+                            )
+                            if (onRename != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Rename") },
+                                    onClick = {
+                                        showMenu = false
+                                        onRename(file)
+                                    },
+                                )
+                            }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onDelete()
+                                },
+                            )
+                        } else {
                         if (isInSearchResults && onOpenParentFolder != null && !file.isSpecialRootFolder) {
                             DropdownMenuItem(
                                 text = { Text("Open parent folder") },
@@ -530,7 +563,7 @@ fun FileItem(
                                 clipboard.setText(AnnotatedString(file.name))
                             },
                         )
-                        if (!file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory) {
+                        if (!file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden) {
                             DropdownMenuItem(
                                 text = { Text("Search web") },
                                 onClick = {
@@ -544,7 +577,7 @@ fun FileItem(
                                 },
                             )
                         }
-                        if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !isRegularRemote) {
+                        if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden && !isRegularRemote) {
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = {
@@ -567,6 +600,7 @@ fun FileItem(
                             )
                         }
 
+                        } // end else (not isInHiddenFolder)
                     }
                 }
             }

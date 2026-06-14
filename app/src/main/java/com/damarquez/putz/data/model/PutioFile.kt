@@ -34,6 +34,7 @@ data class PutioFile(
     val isSpecialRootFolder: Boolean get() = id == LOCAL_ROOT_ID || id == LAN_ROOT_ID || id == TRASH_ROOT_ID || id == PUTIO_LOCAL_ROOT_ID
     val isPutzAttachments: Boolean get() = name == ".putz_attachments"
     val isPutzHistory: Boolean get() = name == ".putz_history"
+    val isPutzHidden: Boolean get() = name == ".putz_hidden"
 
     // CONTRACT: stub convention, Putz file state
     val isSynced: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder && ".sk_synced" in name
