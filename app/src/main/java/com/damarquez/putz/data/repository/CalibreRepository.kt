@@ -822,6 +822,68 @@ class CalibreRepository @Inject constructor(
         }
     }
 
+    // CONTRACT: IMAGE_PDF_PACK
+    suspend fun addImagePdfPackTransfer(
+        files: List<Pair<PutioFile, AudiobookFile>>,
+        title: String,
+        author: String,
+        googleAccount: String,
+        calibreBookUuid: String? = null,
+        tags: String? = null,
+    ) {
+        val primaryFileId = files.first().first.id
+        val imageFiles = files.map { (_, f) -> f }
+        val initialItem = CalibreBatchItem(
+            type = "IMAGE_PDF_PACK",
+            putio_file_id = primaryFileId,
+            fileName = "Book.pdf",
+            files = imageFiles,
+        )
+        val transfer = CalibreTransferEntity(
+            putioFileId = primaryFileId,
+            fileName = "Book.pdf",
+            title = title,
+            author = author,
+            status = CalibreTransferStatus.PENDING,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = imageFiles.joinToString(",") { it.putio_file_id.toString() },
+            batchData = json.encodeToString(listOf(initialItem)),
+            calibreBookUuid = calibreBookUuid,
+            tags = tags?.ifBlank { null },
+        )
+        calibreTransferDao.insertTransfer(transfer)
+
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            putio_file_id = primaryFileId,
+            title = title,
+            author = author,
+            items = listOf(initialItem),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+            tags = tags?.ifBlank { null },
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
+
+        if (gDriveId != null) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr,
+            ))
+        } else {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.FAILED,
+                errorMessage = "Failed to upload to GDrive",
+                lastUpdatedAt = System.currentTimeMillis(),
+                lastRequestPayload = jsonStr,
+            ))
+        }
+    }
+
     suspend fun addEpubPackTransfer(
         files: List<Pair<PutioFile, AudiobookFile>>,
         title: String,

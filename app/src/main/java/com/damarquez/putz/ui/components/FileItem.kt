@@ -76,6 +76,7 @@ fun FileItem(
     onLongClick: () -> Unit,
     onPreview: (PutioFile) -> Unit,
     onReplaceCover: (PutioFile) -> Unit,
+    onSendAsImagePdf: (PutioFile) -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
@@ -390,6 +391,14 @@ fun FileItem(
                                         onReplaceCover(file)
                                     },
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Send to Calibre as PDF") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsImagePdf(file)
+                                    },
+                                )
                             }
                             if (isMultiTrackAudio) {
                                 DropdownMenuItem(
@@ -510,7 +519,7 @@ fun FileItem(
                                     },
                                 )
                             }
-                            if (isEbook || isMultiTrackAudio || isPdf || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder) {
+                            if (isEbook || isImage || isMultiTrackAudio || isPdf || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder) {
                                 HorizontalDivider()
                             }
                         }

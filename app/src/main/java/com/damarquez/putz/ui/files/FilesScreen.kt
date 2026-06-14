@@ -287,6 +287,11 @@ fun FilesScreen(
     var selectedEpubFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
     val epubPackSheetState = rememberModalBottomSheetState()
 
+    // Image PDF pack flow
+    var imagePdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+    val imagePdfPackSheetState = rememberModalBottomSheetState()
+
     // Folder audio picker flow (Create M4B from folder)
     var folderForAudioPicker by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFolderAudioFiles by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
@@ -570,6 +575,45 @@ fun FilesScreen(
             onConfirm = { title, author, _, _, _, _, uuid, _, tags, _ ->
                 viewModel.sendEpubPack(epubFiles, title, author, uuid, tags)
                 selectedEpubFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (imagePdfPackTriggerFile != null && selectedImageFiles == null) {
+        // CONTRACT: stub convention — must use displayName; filter to image siblings in current folder
+        val imageFiles = remember(uiState) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isImage(it.displayName) }
+                ?.sortedBy { it.displayName }
+                ?: emptyList()
+        }
+        ImagePdfPackSheet(
+            imageFiles = imageFiles,
+            sheetState = imagePdfPackSheetState,
+            onDismiss = { imagePdfPackTriggerFile = null },
+            onConfirm = { files ->
+                selectedImageFiles = files
+                imagePdfPackTriggerFile = null
+            },
+        )
+    }
+
+    if (selectedImageFiles != null) {
+        val imageFiles = selectedImageFiles!!
+        val (initialTitle, initialAuthor) = remember(imageFiles) {
+            MetadataUtils.extractMetadata(imageFiles.first().displayName)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${imageFiles.size} images → PDF",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedImageFiles = null },
+            onConfirm = { title, author, _, _, _, _, uuid, _, tags, _ ->
+                viewModel.sendImagePdfPack(imageFiles, title, author, uuid, tags)
+                selectedImageFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1224,6 +1268,7 @@ fun FilesScreen(
                                         onLongClick = { selectedFiles = selectedFiles + file },
                                         onPreview = { viewModel.previewFile(it) },
                                         onReplaceCover = { selectedFileForCover = it },
+                                        onSendAsImagePdf = { imagePdfPackTriggerFile = it },
                                         onSendToCalibre = { selectedFileForCalibre = it },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                         onAssembleToCalibre = { target, isPack ->
