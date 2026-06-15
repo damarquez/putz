@@ -523,7 +523,7 @@ fun FileItem(
                                     },
                                 )
                             }
-                            val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments
+                            val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden
                             if (isRegularFolder) {
                                 DropdownMenuItem(
                                     text = { Text("Assemble audiobook") },
