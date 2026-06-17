@@ -69,6 +69,7 @@ import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
+import com.damarquez.putz.data.repository.PendingProtectBook
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.util.MetadataUtils
@@ -114,6 +115,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var pendingProtectConfirmation by remember { mutableStateOf<PendingProtectBook?>(null) }
     var transferToDelete by remember { mutableStateOf<CalibreTransferEntity?>(null) }
     var alsoDeleteFromPutio by remember { mutableStateOf(false) }
     var showClearGreenDialog by remember { mutableStateOf(false) }
@@ -186,7 +188,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
         pendingProtectBookRepository.flow.collect { pending ->
             if (pending != null) {
                 pendingProtectBookRepository.clear()
-                viewModel.protectBook(pending.uuid, pending.title, pending.author)
+                pendingProtectConfirmation = pending
             }
         }
     }
@@ -313,6 +315,27 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             autoAddTags = autoAddTags,
             includeComments = includeClipboardComments,
             transferRefs = completedTransferRefs,
+        )
+    }
+
+    pendingProtectConfirmation?.let { protect ->
+        AlertDialog(
+            onDismissRequest = { pendingProtectConfirmation = null },
+            title = { Text("Protect book") },
+            text = {
+                Text(
+                    "Encrypt \"${protect.title}\" on disk? This cannot be undone without the protection key.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.protectBook(protect.uuid, protect.title, protect.author)
+                    pendingProtectConfirmation = null
+                }) { Text("Protect") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingProtectConfirmation = null }) { Text("Cancel") }
+            },
         )
     }
 
