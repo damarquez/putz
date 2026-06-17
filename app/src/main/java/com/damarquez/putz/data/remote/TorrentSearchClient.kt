@@ -70,9 +70,9 @@ class TorrentSearchClient @Inject constructor(
     companion object {
         const val CINEMETA_BASE_URL = "https://v3-cinemeta.strem.io"
         const val TORRENTIO_BASE_URL = "https://torrentio.strem.io"
-        // Jackett searches go through FlareSolverr which needs ~30s to solve Cloudflare
-        // challenges, so we use a dedicated client with a generous read timeout.
-        private const val JACKETT_TIMEOUT_SECONDS = 120L
+        // Jackett searches across many indexers can take 160+ seconds (each indexer runs
+        // in parallel but the slowest one gates the response). Use a generous timeout.
+        private const val JACKETT_TIMEOUT_SECONDS = 210L
 
         private val SEEDERS_REGEX = Regex("""👤\s*(\d+)""")
         private val SIZE_REGEX = Regex("""💾\s*([\d.]+)\s*(TB|GB|MB|KB|B)""", RegexOption.IGNORE_CASE)

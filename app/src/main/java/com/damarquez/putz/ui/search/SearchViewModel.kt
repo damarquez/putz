@@ -60,6 +60,9 @@ class SearchViewModel @Inject constructor(
     val jackettConfigured: StateFlow<Boolean> = searchRepository.jackettConfiguredFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val jackettBaseUrl: StateFlow<String> = settingsRepository.jackettBaseUrlFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
     fun onQueryChange(query: String) {
         _uiState.value = _uiState.value.copy(query = query)
     }
