@@ -2169,7 +2169,8 @@ class FilesViewModel @Inject constructor(
                 return@launch
             }
             val token = settingsRepository.authTokenFlow.first()
-            val sortedFiles = selectedFiles.sortedBy { it.relativePath }
+            // selectedFiles is already in the order chosen by the picker dialog
+            val sortedFiles = selectedFiles
             // Pre-read stub content for synced files (network call, can't do inside mapNotNull)
             val stubPaths = buildMap<Long, String?> {
                 for (folderFile in sortedFiles) {
@@ -2222,7 +2223,8 @@ class FilesViewModel @Inject constructor(
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
             try {
             val token = settingsRepository.authTokenFlow.first()
-            val sortedFiles = selectedFiles.sortedBy { it.relativePath }
+            // selectedFiles is already in the order chosen by the picker dialog
+            val sortedFiles = selectedFiles
             // Pre-read stub content for synced files (network call, can't do inside mapNotNull)
             val stubPaths = buildMap<Long, String?> {
                 for (folderFile in sortedFiles) {

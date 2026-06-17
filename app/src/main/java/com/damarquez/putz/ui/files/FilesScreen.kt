@@ -590,7 +590,6 @@ fun FilesScreen(
         val imageFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isImage(it.displayName) }
-                ?.sortedBy { it.displayName }
                 ?: emptyList()
         }
         ImagePdfPackSheet(

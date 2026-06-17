@@ -19,6 +19,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -31,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.util.MetadataUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,18 +125,37 @@ private fun ColumnScope.ReadyContent(
     onDismiss: () -> Unit,
     onConfirm: (List<FolderAudioFile>) -> Unit,
 ) {
-    val hasSubfolders = state.files.any { it.relativePath.contains('/') }
+    var caseSensitiveSort by remember(state.files) { mutableStateOf(false) }
+    val sortedFiles = remember(state.files, caseSensitiveSort) {
+        MetadataUtils.sortByName(state.files, caseSensitiveSort) { it.relativePath }
+    }
+    val hasSubfolders = sortedFiles.any { it.relativePath.contains('/') }
     var checkedPaths by remember(state.files) {
         mutableStateOf(state.files.map { it.relativePath }.toSet())
     }
-    val selected = state.files.filter { it.relativePath in checkedPaths }
+    val selected = sortedFiles.filter { it.relativePath in checkedPaths }
 
     Text(
         text = "Files are sorted by folder then name — each becomes one chapter.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Case-sensitive sort",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(
+            checked = caseSensitiveSort,
+            onCheckedChange = { caseSensitiveSort = it },
+        )
+    }
+    Spacer(Modifier.height(8.dp))
     Text(
         text = "${selected.size} of ${state.files.size} files selected",
         style = MaterialTheme.typography.labelMedium,
@@ -147,7 +168,7 @@ private fun ColumnScope.ReadyContent(
             .fillMaxWidth()
             .weight(1f),
     ) {
-        items(state.files, key = { it.relativePath }) { folderFile ->
+        items(sortedFiles, key = { it.relativePath }) { folderFile ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,

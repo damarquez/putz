@@ -14,6 +14,9 @@ object MetadataUtils {
         return fileName.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
     }
 
+    fun <T> sortByName(files: List<T>, caseSensitive: Boolean, name: (T) -> String): List<T> =
+        if (caseSensitive) files.sortedBy(name) else files.sortedBy { name(it).lowercase() }
+
     fun isImage(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in IMAGE_EXTENSIONS

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -16,11 +15,10 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.util.MetadataUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +41,10 @@ fun AudiobookPackSheet(
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
 ) {
-    var orderedFiles by remember(audioFiles) { mutableStateOf(audioFiles) }
+    var caseSensitiveSort by remember(audioFiles) { mutableStateOf(false) }
+    var orderedFiles by remember(audioFiles, caseSensitiveSort) {
+        mutableStateOf(MetadataUtils.sortByName(audioFiles, caseSensitiveSort) { it.name })
+    }
     var checkedIds by remember(audioFiles) { mutableStateOf(audioFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
 
@@ -69,6 +71,23 @@ fun AudiobookPackSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Case-sensitive sort",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = caseSensitiveSort,
+                    onCheckedChange = { caseSensitiveSort = it },
+                )
+            }
 
             Spacer(Modifier.height(8.dp))
 
@@ -101,7 +120,10 @@ fun AudiobookPackSheet(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        IconButton(
+                        ReorderArrowButton(
+                            icon = Icons.Default.ArrowUpward,
+                            contentDescription = "Move up",
+                            enabled = index > 0,
                             onClick = {
                                 if (index > 0) {
                                     orderedFiles = orderedFiles.toMutableList().also {
@@ -109,16 +131,18 @@ fun AudiobookPackSheet(
                                     }
                                 }
                             },
-                            enabled = index > 0,
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.ArrowUpward,
-                                contentDescription = "Move up",
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        IconButton(
+                            onLongClick = {
+                                if (index > 0) {
+                                    orderedFiles = orderedFiles.toMutableList().also {
+                                        it.add(0, it.removeAt(index))
+                                    }
+                                }
+                            },
+                        )
+                        ReorderArrowButton(
+                            icon = Icons.Default.ArrowDownward,
+                            contentDescription = "Move down",
+                            enabled = index < orderedFiles.lastIndex,
                             onClick = {
                                 if (index < orderedFiles.lastIndex) {
                                     orderedFiles = orderedFiles.toMutableList().also {
@@ -126,15 +150,14 @@ fun AudiobookPackSheet(
                                     }
                                 }
                             },
-                            enabled = index < orderedFiles.lastIndex,
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.ArrowDownward,
-                                contentDescription = "Move down",
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
+                            onLongClick = {
+                                if (index < orderedFiles.lastIndex) {
+                                    orderedFiles = orderedFiles.toMutableList().also {
+                                        it.add(it.removeAt(index))
+                                    }
+                                }
+                            },
+                        )
                     }
                 }
             }
