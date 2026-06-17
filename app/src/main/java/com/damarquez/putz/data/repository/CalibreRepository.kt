@@ -1859,6 +1859,45 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
+    // CONTRACT: UNPROTECT_BOOK
+    suspend fun sendUnprotectBookRequest(
+        title: String,
+        author: String,
+        calibreBookUuid: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            action = "UNPROTECT_BOOK",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = emptyList(),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_unprotect_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Unprotect $title",
+            title = "Unprotect $title",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
     // CONTRACT: SET_PAGE_COUNT
     suspend fun sendSetPageCountRequest(
         calibreBookUuid: String,

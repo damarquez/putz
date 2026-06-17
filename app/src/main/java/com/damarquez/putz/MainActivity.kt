@@ -14,6 +14,7 @@ import com.damarquez.putz.data.repository.PendingDeletionAction
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
+import com.damarquez.putz.data.repository.PendingUnprotectBookRepository
 import com.damarquez.putz.data.repository.PendingEditMetadata
 import com.damarquez.putz.data.repository.PendingEditMetadataRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
@@ -36,6 +37,7 @@ private sealed class PendingClipboardAction {
     data class BatchTags(val uuids: List<String>) : PendingClipboardAction()
     data class GenerateCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class ProtectBook(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
+    data class UnprotectBook(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class SetPageCount(val uuid: String, val pageCount: Int, val title: String? = null, val author: String? = null) : PendingClipboardAction()
     data class DeletionAction(val action: PendingDeletionAction) : PendingClipboardAction()
     data class EditMetadata(
@@ -58,6 +60,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var pendingCommentsRepository: PendingCommentsRepository
     @Inject lateinit var pendingGenerateCoverRepository: PendingGenerateCoverRepository
     @Inject lateinit var pendingProtectBookRepository: PendingProtectBookRepository
+    @Inject lateinit var pendingUnprotectBookRepository: PendingUnprotectBookRepository
     @Inject lateinit var pendingSetPageCountRepository: PendingSetPageCountRepository
     @Inject lateinit var pendingDeletionActionRepository: PendingDeletionActionRepository
     @Inject lateinit var pendingEditMetadataRepository: PendingEditMetadataRepository
@@ -85,6 +88,7 @@ class MainActivity : ComponentActivity() {
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                     pendingProtectBookRepository = pendingProtectBookRepository,
+                    pendingUnprotectBookRepository = pendingUnprotectBookRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
                     pendingEditMetadataRepository = pendingEditMetadataRepository,
@@ -139,6 +143,12 @@ class MainActivity : ComponentActivity() {
                 val title = uri.getQueryParameter("title") ?: ""
                 val author = uri.getQueryParameter("author") ?: ""
                 if (uuid != null) pendingClipboardAction = PendingClipboardAction.ProtectBook(uuid, title, author)
+            }
+            uri.scheme == "putz" && uri.host == "unprotect_book" -> {  // CONTRACT: UNPROTECT_BOOK
+                val uuid = uri.getQueryParameter("uuid")
+                val title = uri.getQueryParameter("title") ?: ""
+                val author = uri.getQueryParameter("author") ?: ""
+                if (uuid != null) pendingClipboardAction = PendingClipboardAction.UnprotectBook(uuid, title, author)
             }
             uri.scheme == "putz" && uri.host == "set_page_count" -> {
                 val uuid = uri.getQueryParameter("uuid")
@@ -243,6 +253,7 @@ class MainActivity : ComponentActivity() {
                 is PendingClipboardAction.BatchTags -> pendingCommentsRepository.setBatchTags(action.uuids)
                 is PendingClipboardAction.GenerateCover -> pendingGenerateCoverRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.ProtectBook -> pendingProtectBookRepository.set(action.uuid, action.title, action.author)
+                is PendingClipboardAction.UnprotectBook -> pendingUnprotectBookRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.SetPageCount -> pendingSetPageCountRepository.set(action.uuid, action.pageCount, action.title, action.author)
                 is PendingClipboardAction.DeletionAction -> pendingDeletionActionRepository.set(action.action)
                 is PendingClipboardAction.EditMetadata -> pendingEditMetadataRepository.set(

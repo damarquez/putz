@@ -49,6 +49,7 @@ import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
+import com.damarquez.putz.data.repository.PendingUnprotectBookRepository
 import kotlinx.coroutines.flow.combine
 
 private const val ROOT_FOLDER_NAME = "Your Files"
@@ -63,6 +64,7 @@ fun AppNavGraph(
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
     pendingProtectBookRepository: PendingProtectBookRepository,
+    pendingUnprotectBookRepository: PendingUnprotectBookRepository,
 ) {
     val navController = rememberNavController()
     val authToken by settingsRepository.authTokenFlow.collectAsState()
@@ -77,6 +79,7 @@ fun AppNavGraph(
                 pendingCommentsRepository.flow,
                 pendingGenerateCoverRepository.flow,
                 pendingProtectBookRepository.flow,
+                pendingUnprotectBookRepository.flow,
                 pendingSetPageCountRepository.flow,
                 pendingDeletionActionRepository.flow,
                 pendingEditMetadataRepository.flow,
@@ -407,6 +410,7 @@ fun AppNavGraph(
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
                     pendingProtectBookRepository = pendingProtectBookRepository,
+                    pendingUnprotectBookRepository = pendingUnprotectBookRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
                     pendingEditMetadataRepository = pendingEditMetadataRepository,

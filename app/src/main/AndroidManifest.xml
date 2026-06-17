@@ -138,6 +138,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="protect_book" />
             </intent-filter>
+
+            <!-- CONTRACT: UNPROTECT_BOOK — putz://unprotect_book?uuid=UUID&title=TITLE&author=AUTHOR -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="unprotect_book" />
+            </intent-filter>
         </activity>
 
         <!-- CONTRACT: FUSE_BOOKS — receives fusion intents from CalibreAnywhere -->

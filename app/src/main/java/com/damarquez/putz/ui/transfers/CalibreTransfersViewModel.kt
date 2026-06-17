@@ -161,6 +161,19 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    fun unprotectBook(uuid: String, title: String, author: String) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            calibreRepository.sendUnprotectBookRequest(
+                title = title,
+                author = author,
+                calibreBookUuid = uuid,
+                googleAccount = account,
+            )
+        }
+    }
+
     fun setPageCount(uuid: String, pageCount: Int, title: String? = null, author: String? = null) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()

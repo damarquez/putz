@@ -72,6 +72,8 @@ import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingProtectBook
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
+import com.damarquez.putz.data.repository.PendingUnprotectBook
+import com.damarquez.putz.data.repository.PendingUnprotectBookRepository
 import com.damarquez.putz.util.MetadataUtils
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
@@ -91,6 +93,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
     pendingProtectBookRepository: PendingProtectBookRepository,
+    pendingUnprotectBookRepository: PendingUnprotectBookRepository,
 ) {
     val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
@@ -116,6 +119,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     val snackbarHostState = remember { SnackbarHostState() }
 
     var pendingProtectConfirmation by remember { mutableStateOf<PendingProtectBook?>(null) }
+    var pendingUnprotectConfirmation by remember { mutableStateOf<PendingUnprotectBook?>(null) }
     var transferToDelete by remember { mutableStateOf<CalibreTransferEntity?>(null) }
     var alsoDeleteFromPutio by remember { mutableStateOf(false) }
     var showClearGreenDialog by remember { mutableStateOf(false) }
@@ -189,6 +193,15 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             if (pending != null) {
                 pendingProtectBookRepository.clear()
                 pendingProtectConfirmation = pending
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingUnprotectBookRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingUnprotectBookRepository.clear()
+                pendingUnprotectConfirmation = pending
             }
         }
     }
@@ -335,6 +348,27 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             },
             dismissButton = {
                 TextButton(onClick = { pendingProtectConfirmation = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    pendingUnprotectConfirmation?.let { unprotect ->
+        AlertDialog(
+            onDismissRequest = { pendingUnprotectConfirmation = null },
+            title = { Text("Unprotect book") },
+            text = {
+                Text(
+                    "Decrypt \"${unprotect.title}\" and replace the encrypted files with plaintext versions?",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.unprotectBook(unprotect.uuid, unprotect.title, unprotect.author)
+                    pendingUnprotectConfirmation = null
+                }) { Text("Unprotect") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUnprotectConfirmation = null }) { Text("Cancel") }
             },
         )
     }
