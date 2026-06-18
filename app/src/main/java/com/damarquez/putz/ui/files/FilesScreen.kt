@@ -135,7 +135,8 @@ fun FilesScreen(
     val currentTab by viewModel.currentTab.collectAsState()
     val nameSort by viewModel.nameSort.collectAsState()
     val dateSort by viewModel.dateSort.collectAsState()
-    
+    val itemCount = (uiState as? FilesUiState.Success)?.files?.size
+
     val context = LocalContext.current
     val pickFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -1055,8 +1056,8 @@ fun FilesScreen(
                                 style = MaterialTheme.typography.titleLarge,
                                 maxLines = 1,
                             )
-                            accountInfo?.let { info ->
-                                if (isRoot) {
+                            if (isRoot) {
+                                accountInfo?.let { info ->
                                     val subtitle = when {
                                         info.diskQuota > 0 ->
                                             "${info.username} (${formatDiskSize(info.diskAvail)} of ${formatDiskSize(info.diskQuota)} free)"
@@ -1070,6 +1071,12 @@ fun FilesScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
+                            } else if (itemCount != null) {
+                                Text(
+                                    text = "$itemCount item${if (itemCount == 1) "" else "s"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
