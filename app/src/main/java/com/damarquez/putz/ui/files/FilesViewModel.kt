@@ -1338,6 +1338,59 @@ class FilesViewModel @Inject constructor(
         } }
     }
 
+    // CONTRACT: CBR_PDF_PACK
+    fun sendCbrPdfPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null, isProtected: Boolean = false) {
+        trackTransferPreparation { viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+
+            val putioToken = settingsRepository.authTokenFlow.first()
+            val tempId = files.first().id
+
+            val resolvedFiles = mutableListOf<AudiobookFile>()
+            for ((index, file) in files.withIndex()) {
+                _transferPreparationProgress.value = (index + 1) to files.size
+                when {
+                    file.isSynced -> {
+                        val localPath = calibreRepository.readStubLocalPath(file)
+                        if (localPath == null) {
+                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing. Please retry."
+                            return@launch
+                        }
+                        resolvedFiles.add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
+                    }
+                    file.isLan -> {
+                        val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                        if (conn == null || file.lanPath == null) {
+                            _snackbarMessage.value = "LAN connection info missing for ${file.name}"
+                            return@launch
+                        }
+                        resolvedFiles.add(AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath)))
+                    }
+                    else -> {
+                        val downloadUrl = filesRepository.getDownloadUrl(putioToken, file.id)
+                        resolvedFiles.add(AudiobookFile(file.id, file.name, download_url = downloadUrl))
+                    }
+                }
+            }
+            calibreRepository.updateUploadProgress(tempId, null)
+
+            calibreRepository.addCbrPdfPackTransfer(
+                files = files.zip(resolvedFiles).map { (f, rf) -> f to rf },
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+                calibreBookUuid = calibreBookUuid,
+                tags = tags,
+                isProtected = isProtected,
+            )
+            _snackbarMessage.value = "CBR PDF transfer requested"
+        } }
+    }
+
     fun sendEpubPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null, isProtected: Boolean = false) {
         trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()

@@ -83,6 +83,7 @@ fun FileItem(
     onSendAsJoinedPdf: (PutioFile) -> Unit,
     onAssembleIntoPdf: (PutioFile) -> Unit,
     onSendAsJoinedEpub: (PutioFile) -> Unit,
+    onSendAsCbrPdf: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
@@ -120,6 +121,7 @@ fun FileItem(
         file.displayName.endsWith(".ass", ignoreCase = true) ||
         file.displayName.endsWith(".sub", ignoreCase = true)
     val isImage = fileType == PutioFileType.IMAGE || MetadataUtils.isImage(file.displayName)
+    val isComicArchive = MetadataUtils.isComicArchive(file.displayName)
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -483,6 +485,16 @@ fun FileItem(
                                     },
                                 )
                             }
+                            if (isComicArchive) {
+                                DropdownMenuItem(
+                                    text = { Text("Send to Calibre as PDF") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsCbrPdf(file)
+                                    },
+                                )
+                            }
                             if (isVideo && file.isSynced) {
                                 DropdownMenuItem(
                                     text = { Text("Send to Plex") },
@@ -552,7 +564,7 @@ fun FileItem(
                                     },
                                 )
                             }
-                            if (isEbook || isImage || isMultiTrackAudio || isPdf || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder) {
+                            if (isEbook || isImage || isMultiTrackAudio || isPdf || isComicArchive || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder) {
                                 HorizontalDivider()
                             }
                         }

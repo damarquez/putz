@@ -297,6 +297,11 @@ fun FilesScreen(
     var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
     val imagePdfPackSheetState = rememberModalBottomSheetState()
 
+    // CBR PDF pack flow
+    var cbrPdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedCbrFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+    val cbrPdfPackSheetState = rememberModalBottomSheetState()
+
     // Folder audio picker flow (Create M4B from folder)
     var folderForAudioPicker by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFolderAudioFiles by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
@@ -618,6 +623,44 @@ fun FilesScreen(
             onConfirm = { title, author, _, _, _, _, uuid, _, tags, isProtected ->
                 viewModel.sendImagePdfPack(imageFiles, title, author, uuid, tags, isProtected)
                 selectedImageFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (cbrPdfPackTriggerFile != null && selectedCbrFiles == null) {
+        // CONTRACT: stub convention — must use displayName; filter to CBR siblings in current folder
+        val cbrFiles = remember(uiState) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isComicArchive(it.displayName) }
+                ?: emptyList()
+        }
+        CbrPdfPackSheet(
+            cbrFiles = cbrFiles,
+            sheetState = cbrPdfPackSheetState,
+            onDismiss = { cbrPdfPackTriggerFile = null },
+            onConfirm = { files ->
+                selectedCbrFiles = files
+                cbrPdfPackTriggerFile = null
+            },
+        )
+    }
+
+    if (selectedCbrFiles != null) {
+        val cbrFiles = selectedCbrFiles!!
+        val (initialTitle, initialAuthor) = remember(cbrFiles) {
+            MetadataUtils.extractMetadata(cbrFiles.first().displayName)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${cbrFiles.size} CBR files → PDF",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedCbrFiles = null },
+            onConfirm = { title, author, _, _, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendCbrPdfPack(cbrFiles, title, author, uuid, tags, isProtected)
+                selectedCbrFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1331,6 +1374,7 @@ fun FilesScreen(
                                         },
                                         onSendAsJoinedPdf = { pdfPackTriggerFile = it },
                                         onSendAsJoinedEpub = { epubPackTriggerFile = it },
+                                        onSendAsCbrPdf = { cbrPdfPackTriggerFile = it },
                                         onAssembleIntoPdf = { target ->
                                             selectedFileForAssembly = target to false
                                             isPdfPackAssembly = true
