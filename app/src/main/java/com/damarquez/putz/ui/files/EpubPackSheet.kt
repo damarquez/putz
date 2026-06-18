@@ -91,11 +91,28 @@ fun EpubPackSheet(
 
             Spacer(Modifier.height(8.dp))
 
-            Text(
-                text = "${selectedFiles.size} of ${epubFiles.size} files selected",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${selectedFiles.size} of ${epubFiles.size} files selected",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = {
+                        checkedIds = if (checkedIds.size == epubFiles.size) {
+                            emptySet()
+                        } else {
+                            epubFiles.map { it.id }.toSet()
+                        }
+                    },
+                ) {
+                    Text(if (checkedIds.size == epubFiles.size) "Deselect all" else "Select all")
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
 

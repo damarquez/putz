@@ -156,11 +156,28 @@ private fun ColumnScope.ReadyContent(
         )
     }
     Spacer(Modifier.height(8.dp))
-    Text(
-        text = "${selected.size} of ${state.files.size} files selected",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.primary,
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "${selected.size} of ${state.files.size} files selected",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = {
+                checkedPaths = if (checkedPaths.size == state.files.size) {
+                    emptySet()
+                } else {
+                    state.files.map { it.relativePath }.toSet()
+                }
+            },
+        ) {
+            Text(if (checkedPaths.size == state.files.size) "Deselect all" else "Select all")
+        }
+    }
     Spacer(Modifier.height(8.dp))
 
     LazyColumn(

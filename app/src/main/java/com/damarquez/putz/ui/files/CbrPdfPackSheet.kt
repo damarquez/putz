@@ -91,11 +91,28 @@ fun CbrPdfPackSheet(
 
             Spacer(Modifier.height(8.dp))
 
-            Text(
-                text = "${selectedFiles.size} of ${cbrFiles.size} comics selected",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${selectedFiles.size} of ${cbrFiles.size} comics selected",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = {
+                        checkedIds = if (checkedIds.size == cbrFiles.size) {
+                            emptySet()
+                        } else {
+                            cbrFiles.map { it.id }.toSet()
+                        }
+                    },
+                ) {
+                    Text(if (checkedIds.size == cbrFiles.size) "Deselect all" else "Select all")
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
 
