@@ -1,13 +1,18 @@
 package com.damarquez.putz
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
 import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionAction
@@ -67,12 +72,22 @@ class MainActivity : ComponentActivity() {
 
     private var pendingClipboardAction: PendingClipboardAction? = null
 
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Only process on first creation. On Activity recreation (config change, system restore),
         // the intent is the original launch intent and must not be re-processed.
         if (savedInstanceState == null) {
             handleIntent(intent)
+        }
+        // Needed so the transfer-delete progress notification (TransferDeleteService) is
+        // actually visible. Without it the foreground service still runs — only the notification is hidden.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         enableEdgeToEdge()
         setContent {

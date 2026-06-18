@@ -405,17 +405,60 @@ class CalibreTransfersViewModel @Inject constructor(
             }
             if (green.isEmpty()) return@launch
             val token = if (alsoDeleteFromPutio) settingsRepository.authTokenFlow.first() else ""
-            green.forEach { transfer ->
-                if (alsoDeleteFromPutio) {
-                    if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
-                        localFilesRepository.detachOrHide(transfer.sourceLocalUri)
-                    } else {
-                        calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
+            if (alsoDeleteFromPutio) {
+                com.damarquez.putz.sync.TransferDeleteService.start(context)
+            }
+            try {
+                var failedCount = 0
+                green.forEachIndexed { index, transfer ->
+                    var deleteSucceeded = true
+                    if (alsoDeleteFromPutio) {
+                        if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
+                            calibreRepository.updateDeleteProgress(
+                                com.damarquez.putz.data.repository.TransferDeleteProgress(
+                                    message = "Detaching local file (transfer ${index + 1}/${green.size})",
+                                    current = index + 1,
+                                    total = green.size,
+                                )
+                            )
+                            localFilesRepository.detachOrHide(transfer.sourceLocalUri)
+                        } else {
+                            val fileCount = transfer.parsedFileIds().size
+                            calibreRepository.updateDeleteProgress(
+                                com.damarquez.putz.data.repository.TransferDeleteProgress(
+                                    message = "Deleting $fileCount file${if (fileCount == 1) "" else "s"} " +
+                                        "(transfer ${index + 1}/${green.size})",
+                                    current = index + 1,
+                                    total = green.size,
+                                )
+                            )
+                            val result = calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
+                            if (result is NetworkResult.Error) {
+                                deleteSucceeded = false
+                                failedCount++
+                                android.util.Log.w("CalibreTransfersViewModel",
+                                    "Failed to delete put.io files for transfer ${transfer.putioFileId}: ${result.message}")
+                            }
+                        }
+                    }
+                    // Only drop the local record once the put.io delete actually succeeded —
+                    // otherwise the transfer would vanish from the list with no way to retry it.
+                    if (deleteSucceeded) {
+                        calibreRepository.removeTransfer(transfer.putioFileId)
                     }
                 }
-                calibreRepository.removeTransfer(transfer.putioFileId)
+                val clearedCount = green.size - failedCount
+                _snackbarMessage.value = if (failedCount == 0) {
+                    "$clearedCount transfer${if (clearedCount == 1) "" else "s"} cleared"
+                } else {
+                    "$clearedCount cleared, $failedCount failed to delete from put.io (kept for retry)"
+                }
+            } finally {
+                calibreRepository.updateDeleteProgress(null)
+                if (alsoDeleteFromPutio) {
+                    com.damarquez.putz.sync.TransferDeleteService.stop(context)
+                }
             }
-            _snackbarMessage.value = "${green.size} transfer${if (green.size == 1) "" else "s"} cleared"
         }
     }
 }

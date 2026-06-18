@@ -34,6 +34,12 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
+data class TransferDeleteProgress(
+    val message: String,
+    val current: Int,
+    val total: Int,
+)
+
 // CONTRACT: ADD_BOOK_BATCH
 @Serializable
 data class CalibreBatchItem(
@@ -331,6 +337,13 @@ class CalibreRepository @Inject constructor(
 
     private val _pendingAssemblyAppends = MutableStateFlow<Set<Long>>(emptySet())
     val pendingAssemblyAppends = _pendingAssemblyAppends.asStateFlow()
+
+    private val _deleteProgress = MutableStateFlow<TransferDeleteProgress?>(null)
+    val deleteProgress = _deleteProgress.asStateFlow()
+
+    fun updateDeleteProgress(progress: TransferDeleteProgress?) {
+        _deleteProgress.value = progress
+    }
 
     fun markAssemblyAppendPending(transferId: Long) {
         _pendingAssemblyAppends.value = _pendingAssemblyAppends.value + transferId
@@ -2268,6 +2281,23 @@ class CalibreRepository @Inject constructor(
         ))
     }
 
+    private val putioRetryableCodes = setOf(429, 500, 502, 503, 504)
+
+    /** Retries a put.io call with exponential backoff on rate-limit/server errors. */
+    private suspend fun <T> withPutioRetry(maxAttempts: Int = 5, call: () -> NetworkResult<T>): NetworkResult<T> {
+        var delayMs = 5_000L
+        var lastResult: NetworkResult<T>
+        for (attempt in 1..maxAttempts) {
+            lastResult = call()
+            if (lastResult !is NetworkResult.Error || lastResult.code !in putioRetryableCodes || attempt == maxAttempts) {
+                return lastResult
+            }
+            delay(delayMs)
+            delayMs = minOf(delayMs * 2, 60_000L)
+        }
+        error("unreachable")
+    }
+
     suspend fun deleteFileFromPutio(token: String, fileId: Long): NetworkResult<Unit> {
         return withContext(Dispatchers.IO) {
             val originalIds = calibreTransferDao.getTransferById(fileId)?.parsedFileIds() ?: listOf(fileId)
@@ -2275,12 +2305,17 @@ class CalibreRepository @Inject constructor(
             for (originalId in originalIds) {
                 // CONTRACT: stub convention — new-format stubs have a different put.io ID than the original.
                 // Search for the stub by its filename suffix; if found, delete the stub (not the original).
-                val searchResult = putioApiClient.searchFiles(token, ".sk_synced.$originalId")
+                val searchResult = withPutioRetry { putioApiClient.searchFiles(token, ".sk_synced.$originalId") }
                 val stubIds = (searchResult as? NetworkResult.Success)?.data
                     ?.filter { it.name.substringAfterLast(".sk_synced.", "").toLongOrNull() == originalId }
                     ?.map { it.id } ?: emptyList()
                 if (stubIds.isNotEmpty()) {
                     idsToDelete.addAll(stubIds)
+                } else if (searchResult is NetworkResult.Error) {
+                    // Search itself failed after retries (not just "no stub found") — bail out rather
+                    // than risk deleting the wrong file or silently leaving the stub behind.
+                    return@withContext NetworkResult.Error(
+                        "Could not search put.io for file $originalId: ${searchResult.message}", searchResult.code)
                 } else {
                     // Stub not found via search. Verify whether the original file still exists:
                     // - 200: old-format transfer (never replaced by a stub) → delete the original.
@@ -2288,7 +2323,7 @@ class CalibreRepository @Inject constructor(
                     //        would silently no-op (put.io accepts deletes of non-existent IDs), leaving
                     //        the stub on put.io. Log a warning instead.
                     // - other error: network issue → fall back to originalId and try anyway.
-                    val fileCheck = putioApiClient.getFile(token, originalId)
+                    val fileCheck = withPutioRetry { putioApiClient.getFile(token, originalId) }
                     when {
                         fileCheck is NetworkResult.Success ->
                             idsToDelete.add(originalId)
@@ -2301,7 +2336,7 @@ class CalibreRepository @Inject constructor(
                 }
             }
             if (idsToDelete.isEmpty()) return@withContext NetworkResult.Success(Unit)
-            val result = putioApiClient.deleteFiles(token, idsToDelete.distinct())
+            val result = withPutioRetry { putioApiClient.deleteFiles(token, idsToDelete.distinct()) }
             if (result is NetworkResult.Error) {
                 android.util.Log.w("CalibreRepository",
                     "Failed to delete put.io files $idsToDelete: ${result.message}")
