@@ -345,6 +345,17 @@ class CalibreRepository @Inject constructor(
         _deleteProgress.value = progress
     }
 
+    // (filesDone, totalFiles) while a "send to Calibre" pack is being resolved/dispatched,
+    // before its transfer row exists. Lives here (not in FilesViewModel) so TransferPrepareService
+    // can observe it and keep the process foregrounded — otherwise Android may kill the work
+    // outright once the screen locks, silently losing it before it's ever persisted.
+    private val _prepareProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val prepareProgress = _prepareProgress.asStateFlow()
+
+    fun updatePrepareProgress(progress: Pair<Int, Int>?) {
+        _prepareProgress.value = progress
+    }
+
     fun markAssemblyAppendPending(transferId: Long) {
         _pendingAssemblyAppends.value = _pendingAssemblyAppends.value + transferId
     }
@@ -2366,7 +2377,14 @@ class CalibreRepository @Inject constructor(
         return withContext(Dispatchers.IO) {
             val originalIds = calibreTransferDao.getTransferById(fileId)?.parsedFileIds() ?: listOf(fileId)
             val idsToDelete = mutableListOf<Long>()
-            for (originalId in originalIds) {
+            for ((index, originalId) in originalIds.withIndex()) {
+                if (originalIds.size > 1) {
+                    updateDeleteProgress(TransferDeleteProgress(
+                        message = "Resolving file ${index + 1}/${originalIds.size}",
+                        current = index + 1,
+                        total = originalIds.size,
+                    ))
+                }
                 // CONTRACT: stub convention — new-format stubs have a different put.io ID than the original.
                 // Search for the stub by its filename suffix; if found, delete the stub (not the original).
                 val searchResult = withPutioRetry { putioApiClient.searchFiles(token, ".sk_synced.$originalId") }
@@ -2375,18 +2393,16 @@ class CalibreRepository @Inject constructor(
                     ?.map { it.id } ?: emptyList()
                 if (stubIds.isNotEmpty()) {
                     idsToDelete.addAll(stubIds)
-                } else if (searchResult is NetworkResult.Error) {
-                    // Search itself failed after retries (not just "no stub found") — bail out rather
-                    // than risk deleting the wrong file or silently leaving the stub behind.
-                    return@withContext NetworkResult.Error(
-                        "Could not search put.io for file $originalId: ${searchResult.message}", searchResult.code)
                 } else {
-                    // Stub not found via search. Verify whether the original file still exists:
+                    // Stub not found via search (or the search call itself failed after retries —
+                    // don't let one flaky search abort deletion of the rest of a multi-file pack).
+                    // Verify whether the original file still exists:
                     // - 200: old-format transfer (never replaced by a stub) → delete the original.
                     // - 404: file was synced to a stub, but search didn't find it. Adding originalId
                     //        would silently no-op (put.io accepts deletes of non-existent IDs), leaving
                     //        the stub on put.io. Log a warning instead.
-                    // - other error: network issue → fall back to originalId and try anyway.
+                    // - other error: network issue → bail out for this file only, rather than risk
+                    //        deleting the wrong file or silently leaving the stub behind.
                     val fileCheck = withPutioRetry { putioApiClient.getFile(token, originalId) }
                     when {
                         fileCheck is NetworkResult.Success ->
@@ -2394,8 +2410,12 @@ class CalibreRepository @Inject constructor(
                         (fileCheck as? NetworkResult.Error)?.code == 404 ->
                             android.util.Log.w("CalibreRepository",
                                 "Stub for put.io file $originalId not found via search and original is gone — stub may remain on put.io")
-                        else ->
-                            idsToDelete.add(originalId)
+                        else -> {
+                            val errorMessage = (fileCheck as? NetworkResult.Error)?.message ?: "unknown error"
+                            return@withContext NetworkResult.Error(
+                                "Could not verify put.io file $originalId: $errorMessage",
+                                (fileCheck as? NetworkResult.Error)?.code)
+                        }
                     }
                 }
             }

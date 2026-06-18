@@ -381,11 +381,26 @@ class CalibreTransfersViewModel @Inject constructor(
     fun deleteOrDetach(transfer: CalibreTransferEntity) {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
-            if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
-                localFilesRepository.detachOrHide(transfer.sourceLocalUri)
+            com.damarquez.putz.sync.TransferDeleteService.start(context)
+            try {
+                if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
+                    localFilesRepository.detachOrHide(transfer.sourceLocalUri)
+                    calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
+                    calibreRepository.removeTransfer(transfer.putioFileId)
+                    return@launch
+                }
+                // Only drop the local record if the put.io delete actually succeeded —
+                // otherwise the files stay orphaned on put.io with no way to retry.
+                val result = calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
+                if (result is NetworkResult.Error) {
+                    _snackbarMessage.value = "Failed to delete from put.io: ${result.message} (kept for retry)"
+                } else {
+                    calibreRepository.removeTransfer(transfer.putioFileId)
+                }
+            } finally {
+                calibreRepository.updateDeleteProgress(null)
+                com.damarquez.putz.sync.TransferDeleteService.stop(context)
             }
-            calibreRepository.deleteFileFromPutio(token, transfer.putioFileId)
-            calibreRepository.removeTransfer(transfer.putioFileId)
         }
     }
 

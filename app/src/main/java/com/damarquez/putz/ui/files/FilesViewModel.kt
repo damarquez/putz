@@ -205,16 +205,39 @@ class FilesViewModel @Inject constructor(
         .map { it > 0 }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    // (filesDone, totalFiles) for the pack currently being gathered, when known.
-    private val _transferPreparationProgress = MutableStateFlow<Pair<Int, Int>?>(null)
-    val transferPreparationProgress: StateFlow<Pair<Int, Int>?> = _transferPreparationProgress.asStateFlow()
+    // (filesDone, totalFiles) for the pack currently being gathered, when known. Backed by
+    // CalibreRepository (not local state) so TransferPrepareService can observe it too.
+    val transferPreparationProgress: StateFlow<Pair<Int, Int>?> = calibreRepository.prepareProgress
 
     private inline fun trackTransferPreparation(crossinline block: () -> Job): Job {
-        _pendingTransferPreparations.update { it + 1 }
+        // Foreground the process for the duration of this operation — otherwise Android can
+        // kill it outright once the screen locks, before the transfer row is ever persisted,
+        // and the whole "send to Calibre" request silently disappears.
+        //
+        // The start/stop decision must be derived from the SAME atomic update as the count
+        // change, not from a separate .value read afterwards — two overlapping preparations
+        // racing that read-then-branch could otherwise miss the transition back to zero and
+        // leave the service (and its notification) running forever with nothing left to stop it.
+        var wasIdle = false
+        _pendingTransferPreparations.update { current ->
+            wasIdle = current == 0
+            current + 1
+        }
+        if (wasIdle) {
+            com.damarquez.putz.sync.TransferPrepareService.start(context)
+        }
         val job = block()
         job.invokeOnCompletion {
-            _pendingTransferPreparations.update { it - 1 }
-            _transferPreparationProgress.value = null
+            calibreRepository.updatePrepareProgress(null)
+            var isNowIdle = false
+            _pendingTransferPreparations.update { current ->
+                val next = current - 1
+                isNowIdle = next == 0
+                next
+            }
+            if (isNowIdle) {
+                com.damarquez.putz.sync.TransferPrepareService.stop(context)
+            }
         }
         return job
     }
@@ -994,7 +1017,7 @@ class FilesViewModel @Inject constructor(
                 android.util.Log.d("FilesViewModel", "Starting pack resolution for ${files.size} files")
                 for ((index, file) in files.withIndex()) {
                     android.util.Log.d("FilesViewModel", "Processing file ${index + 1}/${files.size}: ${file.name}")
-                    _transferPreparationProgress.value = (index + 1) to files.size
+                    calibreRepository.updatePrepareProgress((index + 1) to files.size)
                     if (file.isLan) {
                         val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
                         if (conn == null || file.lanPath == null) {
@@ -1239,7 +1262,7 @@ class FilesViewModel @Inject constructor(
             // Standard remote path (or mixed with device-local uploads)
             val resolvedFiles = mutableListOf<AudiobookFile>()
             for ((index, file) in files.withIndex()) {
-                _transferPreparationProgress.value = (index + 1) to files.size
+                calibreRepository.updatePrepareProgress((index + 1) to files.size)
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
@@ -1299,7 +1322,7 @@ class FilesViewModel @Inject constructor(
 
             val resolvedFiles = mutableListOf<AudiobookFile>()
             for ((index, file) in files.withIndex()) {
-                _transferPreparationProgress.value = (index + 1) to files.size
+                calibreRepository.updatePrepareProgress((index + 1) to files.size)
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
@@ -1352,7 +1375,7 @@ class FilesViewModel @Inject constructor(
 
             val resolvedFiles = mutableListOf<AudiobookFile>()
             for ((index, file) in files.withIndex()) {
-                _transferPreparationProgress.value = (index + 1) to files.size
+                calibreRepository.updatePrepareProgress((index + 1) to files.size)
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
@@ -1451,7 +1474,7 @@ class FilesViewModel @Inject constructor(
 
             val resolvedFiles = mutableListOf<AudiobookFile>()
             for ((index, file) in files.withIndex()) {
-                _transferPreparationProgress.value = (index + 1) to files.size
+                calibreRepository.updatePrepareProgress((index + 1) to files.size)
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
@@ -2274,7 +2297,7 @@ class FilesViewModel @Inject constructor(
                 return@launch
             }
             val filePairs = sortedFiles.mapIndexedNotNull { index, folderFile ->
-                _transferPreparationProgress.value = (index + 1) to sortedFiles.size
+                calibreRepository.updatePrepareProgress((index + 1) to sortedFiles.size)
                 val f = folderFile.file
                 val smbPath = if (f.isLan) {
                     val conn = f.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
