@@ -198,6 +198,27 @@ class FilesViewModel @Inject constructor(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+    // Counts in-flight "send to Calibre" pack operations (resolving/uploading files before
+    // the transfer row exists), so the UI can show an animation during that otherwise-silent gap.
+    private val _pendingTransferPreparations = MutableStateFlow(0)
+    val isPreparingTransfer: StateFlow<Boolean> = _pendingTransferPreparations
+        .map { it > 0 }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    // (filesDone, totalFiles) for the pack currently being gathered, when known.
+    private val _transferPreparationProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val transferPreparationProgress: StateFlow<Pair<Int, Int>?> = _transferPreparationProgress.asStateFlow()
+
+    private inline fun trackTransferPreparation(crossinline block: () -> Job): Job {
+        _pendingTransferPreparations.update { it + 1 }
+        val job = block()
+        job.invokeOnCompletion {
+            _pendingTransferPreparations.update { it - 1 }
+            _transferPreparationProgress.value = null
+        }
+        return job
+    }
+
     private val _openParentFolderEvent = MutableSharedFlow<Triple<Long, String, Long>>()
     val openParentFolderEvent: SharedFlow<Triple<Long, String, Long>> = _openParentFolderEvent.asSharedFlow()
 
@@ -884,8 +905,8 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, tags: String? = null) {
-        viewModelScope.launch {
+    fun sendAudiobookPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, tags: String? = null, isProtected: Boolean = false) {
+        trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -916,6 +937,7 @@ class FilesViewModel @Inject constructor(
                     customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
                     calibreBookUuid = calibreBookUuid,
                     tags = tags,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
                 return@launch
@@ -943,6 +965,7 @@ class FilesViewModel @Inject constructor(
                     customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
                     calibreBookUuid = calibreBookUuid,
                     tags = tags,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
                 return@launch
@@ -963,6 +986,7 @@ class FilesViewModel @Inject constructor(
                     isUploading = true,
                     localUrisJson = localUrisJson,
                     tags = tags,
+                    isProtected = isProtected,
                 )
 
                 // Resolve each file: LAN files use SMB path directly; device-local files are uploaded.
@@ -970,6 +994,7 @@ class FilesViewModel @Inject constructor(
                 android.util.Log.d("FilesViewModel", "Starting pack resolution for ${files.size} files")
                 for ((index, file) in files.withIndex()) {
                     android.util.Log.d("FilesViewModel", "Processing file ${index + 1}/${files.size}: ${file.name}")
+                    _transferPreparationProgress.value = (index + 1) to files.size
                     if (file.isLan) {
                         val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
                         if (conn == null || file.lanPath == null) {
@@ -1020,6 +1045,7 @@ class FilesViewModel @Inject constructor(
                         customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
                         calibreBookUuid = calibreBookUuid,
                         tags = tags,
+                        isProtected = isProtected,
                     )
                 } else {
                     calibreRepository.updateAudiobookAfterUpload(tempId, resolvedAudioFiles, googleAccount)
@@ -1040,10 +1066,11 @@ class FilesViewModel @Inject constructor(
                     customFileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b",
                     calibreBookUuid = calibreBookUuid,
                     tags = tags,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "Audiobook assembled" else "Audiobook transfer requested"
             }
-        }
+        } }
     }
 
     fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null, isAltVersion: Boolean = false) {
@@ -1149,8 +1176,8 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun sendPdfPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, calibreBookUuid: String? = null, tags: String? = null) {
-        viewModelScope.launch {
+    fun sendPdfPack(files: List<PutioFile>, title: String, author: String, assembleBook: Boolean = false, calibreBookUuid: String? = null, tags: String? = null, isProtected: Boolean = false) {
+        trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1180,6 +1207,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     tags = tags,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
                 return@launch
@@ -1202,6 +1230,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     tags = tags,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
                 return@launch
@@ -1210,6 +1239,7 @@ class FilesViewModel @Inject constructor(
             // Standard remote path (or mixed with device-local uploads)
             val resolvedFiles = mutableListOf<AudiobookFile>()
             for ((index, file) in files.withIndex()) {
+                _transferPreparationProgress.value = (index + 1) to files.size
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
@@ -1249,14 +1279,15 @@ class FilesViewModel @Inject constructor(
                 assembleBook = assembleBook,
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
+                isProtected = isProtected,
             )
             _snackbarMessage.value = if (assembleBook) "PDF assembled" else "PDF join transfer requested"
-        }
+        } }
     }
 
     // CONTRACT: IMAGE_PDF_PACK
-    fun sendImagePdfPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null) {
-        viewModelScope.launch {
+    fun sendImagePdfPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null, isProtected: Boolean = false) {
+        trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1267,7 +1298,8 @@ class FilesViewModel @Inject constructor(
             val tempId = files.first().id
 
             val resolvedFiles = mutableListOf<AudiobookFile>()
-            for (file in files) {
+            for ((index, file) in files.withIndex()) {
+                _transferPreparationProgress.value = (index + 1) to files.size
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
@@ -1300,13 +1332,14 @@ class FilesViewModel @Inject constructor(
                 googleAccount = googleAccount,
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
+                isProtected = isProtected,
             )
             _snackbarMessage.value = "Image PDF transfer requested"
-        }
+        } }
     }
 
-    fun sendEpubPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null) {
-        viewModelScope.launch {
+    fun sendEpubPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null, isProtected: Boolean = false) {
+        trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1335,6 +1368,7 @@ class FilesViewModel @Inject constructor(
                     googleAccount = googleAccount,
                     calibreBookUuid = calibreBookUuid,
                     tags = tags,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = "EPUB join transfer requested"
                 return@launch
@@ -1356,6 +1390,7 @@ class FilesViewModel @Inject constructor(
                     googleAccount = googleAccount,
                     calibreBookUuid = calibreBookUuid,
                     tags = tags,
+                    isProtected = isProtected,
                 )
                 _snackbarMessage.value = "EPUB join transfer requested"
                 return@launch
@@ -1363,6 +1398,7 @@ class FilesViewModel @Inject constructor(
 
             val resolvedFiles = mutableListOf<AudiobookFile>()
             for ((index, file) in files.withIndex()) {
+                _transferPreparationProgress.value = (index + 1) to files.size
                 when {
                     file.isSynced -> {
                         val localPath = calibreRepository.readStubLocalPath(file)
@@ -1401,9 +1437,10 @@ class FilesViewModel @Inject constructor(
                 googleAccount = googleAccount,
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
+                isProtected = isProtected,
             )
             _snackbarMessage.value = "EPUB join transfer requested"
-        }
+        } }
     }
 
     fun appendPdfPackToAssembly(assemblyFileId: Long, files: List<PutioFile>, title: String, author: String) {
@@ -2162,7 +2199,7 @@ class FilesViewModel @Inject constructor(
     }
 
     fun sendFolderAudiobookPack(selectedFiles: List<FolderAudioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null) {
-        viewModelScope.launch {
+        trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -2183,13 +2220,14 @@ class FilesViewModel @Inject constructor(
                 _snackbarMessage.value = "Could not resolve local path for ${missingStub.file.displayName} — stub may be missing or unreadable. Please retry."
                 return@launch
             }
-            val filePairs = sortedFiles.mapNotNull { folderFile ->
+            val filePairs = sortedFiles.mapIndexedNotNull { index, folderFile ->
+                _transferPreparationProgress.value = (index + 1) to sortedFiles.size
                 val f = folderFile.file
                 val smbPath = if (f.isLan) {
                     val conn = f.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
                     if (conn == null || f.lanPath == null) {
                         _snackbarMessage.value = "LAN connection info missing for ${f.name}"
-                        return@mapNotNull null
+                        return@mapIndexedNotNull null
                     }
                     buildUncPath(conn.host, conn.shareName, f.lanPath)
                 } else null
@@ -2215,7 +2253,7 @@ class FilesViewModel @Inject constructor(
                 tags = tags,
             )
             _snackbarMessage.value = "Audiobook transfer requested for $title"
-        }
+        } }
     }
 
     fun appendFolderAudiobookPackToAssembly(assemblyFileId: Long, selectedFiles: List<FolderAudioFile>, title: String, author: String, isAltVersion: Boolean = false) {

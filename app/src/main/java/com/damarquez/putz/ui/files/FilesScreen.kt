@@ -128,6 +128,8 @@ fun FilesScreen(
     val completedTransfersWithUuid by viewModel.completedTransfersWithUuid.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
+    val isPreparingTransfer by viewModel.isPreparingTransfer.collectAsState()
+    val transferPreparationProgress by viewModel.transferPreparationProgress.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val currentTab by viewModel.currentTab.collectAsState()
@@ -518,8 +520,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, _ ->
-                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid, tags)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid, tags, isProtected)
                 selectedPackFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -538,8 +540,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPdfFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, _ ->
-                viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid, tags)
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid, tags, isProtected)
                 selectedPdfFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -575,8 +577,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedEpubFiles = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, tags, _ ->
-                viewModel.sendEpubPack(epubFiles, title, author, uuid, tags)
+            onConfirm = { title, author, _, _, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendEpubPack(epubFiles, title, author, uuid, tags, isProtected)
                 selectedEpubFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -613,8 +615,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedImageFiles = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, tags, _ ->
-                viewModel.sendImagePdfPack(imageFiles, title, author, uuid, tags)
+            onConfirm = { title, author, _, _, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendImagePdfPack(imageFiles, title, author, uuid, tags, isProtected)
                 selectedImageFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -1124,6 +1126,30 @@ fun FilesScreen(
                                 color = MaterialTheme.colorScheme.primary,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
+                        }
+
+                        if (isPreparingTransfer) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = transferPreparationProgress?.let { (done, total) ->
+                                        "Preparing files for Calibre… ($done/$total)"
+                                    } ?: "Preparing files for Calibre…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
                         }
 
                         // Sort Toggles

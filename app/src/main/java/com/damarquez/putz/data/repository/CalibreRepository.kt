@@ -696,6 +696,7 @@ class CalibreRepository @Inject constructor(
         isUploading: Boolean = false,
         localUrisJson: String? = null,
         tags: String? = null,
+        isProtected: Boolean = false,
     ) {
         val primaryFileId = files.first().first.id
         val audioFiles = files.map { (_, audioFile) -> audioFile }
@@ -704,7 +705,8 @@ class CalibreRepository @Inject constructor(
             type = "PACK",
             putio_file_id = primaryFileId,
             fileName = fileName,
-            files = audioFiles
+            files = audioFiles,
+            protected = if (isProtected) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = primaryFileId,
@@ -766,6 +768,7 @@ class CalibreRepository @Inject constructor(
         assembleBook: Boolean = false,
         calibreBookUuid: String? = null,
         tags: String? = null,
+        isProtected: Boolean = false,
     ) {
         val primaryFileId = files.first().first.id
         val pdfFiles = files.map { (_, f) -> f }
@@ -774,6 +777,7 @@ class CalibreRepository @Inject constructor(
             putio_file_id = primaryFileId,
             fileName = "Book.pdf",
             files = pdfFiles,
+            protected = if (isProtected) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = primaryFileId,
@@ -830,6 +834,7 @@ class CalibreRepository @Inject constructor(
         googleAccount: String,
         calibreBookUuid: String? = null,
         tags: String? = null,
+        isProtected: Boolean = false,
     ) {
         val primaryFileId = files.first().first.id
         val imageFiles = files.map { (_, f) -> f }
@@ -838,6 +843,7 @@ class CalibreRepository @Inject constructor(
             putio_file_id = primaryFileId,
             fileName = "Book.pdf",
             files = imageFiles,
+            protected = if (isProtected) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = primaryFileId,
@@ -891,6 +897,7 @@ class CalibreRepository @Inject constructor(
         googleAccount: String,
         calibreBookUuid: String? = null,
         tags: String? = null,
+        isProtected: Boolean = false,
     ) {
         val primaryFileId = files.first().first.id
         val epubFiles = files.map { (_, f) -> f }
@@ -899,6 +906,7 @@ class CalibreRepository @Inject constructor(
             putio_file_id = primaryFileId,
             fileName = "Book.epub",
             files = epubFiles,
+            protected = if (isProtected) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = primaryFileId,
