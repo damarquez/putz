@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -284,7 +285,7 @@ class ArchiveViewModel @Inject constructor(
         viewModelScope.launch {
             val dirs = runCatching {
                 lanFilesRepository.listDirectory(state.connectionId, state.currentPath)
-                    .first()
+                    .last()
                     .filter { it.isFolder }
             }.getOrDefault(emptyList())
             val current = _lanPickerState.value ?: return@launch

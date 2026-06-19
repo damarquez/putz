@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -2195,7 +2196,7 @@ class FilesViewModel @Inject constructor(
             val currentFolder = queue.removeFirst()
             val children = when {
                 currentFolder.isLocal -> currentFolder.localUri?.let { localFilesRepository.listLocalFolder(it).first() } ?: emptyList()
-                currentFolder.isLan -> currentFolder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, currentFolder.lanPath ?: "", includeAllFiles = true).first() } ?: emptyList()
+                currentFolder.isLan -> currentFolder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, currentFolder.lanPath ?: "", includeAllFiles = true).last() } ?: emptyList()
                 else -> filesRepository.listFiles(token, currentFolder.id).dataOrNull()?.first ?: emptyList()
             }
             for (child in children) {
@@ -2210,7 +2211,7 @@ class FilesViewModel @Inject constructor(
     private fun loadPlexampFolders(connectionId: Long, path: String) {
         viewModelScope.launch {
             try {
-                val folders = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = false).first()
+                val folders = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = false).last()
                 val current = _plexampPickerState.value ?: return@launch
                 _plexampPickerState.value = current.copy(
                     folders = folders.filter { it.isFolder },
@@ -2258,7 +2259,7 @@ class FilesViewModel @Inject constructor(
             val (currentFolder, prefix) = queue.removeFirst()
             val children = when {
                 currentFolder.isLocal -> currentFolder.localUri?.let { localFilesRepository.listLocalFolder(it).first() } ?: emptyList()
-                currentFolder.isLan -> currentFolder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, currentFolder.lanPath ?: "", includeAllFiles = true).first() } ?: emptyList()
+                currentFolder.isLan -> currentFolder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, currentFolder.lanPath ?: "", includeAllFiles = true).last() } ?: emptyList()
                 else -> filesRepository.listFiles(token, currentFolder.id).dataOrNull()?.first ?: emptyList()
             }
             for (child in children) {
@@ -2411,7 +2412,7 @@ class FilesViewModel @Inject constructor(
 
     private suspend fun loadMovieBrowserFiles(connectionId: Long, path: String) {
         try {
-            val allFiles = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = true).first()
+            val allFiles = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = true).last()
             val current = _movieBrowserState.value ?: return
             _movieBrowserState.value = current.copy(
                 folders = allFiles.filter { it.isFolder },
@@ -2427,7 +2428,7 @@ class FilesViewModel @Inject constructor(
 
     private suspend fun loadPlexFolders(connectionId: Long, path: String) {
         try {
-            val allFiles = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = true).first()
+            val allFiles = lanFilesRepository.listDirectory(connectionId, path, includeAllFiles = true).last()
             val current = _plexPickerState.value ?: return
             _plexPickerState.value = current.copy(
                 folders = allFiles.filter { it.isFolder },

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -232,7 +233,7 @@ class SettingsViewModel @Inject constructor(
 
     private suspend fun loadPlexRootFolders(connectionId: Long, path: String) {
         try {
-            val files = lanFilesRepository.listDirectory(connectionId, path).first()
+            val files = lanFilesRepository.listDirectory(connectionId, path).last()
             val folders = files.filter { it.isFolder }
             val current = _plexRootPickerState.value ?: return
             _plexRootPickerState.value = current.copy(
@@ -300,7 +301,7 @@ class SettingsViewModel @Inject constructor(
 
     private suspend fun loadPlexampRootFolders(connectionId: Long, path: String) {
         try {
-            val files = lanFilesRepository.listDirectory(connectionId, path).first()
+            val files = lanFilesRepository.listDirectory(connectionId, path).last()
             val folders = files.filter { it.isFolder }
             val current = _plexampRootPickerState.value ?: return
             _plexampRootPickerState.value = current.copy(
