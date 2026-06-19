@@ -28,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.util.MetadataUtils
@@ -130,11 +129,11 @@ fun AudiobookPackSheet(
                                 checkedIds = if (checked) checkedIds + file.id else checkedIds - file.id
                             },
                         )
-                        Text(
-                            text = file.name,
+                        CollapsedFileNameText(
+                            name = file.name,
+                            previousName = orderedFiles.getOrNull(index - 1)?.name,
+                            nextName = orderedFiles.getOrNull(index + 1)?.name,
                             style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
                         ReorderArrowButton(

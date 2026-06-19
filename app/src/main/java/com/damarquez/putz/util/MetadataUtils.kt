@@ -17,6 +17,29 @@ object MetadataUtils {
     fun <T> sortByName(files: List<T>, caseSensitive: Boolean, name: (T) -> String): List<T> =
         if (caseSensitive) files.sortedBy(name) else files.sortedBy { name(it).lowercase() }
 
+    /**
+     * Collapses the leading portion of [name] shared with [previousName] into "..." when that
+     * shared prefix is longer than 5 characters, so long near-duplicate filenames in a reordered
+     * list stay legible. Returns [name] unchanged when there's no previous item or the shared
+     * prefix is too short to bother collapsing.
+     */
+    fun collapsePrefix(name: String, previousName: String?): String {
+        if (previousName == null) return name
+        val sharedLength = name.commonPrefixWith(previousName).length
+        return if (sharedLength > 5) "..." + name.substring(sharedLength) else name
+    }
+
+    /**
+     * Length of the leading portion of [name] that will be collapsed to "..." on [nextName]
+     * (the row below it), or 0 if [nextName] won't collapse against [name]. Used to underline
+     * the part of an uncollapsed name that the next row's "..." stands in for.
+     */
+    fun collapsedPrefixLength(name: String, nextName: String?): Int {
+        if (nextName == null) return 0
+        val sharedLength = name.commonPrefixWith(nextName).length
+        return if (sharedLength > 5) sharedLength else 0
+    }
+
     fun isImage(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in IMAGE_EXTENSIONS

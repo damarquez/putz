@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -185,7 +185,7 @@ private fun ColumnScope.ReadyContent(
             .fillMaxWidth()
             .weight(1f),
     ) {
-        items(sortedFiles, key = { it.relativePath }) { folderFile ->
+        itemsIndexed(sortedFiles, key = { _, file -> file.relativePath }) { index, folderFile ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -213,11 +213,11 @@ private fun ColumnScope.ReadyContent(
                             )
                         }
                     }
-                    Text(
-                        text = folderFile.file.displayName,
+                    CollapsedFileNameText(
+                        name = folderFile.file.displayName,
+                        previousName = sortedFiles.getOrNull(index - 1)?.file?.displayName,
+                        nextName = sortedFiles.getOrNull(index + 1)?.file?.displayName,
                         style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
