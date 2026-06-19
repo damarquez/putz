@@ -1309,8 +1309,49 @@ class FilesViewModel @Inject constructor(
         } }
     }
 
-    // CONTRACT: IMAGE_PDF_PACK
-    fun sendImagePdfPack(files: List<PutioFile>, title: String, author: String, calibreBookUuid: String? = null, tags: String? = null, isProtected: Boolean = false) {
+    // CONTRACT: ADD_BOOK_BATCH — merge framework. Resolves one PutioFile into the
+    // AudiobookFile source-field shape the daemon expects (use_local/smb_path/download_url),
+    // shared by both the flat (file/flatten) and grouped (subfolders-as-chapters) merge paths.
+    private suspend fun resolveForMerge(file: PutioFile): AudiobookFile? {
+        return when {
+            file.isSynced -> {
+                val localPath = calibreRepository.readStubLocalPath(file)
+                if (localPath == null) {
+                    _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing. Please retry."
+                    null
+                } else {
+                    AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath)
+                }
+            }
+            file.isLan -> {
+                val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
+                if (conn == null || file.lanPath == null) {
+                    _snackbarMessage.value = "LAN connection info missing for ${file.name}"
+                    null
+                } else {
+                    AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath))
+                }
+            }
+            else -> {
+                val putioToken = settingsRepository.authTokenFlow.first()
+                val downloadUrl = filesRepository.getDownloadUrl(putioToken, file.id)
+                AudiobookFile(file.id, file.name, download_url = downloadUrl)
+            }
+        }
+    }
+
+    // CONTRACT: ADD_BOOK_BATCH — merge framework (file trigger: flat, pre-selected/ordered files)
+    fun sendMergeFiles(
+        type: String,
+        fileName: String,
+        files: List<PutioFile>,
+        title: String,
+        author: String,
+        calibreBookUuid: String? = null,
+        tags: String? = null,
+        isProtected: Boolean = false,
+        assembleBook: Boolean = false,
+    ) {
         trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -1318,48 +1359,179 @@ class FilesViewModel @Inject constructor(
                 return@launch
             }
 
-            val putioToken = settingsRepository.authTokenFlow.first()
             val tempId = files.first().id
-
-            val resolvedFiles = mutableListOf<AudiobookFile>()
+            val resolvedPairs = mutableListOf<Pair<PutioFile, AudiobookFile>>()
             for ((index, file) in files.withIndex()) {
                 calibreRepository.updatePrepareProgress((index + 1) to files.size)
-                when {
-                    file.isSynced -> {
-                        val localPath = calibreRepository.readStubLocalPath(file)
-                        if (localPath == null) {
-                            _snackbarMessage.value = "Could not resolve local path for ${file.displayName} — stub may be missing. Please retry."
-                            return@launch
-                        }
-                        resolvedFiles.add(AudiobookFile(file.syncedFileId, file.displayName, use_local = true, local_path = localPath))
-                    }
-                    file.isLan -> {
-                        val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
-                        if (conn == null || file.lanPath == null) {
-                            _snackbarMessage.value = "LAN connection info missing for ${file.name}"
-                            return@launch
-                        }
-                        resolvedFiles.add(AudiobookFile(file.id, file.name, smb_path = buildUncPath(conn.host, conn.shareName, file.lanPath)))
-                    }
-                    else -> {
-                        val downloadUrl = filesRepository.getDownloadUrl(putioToken, file.id)
-                        resolvedFiles.add(AudiobookFile(file.id, file.name, download_url = downloadUrl))
-                    }
-                }
+                val resolved = resolveForMerge(file) ?: return@launch
+                resolvedPairs.add(file to resolved)
             }
             calibreRepository.updateUploadProgress(tempId, null)
 
-            calibreRepository.addImagePdfPackTransfer(
-                files = files.zip(resolvedFiles).map { (f, rf) -> f to rf },
+            calibreRepository.addMergeTransfer(
+                type = type,
+                fileName = fileName,
+                files = resolvedPairs,
                 title = title,
                 author = author,
                 googleAccount = googleAccount,
+                assembleBook = assembleBook,
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
                 isProtected = isProtected,
             )
-            _snackbarMessage.value = "Image PDF transfer requested"
+            _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
         } }
+    }
+
+    // CONTRACT: ADD_BOOK_BATCH — merge framework (folder trigger: subfolders-as-chapters)
+    fun sendMergeGroups(
+        type: String,
+        fileName: String,
+        groups: List<MergeCandidateGroup>,
+        title: String,
+        author: String,
+        calibreBookUuid: String? = null,
+        tags: String? = null,
+        isProtected: Boolean = false,
+        assembleBook: Boolean = false,
+    ) {
+        trackTransferPreparation { viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+
+            val allFiles = groups.flatMap { it.files }
+            if (allFiles.isEmpty()) {
+                _snackbarMessage.value = "No files to merge"
+                return@launch
+            }
+            val tempId = allFiles.first().file.id
+            var done = 0
+            val resolvedGroups = mutableListOf<Pair<String, List<Pair<PutioFile, AudiobookFile>>>>()
+            for (group in groups) {
+                val resolvedPairs = mutableListOf<Pair<PutioFile, AudiobookFile>>()
+                for (candidate in group.files) {
+                    done++
+                    calibreRepository.updatePrepareProgress(done to allFiles.size)
+                    val resolved = resolveForMerge(candidate.file) ?: return@launch
+                    resolvedPairs.add(candidate.file to resolved)
+                }
+                resolvedGroups.add(group.label to resolvedPairs)
+            }
+            calibreRepository.updateUploadProgress(tempId, null)
+
+            calibreRepository.addMergeTransfer(
+                type = type,
+                fileName = fileName,
+                groups = resolvedGroups,
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+                assembleBook = assembleBook,
+                calibreBookUuid = calibreBookUuid,
+                tags = tags,
+                isProtected = isProtected,
+            )
+            _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
+        } }
+    }
+
+    // Pending "what process" choice for a folder merge trigger (flatten vs. subfolders-as-chapters),
+    // shown before the recursive scan starts. Content-type selection isn't asked yet — images is the
+    // only engine wired into the merge framework so far (see CONTRACTS.md "Merge framework").
+    private val _mergeProcessChoice = MutableStateFlow<MergeProcessChoice?>(null)
+    val mergeProcessChoice: StateFlow<MergeProcessChoice?> = _mergeProcessChoice.asStateFlow()
+
+    fun openMergeProcessChoice(folder: PutioFile, assembleBook: Boolean = false) {
+        _mergeProcessChoice.value = MergeProcessChoice(folder, assembleBook)
+    }
+
+    fun dismissMergeProcessChoice() {
+        _mergeProcessChoice.value = null
+    }
+
+    private val _mergePickerState = MutableStateFlow<MergePickerState?>(null)
+    val mergePickerState: StateFlow<MergePickerState?> = _mergePickerState.asStateFlow()
+
+    fun startMergeFolderScan(mode: MergeProcessMode) {
+        val folder = _mergeProcessChoice.value?.folder ?: return
+        _mergeProcessChoice.value = null
+        viewModelScope.launch {
+            _mergePickerState.value = MergePickerState.Loading(folder.name)
+            try {
+                when (mode) {
+                    MergeProcessMode.FLATTEN -> {
+                        val files = fetchMergeFilesRecursively(folder) { MetadataUtils.isImage(it.displayName) }
+                        _mergePickerState.value = if (files.isEmpty())
+                            MergePickerState.Error(folder.name, "No images found in this folder")
+                        else MergePickerState.ReadyFlat(folder.name, files)
+                    }
+                    MergeProcessMode.SUBFOLDERS_AS_CHAPTERS -> {
+                        val groups = fetchMergeSubfolderGroups(folder) { MetadataUtils.isImage(it.displayName) }
+                        _mergePickerState.value = if (groups.isEmpty())
+                            MergePickerState.Error(folder.name, "No subfolders with images found in this folder")
+                        else MergePickerState.ReadyGrouped(folder.name, groups)
+                    }
+                }
+            } catch (e: Exception) {
+                val name = (_mergePickerState.value as? MergePickerState.Loading)?.folderName ?: folder.name
+                _mergePickerState.value = MergePickerState.Error(name, e.message ?: "Failed to scan folder")
+            }
+        }
+    }
+
+    fun dismissMergePicker() {
+        _mergePickerState.value = null
+    }
+
+    // Generic version of fetchAudioFilesRecursively, parameterized by content-type predicate
+    // instead of being audio-specific, for the merge framework's "flatten" process mode.
+    private suspend fun fetchMergeFilesRecursively(folder: PutioFile, matches: (PutioFile) -> Boolean): List<MergeCandidateFile> {
+        val token = settingsRepository.authTokenFlow.first()
+        val result = mutableListOf<MergeCandidateFile>()
+        val queue = ArrayDeque<Pair<PutioFile, String>>()
+        queue.add(folder to "")
+        while (queue.isNotEmpty()) {
+            val (currentFolder, prefix) = queue.removeFirst()
+            val children = when {
+                currentFolder.isLocal -> currentFolder.localUri?.let { localFilesRepository.listLocalFolder(it).first() } ?: emptyList()
+                currentFolder.isLan -> currentFolder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, currentFolder.lanPath ?: "", includeAllFiles = true).last() } ?: emptyList()
+                else -> filesRepository.listFiles(token, currentFolder.id).dataOrNull()?.first ?: emptyList()
+            }
+            for (child in children) {
+                val childPath = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+                if (child.isFolder) {
+                    queue.add(child to childPath)
+                } else if (matches(child)) {
+                    result.add(MergeCandidateFile(child, childPath))
+                }
+            }
+        }
+        result.sortBy { it.relativePath }
+        return result
+    }
+
+    // One level of subfolders, each recursively scanned for matching files — the merge
+    // framework's "subfolders as chapters" process mode.
+    private suspend fun fetchMergeSubfolderGroups(folder: PutioFile, matches: (PutioFile) -> Boolean): List<MergeCandidateGroup> {
+        val token = settingsRepository.authTokenFlow.first()
+        val children = when {
+            folder.isLocal -> folder.localUri?.let { localFilesRepository.listLocalFolder(it).first() } ?: emptyList()
+            folder.isLan -> folder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, folder.lanPath ?: "", includeAllFiles = true).last() } ?: emptyList()
+            else -> filesRepository.listFiles(token, folder.id).dataOrNull()?.first ?: emptyList()
+        }
+        val subfolders = children.filter { it.isFolder }.sortedBy { it.name }
+        val groups = mutableListOf<MergeCandidateGroup>()
+        for (subfolder in subfolders) {
+            val files = fetchMergeFilesRecursively(subfolder, matches)
+            if (files.isNotEmpty()) {
+                groups.add(MergeCandidateGroup(subfolder.name, files))
+            }
+        }
+        return groups
     }
 
     // CONTRACT: CBR_PDF_PACK

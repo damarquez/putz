@@ -90,6 +90,7 @@ fun FileItem(
     onSendToPlexamp: (PutioFile) -> Unit,
     onCreateM4bFromFolder: (PutioFile) -> Unit,
     onAssembleFolderToCalibre: (PutioFile) -> Unit,
+    onMergeFolder: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
     onRequestPrioritySync: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
@@ -427,7 +428,8 @@ fun FileItem(
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Send to Calibre as PDF") },
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Merge") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -561,6 +563,15 @@ fun FileItem(
                                     onClick = {
                                         showMenu = false
                                         onSendToPlexamp(file)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Merge") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onMergeFolder(file)
                                     },
                                 )
                             }

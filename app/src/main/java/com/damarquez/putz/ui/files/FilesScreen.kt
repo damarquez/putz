@@ -303,6 +303,12 @@ fun FilesScreen(
     var selectedCbrFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
     val cbrPdfPackSheetState = rememberModalBottomSheetState()
 
+    // Merge framework flow (folder trigger) — see CONTRACTS.md "Merge framework"
+    var selectedMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
+    var selectedMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
+    val mergeProcessChoice by viewModel.mergeProcessChoice.collectAsState()
+    val mergePickerState by viewModel.mergePickerState.collectAsState()
+
     // Folder audio picker flow (Create M4B from folder)
     var folderForAudioPicker by remember { mutableStateOf<PutioFile?>(null) }
     var selectedFolderAudioFiles by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
@@ -621,9 +627,75 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedImageFiles = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendImagePdfPack(imageFiles, title, author, uuid, tags, isProtected)
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("IMAGE_PDF_PACK", "Book.pdf", imageFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedImageFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    // Merge framework (folder trigger) — see CONTRACTS.md "Merge framework"
+    mergeProcessChoice?.let { choice ->
+        MergeProcessChoiceDialog(
+            folderName = choice.folder.name,
+            onDismiss = { viewModel.dismissMergeProcessChoice() },
+            onChoose = { mode -> viewModel.startMergeFolderScan(mode) },
+        )
+    }
+
+    mergePickerState?.let { pickerState ->
+        if (selectedMergeFlatFiles == null && selectedMergeGroups == null) {
+            MergePackSheet(
+                state = pickerState,
+                onDismiss = { viewModel.dismissMergePicker() },
+                onConfirmFlat = { files ->
+                    selectedMergeFlatFiles = files
+                    viewModel.dismissMergePicker()
+                },
+                onConfirmGrouped = { groups ->
+                    selectedMergeGroups = groups
+                    viewModel.dismissMergePicker()
+                },
+            )
+        }
+    }
+
+    if (selectedMergeFlatFiles != null) {
+        val candidates = selectedMergeFlatFiles!!
+        val (initialTitle, initialAuthor) = remember(candidates) {
+            MetadataUtils.extractMetadata(candidates.first().file.displayName)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${candidates.size} images → PDF",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedMergeFlatFiles = null },
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("IMAGE_PDF_PACK", "Book.pdf", candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
+                selectedMergeFlatFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (selectedMergeGroups != null) {
+        val groups = selectedMergeGroups!!
+        val (initialTitle, initialAuthor) = remember(groups) {
+            MetadataUtils.extractMetadata(groups.first().label)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${groups.size} chapters → PDF",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedMergeGroups = null },
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeGroups("IMAGE_PDF_PACK", "Book.pdf", groups, title, author, uuid, tags, isProtected, assembleBook)
+                selectedMergeGroups = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1417,6 +1489,7 @@ fun FilesScreen(
                                             selectedFileForAssembly = folder to true
                                             viewModel.openFolderAudioPicker(folder)
                                         },
+                                        onMergeFolder = { folder -> viewModel.openMergeProcessChoice(folder) },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },

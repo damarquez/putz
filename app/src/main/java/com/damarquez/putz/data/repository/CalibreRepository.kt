@@ -47,7 +47,8 @@ data class CalibreBatchItem(
     val putio_file_id: Long,
     val fileName: String,
     val download_url: String? = null,
-    val files: List<AudiobookFile>? = null, // For PACK and PDF_PACK
+    val files: List<AudiobookFile>? = null, // For PACK, PDF_PACK, IMAGE_PDF_PACK, etc. — flat/unchaptered
+    val groups: List<PackGroup>? = null, // For IMAGE_PDF_PACK (merge framework) — chaptered, one PackGroup per chapter
     val archiveMode: String? = null, // For ARCHIVE
     val use_local: Boolean? = null,  // When true the daemon uses the local synced copy; no download needed
     val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
@@ -80,6 +81,13 @@ data class AudiobookFile(
     val smb_path: String? = null,
     val use_local: Boolean? = null,
     val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
+)
+
+// CONTRACT: ADD_BOOK_BATCH — merge framework (see CONTRACTS.md "Merge framework")
+@Serializable
+data class PackGroup(
+    val label: String, // Chapter/bookmark title in the merged output
+    val files: List<AudiobookFile>,
 )
 
 // CONTRACT: response schema, GLOBAL_STATUS_PROBE
@@ -850,39 +858,50 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    // CONTRACT: IMAGE_PDF_PACK
-    suspend fun addImagePdfPackTransfer(
-        files: List<Pair<PutioFile, AudiobookFile>>,
+    // CONTRACT: ADD_BOOK_BATCH — merge framework. Generic transfer-submission for any
+    // merge/pack item type built on MergePackJob (see CONTRACTS.md "Merge framework").
+    // Pass either `files` (flat) or `groups` (chaptered), not both.
+    suspend fun addMergeTransfer(
+        type: String,
+        fileName: String,
+        files: List<Pair<PutioFile, AudiobookFile>>? = null,
+        groups: List<Pair<String, List<Pair<PutioFile, AudiobookFile>>>>? = null,
         title: String,
         author: String,
         googleAccount: String,
+        assembleBook: Boolean = false,
         calibreBookUuid: String? = null,
         tags: String? = null,
         isProtected: Boolean = false,
     ) {
-        val primaryFileId = files.first().first.id
-        val imageFiles = files.map { (_, f) -> f }
+        val allPairs = files ?: groups?.flatMap { (_, groupFiles) -> groupFiles }
+            ?: error("addMergeTransfer requires either files or groups")
+        val primaryFileId = allPairs.first().first.id
+
         val initialItem = CalibreBatchItem(
-            type = "IMAGE_PDF_PACK",
+            type = type,
             putio_file_id = primaryFileId,
-            fileName = "Book.pdf",
-            files = imageFiles,
+            fileName = fileName,
+            files = files?.map { (_, f) -> f },
+            groups = groups?.map { (label, groupFiles) -> PackGroup(label, groupFiles.map { (_, f) -> f }) },
             protected = if (isProtected) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = primaryFileId,
-            fileName = "Book.pdf",
+            fileName = fileName,
             title = title,
             author = author,
-            status = CalibreTransferStatus.PENDING,
+            status = if (assembleBook) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = imageFiles.joinToString(",") { it.putio_file_id.toString() },
+            allPutioFileIds = allPairs.joinToString(",") { (_, f) -> f.putio_file_id.toString() },
             batchData = json.encodeToString(listOf(initialItem)),
             calibreBookUuid = calibreBookUuid,
             tags = tags?.ifBlank { null },
         )
         calibreTransferDao.insertTransfer(transfer)
+
+        if (assembleBook) return
 
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
