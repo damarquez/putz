@@ -88,8 +88,6 @@ fun FileItem(
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
     onSendToPlexamp: (PutioFile) -> Unit,
-    onCreateM4bFromFolder: (PutioFile) -> Unit,
-    onAssembleFolderToCalibre: (PutioFile) -> Unit,
     onMergeFolder: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
     onRequestPrioritySync: (PutioFile) -> Unit,
@@ -439,7 +437,8 @@ fun FileItem(
                             }
                             if (isMultiTrackAudio) {
                                 DropdownMenuItem(
-                                    text = { Text("Send to Calibre as M4B") },
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Merge") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -459,7 +458,8 @@ fun FileItem(
                             }
                             if (isPdf) {
                                 DropdownMenuItem(
-                                    text = { Text("Send to Calibre as joined PDF") },
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Merge") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -479,7 +479,8 @@ fun FileItem(
                             }
                             if (isEpub) {
                                 DropdownMenuItem(
-                                    text = { Text("Send to Calibre as joined EPUB") },
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Merge") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -489,7 +490,8 @@ fun FileItem(
                             }
                             if (isComicArchive) {
                                 DropdownMenuItem(
-                                    text = { Text("Send to Calibre as PDF") },
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Merge") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -539,24 +541,6 @@ fun FileItem(
                             }
                             val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden
                             if (isRegularFolder) {
-                                DropdownMenuItem(
-                                    text = { Text("Assemble audiobook") },
-                                    enabled = isGoogleSignedIn,
-                                    onClick = {
-                                        showMenu = false
-                                        onCreateM4bFromFolder(file)
-                                    },
-                                )
-                                if (hasPendingAssemblies) {
-                                    DropdownMenuItem(
-                                        text = { Text("Add to existing assembly") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleFolderToCalibre(file)
-                                        },
-                                    )
-                                }
                                 DropdownMenuItem(
                                     text = { Text("Send folder to Plexamp") },
                                     enabled = isGoogleSignedIn,

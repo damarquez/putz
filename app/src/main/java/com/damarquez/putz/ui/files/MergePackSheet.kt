@@ -32,10 +32,41 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
+ * "What content type" choice for a folder merge trigger — which engine to run, since a
+ * folder may contain more than one mergeable file type. Shown before the process-mode
+ * question (flatten vs. subfolders-as-chapters). Uses a plain column of options (rather
+ * than AlertDialog's 2-slot confirm/dismiss buttons) so it scales past two engines.
+ */
+@Composable
+fun MergeContentTypeChoiceDialog(
+    folderName: String,
+    onDismiss: () -> Unit,
+    onChoose: (MergeContentType) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Merge \"$folderName\"") },
+        text = {
+            Column {
+                Text("What should be merged?")
+                Spacer(Modifier.height(8.dp))
+                for (type in MergeContentType.entries) {
+                    TextButton(onClick = { onChoose(type) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(type.label, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/**
  * "What process" choice for a folder merge trigger: flatten everything into one
  * unchaptered list, or treat each immediate subfolder as a chapter. Shown before the
- * recursive scan starts. There is no "what kind of file" question yet since images is
- * the only engine wired into the merge framework so far.
+ * recursive scan starts.
  */
 @Composable
 fun MergeProcessChoiceDialog(

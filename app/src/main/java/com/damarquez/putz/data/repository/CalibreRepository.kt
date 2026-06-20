@@ -81,6 +81,13 @@ data class AudiobookFile(
     val smb_path: String? = null,
     val use_local: Boolean? = null,
     val local_path: String? = null,  // CONTRACT: stub convention — relative path within the local mirror repo
+    // CONTRACT: merge framework — archive-entry source (see CONTRACTS.md "Merge framework").
+    // When set, download_url/smb_path/use_local/local_path above resolve the CONTAINING ARCHIVE
+    // (named archive_file_name), and the daemon extracts archive_entry from it server-side —
+    // fileName above stays this entry's own name, not the archive's. No producer wires these yet;
+    // this is the forward-compatible hook for a future "merge from inside an archive" UI.
+    val archive_entry: String? = null,
+    val archive_file_name: String? = null,
 )
 
 // CONTRACT: ADD_BOOK_BATCH — merge framework (see CONTRACTS.md "Merge framework")
@@ -717,147 +724,6 @@ class CalibreRepository @Inject constructor(
         ))
     }
 
-    suspend fun addAudiobookPackTransfer(
-        files: List<Pair<PutioFile, AudiobookFile>>,
-        title: String,
-        author: String,
-        googleAccount: String,
-        assembleBook: Boolean = false,
-        customFileName: String? = null,
-        calibreBookUuid: String? = null,
-        isUploading: Boolean = false,
-        localUrisJson: String? = null,
-        tags: String? = null,
-        isProtected: Boolean = false,
-    ) {
-        val primaryFileId = files.first().first.id
-        val audioFiles = files.map { (_, audioFile) -> audioFile }
-        val fileName = customFileName ?: "${files.size} MP3 files"
-        val initialItem = CalibreBatchItem(
-            type = "PACK",
-            putio_file_id = primaryFileId,
-            fileName = fileName,
-            files = audioFiles,
-            protected = if (isProtected) true else null,
-        )
-        val transfer = CalibreTransferEntity(
-            putioFileId = primaryFileId,
-            fileName = fileName,
-            title = title,
-            author = author,
-            status = when {
-                assembleBook -> CalibreTransferStatus.ASSEMBLED
-                isUploading -> CalibreTransferStatus.UPLOADING
-                else -> CalibreTransferStatus.PENDING
-            },
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = audioFiles.joinToString(",") { it.putio_file_id.toString() },
-            batchData = json.encodeToString(listOf(initialItem)),
-            calibreBookUuid = calibreBookUuid,
-            localUrisJson = localUrisJson,
-            tags = tags?.ifBlank { null },
-        )
-        calibreTransferDao.insertTransfer(transfer)
-
-        if (assembleBook || isUploading || audioFiles.any { it.download_url == null && it.smb_path == null && it.use_local != true }) return
-
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = CalibreBatchRequest(
-            putio_file_id = primaryFileId,
-            title = title,
-            author = author,
-            items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-            tags = tags?.ifBlank { null },
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$primaryFileId.json", jsonStr)
-
-        if (gDriveId != null) {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.REQUESTED,
-                gdriveRequestId = gDriveId,
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr
-            ))
-        } else {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.FAILED,
-                errorMessage = "Failed to upload to GDrive",
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr
-            ))
-        }
-    }
-
-    suspend fun addPdfPackTransfer(
-        files: List<Pair<PutioFile, AudiobookFile>>,
-        title: String,
-        author: String,
-        googleAccount: String,
-        assembleBook: Boolean = false,
-        calibreBookUuid: String? = null,
-        tags: String? = null,
-        isProtected: Boolean = false,
-    ) {
-        val primaryFileId = files.first().first.id
-        val pdfFiles = files.map { (_, f) -> f }
-        val initialItem = CalibreBatchItem(
-            type = "PDF_PACK",
-            putio_file_id = primaryFileId,
-            fileName = "Book.pdf",
-            files = pdfFiles,
-            protected = if (isProtected) true else null,
-        )
-        val transfer = CalibreTransferEntity(
-            putioFileId = primaryFileId,
-            fileName = "Book.pdf",
-            title = title,
-            author = author,
-            status = if (assembleBook) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = pdfFiles.joinToString(",") { it.putio_file_id.toString() },
-            batchData = json.encodeToString(listOf(initialItem)),
-            calibreBookUuid = calibreBookUuid,
-            tags = tags?.ifBlank { null },
-        )
-        calibreTransferDao.insertTransfer(transfer)
-
-        if (assembleBook) return
-
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = CalibreBatchRequest(
-            putio_file_id = primaryFileId,
-            title = title,
-            author = author,
-            items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-            tags = tags?.ifBlank { null },
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
-
-        if (gDriveId != null) {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.REQUESTED,
-                gdriveRequestId = gDriveId,
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr,
-            ))
-        } else {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.FAILED,
-                errorMessage = "Failed to upload to GDrive",
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr,
-            ))
-        }
-    }
-
     // CONTRACT: ADD_BOOK_BATCH — merge framework. Generic transfer-submission for any
     // merge/pack item type built on MergePackJob (see CONTRACTS.md "Merge framework").
     // Pass either `files` (flat) or `groups` (chaptered), not both.
@@ -871,6 +737,8 @@ class CalibreRepository @Inject constructor(
         googleAccount: String,
         assembleBook: Boolean = false,
         calibreBookUuid: String? = null,
+        isUploading: Boolean = false,
+        localUrisJson: String? = null,
         tags: String? = null,
         isProtected: Boolean = false,
     ) {
@@ -891,17 +759,27 @@ class CalibreRepository @Inject constructor(
             fileName = fileName,
             title = title,
             author = author,
-            status = if (assembleBook) CalibreTransferStatus.ASSEMBLED else CalibreTransferStatus.PENDING,
+            status = when {
+                assembleBook -> CalibreTransferStatus.ASSEMBLED
+                isUploading -> CalibreTransferStatus.UPLOADING
+                else -> CalibreTransferStatus.PENDING
+            },
             addedAt = System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = allPairs.joinToString(",") { (_, f) -> f.putio_file_id.toString() },
             batchData = json.encodeToString(listOf(initialItem)),
             calibreBookUuid = calibreBookUuid,
+            localUrisJson = localUrisJson,
             tags = tags?.ifBlank { null },
         )
         calibreTransferDao.insertTransfer(transfer)
 
-        if (assembleBook) return
+        // isUploading: a placeholder row for an on-device-local-file pack — the caller uploads
+        // each file afterward and finishes via updateMergeAfterUpload/removeTransfer+re-add.
+        // If the app is killed mid-upload, GlobalSyncViewModel's orphan detector resumes from
+        // localUrisJson via restartOrphanedUpload (CONTRACT: works for any item type, since it
+        // only reads files/fileName generically from the stored batchData).
+        if (assembleBook || isUploading || allPairs.any { (_, f) -> f.download_url == null && f.smb_path == null && f.use_local != true }) return
 
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
@@ -933,142 +811,24 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    // CONTRACT: CBR_PDF_PACK
-    suspend fun addCbrPdfPackTransfer(
-        files: List<Pair<PutioFile, AudiobookFile>>,
-        title: String,
-        author: String,
-        googleAccount: String,
-        calibreBookUuid: String? = null,
-        tags: String? = null,
-        isProtected: Boolean = false,
-    ) {
-        val primaryFileId = files.first().first.id
-        val cbrFiles = files.map { (_, f) -> f }
-        val initialItem = CalibreBatchItem(
-            type = "CBR_PDF_PACK",
-            putio_file_id = primaryFileId,
-            fileName = "Book.pdf",
-            files = cbrFiles,
-            protected = if (isProtected) true else null,
-        )
-        val transfer = CalibreTransferEntity(
-            putioFileId = primaryFileId,
-            fileName = "Book.pdf",
-            title = title,
-            author = author,
-            status = CalibreTransferStatus.PENDING,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = cbrFiles.joinToString(",") { it.putio_file_id.toString() },
-            batchData = json.encodeToString(listOf(initialItem)),
-            calibreBookUuid = calibreBookUuid,
-            tags = tags?.ifBlank { null },
-        )
-        calibreTransferDao.insertTransfer(transfer)
-
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = CalibreBatchRequest(
-            putio_file_id = primaryFileId,
-            title = title,
-            author = author,
-            items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-            tags = tags?.ifBlank { null },
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
-
-        if (gDriveId != null) {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.REQUESTED,
-                gdriveRequestId = gDriveId,
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr,
-            ))
-        } else {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.FAILED,
-                errorMessage = "Failed to upload to GDrive",
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr,
-            ))
-        }
-    }
-
-    suspend fun addEpubPackTransfer(
-        files: List<Pair<PutioFile, AudiobookFile>>,
-        title: String,
-        author: String,
-        googleAccount: String,
-        calibreBookUuid: String? = null,
-        tags: String? = null,
-        isProtected: Boolean = false,
-    ) {
-        val primaryFileId = files.first().first.id
-        val epubFiles = files.map { (_, f) -> f }
-        val initialItem = CalibreBatchItem(
-            type = "EPUB_PACK",
-            putio_file_id = primaryFileId,
-            fileName = "Book.epub",
-            files = epubFiles,
-            protected = if (isProtected) true else null,
-        )
-        val transfer = CalibreTransferEntity(
-            putioFileId = primaryFileId,
-            fileName = "Book.epub",
-            title = title,
-            author = author,
-            status = CalibreTransferStatus.PENDING,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = epubFiles.joinToString(",") { it.putio_file_id.toString() },
-            batchData = json.encodeToString(listOf(initialItem)),
-            calibreBookUuid = calibreBookUuid,
-            tags = tags?.ifBlank { null },
-        )
-        calibreTransferDao.insertTransfer(transfer)
-
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = CalibreBatchRequest(
-            putio_file_id = primaryFileId,
-            title = title,
-            author = author,
-            items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-            tags = tags?.ifBlank { null },
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
-
-        if (gDriveId != null) {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.REQUESTED,
-                gdriveRequestId = gDriveId,
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr,
-            ))
-        } else {
-            calibreTransferDao.updateTransfer(transfer.copy(
-                status = CalibreTransferStatus.FAILED,
-                errorMessage = "Failed to upload to GDrive",
-                lastUpdatedAt = System.currentTimeMillis(),
-                lastRequestPayload = jsonStr,
-            ))
-        }
-    }
-
-    suspend fun updateAudiobookAfterUpload(tempId: Long, audioFiles: List<AudiobookFile>, googleAccount: String) {
+    // CONTRACT: merge framework. Finishes a multi-file on-device-local-upload placeholder
+    // transfer (status=UPLOADING, created via addMergeTransfer's isUploading branch) once
+    // every file has a real put.io download_url. The item `type`/`fileName` are read back from
+    // the placeholder's own stored batchData rather than a hardcoded type, so this works for
+    // any merge engine, not just PACK — restartOrphanedUpload (the app-kill resume path) relies
+    // on that genericity too.
+    suspend fun updateMergeAfterUpload(tempId: Long, resolvedFiles: List<AudiobookFile>, googleAccount: String) {
         val transfer = calibreTransferDao.getTransferById(tempId) ?: return
+        val placeholderItem = transfer.batchData?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it).firstOrNull() } catch (e: Exception) { null }
+        }
 
-        val newPrimaryId = audioFiles.first().putio_file_id
+        val newPrimaryId = resolvedFiles.first().putio_file_id
         val items = listOf(CalibreBatchItem(
-            type = "PACK",
+            type = placeholderItem?.type ?: "PACK",
             putio_file_id = newPrimaryId,
-            fileName = transfer.fileName,
-            files = audioFiles
+            fileName = placeholderItem?.fileName ?: transfer.fileName,
+            files = resolvedFiles
         ))
 
         val appId = settingsRepository.getOrCreateAppId()
@@ -1087,7 +847,7 @@ class CalibreRepository @Inject constructor(
         calibreTransferDao.deleteTransfer(tempId)
         calibreTransferDao.insertTransfer(transfer.copy(
             putioFileId = newPrimaryId,
-            allPutioFileIds = audioFiles.joinToString(",") { it.putio_file_id.toString() },
+            allPutioFileIds = resolvedFiles.joinToString(",") { it.putio_file_id.toString() },
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
@@ -1114,6 +874,17 @@ class CalibreRepository @Inject constructor(
 
         // Auto-apply _bkp when the incoming SINGLE item's format is already taken in the assembly.
         // Reject if both the base slot and the _bkp slot are already occupied.
+        //
+        // TODO: this format-collision/auto-_bkp check only runs for type == "SINGLE". A second
+        // PACK/PDF_PACK/EPUB_PACK/CBR_PDF_PACK/etc. item with the same output format (e.g. two
+        // "Assemble into fused PDF" calls with different files) is currently accepted here with
+        // no warning, but the daemon's _item_format_key dedup in process_book_batch
+        // (putz_manager.py) silently drops every item after the first one with the same output
+        // format when the assembly is finally dispatched — so the append looks successful here
+        // but the second PDF/M4B/etc. selection is lost. Generalize this check to all item types
+        // (same one-base + one-_bkp rule, keyed by output format) so it's rejected/flagged here
+        // instead of silently dropped later. ".pdf_bkp" is a distinct format from ".pdf" and
+        // should keep being allowed alongside one ".pdf".
         var effectiveItem = newItem
         if (newItem.type == "SINGLE") {
             val ext = newItem.fileName.substringAfterLast('.', "")
@@ -2560,8 +2331,8 @@ class CalibreRepository @Inject constructor(
             val (uploadedId, downloadUrl, _) = uploadedFiles.first()
             updateTransferAfterUpload(transfer.putioFileId, uploadedId, downloadUrl, googleAccount)
         } else {
-            val audioFiles = uploadedFiles.map { (id, url, name) -> AudiobookFile(id, name, url) }
-            updateAudiobookAfterUpload(transfer.putioFileId, audioFiles, googleAccount)
+            val resolvedFiles = uploadedFiles.map { (id, url, name) -> AudiobookFile(id, name, url) }
+            updateMergeAfterUpload(transfer.putioFileId, resolvedFiles, googleAccount)
         }
     }
 }

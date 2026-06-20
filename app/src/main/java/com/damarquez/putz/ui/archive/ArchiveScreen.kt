@@ -79,6 +79,13 @@ import com.damarquez.putz.data.model.ArchiveEntry
 import com.damarquez.putz.data.model.ExtractionProgress
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileIconProvider
+import com.damarquez.putz.ui.files.MergeCandidateFile
+import com.damarquez.putz.ui.files.MergeCandidateGroup
+import com.damarquez.putz.ui.files.MergeContentType
+import com.damarquez.putz.ui.files.MergeContentTypeChoiceDialog
+import com.damarquez.putz.ui.files.MergePackSheet
+import com.damarquez.putz.ui.files.MergeProcessChoiceDialog
+import com.damarquez.putz.ui.files.matchesName
 import com.damarquez.putz.ui.theme.LocalAppStyling
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +102,12 @@ fun ArchiveScreen(
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val context = LocalContext.current
     var showDestinationPicker by remember { mutableStateOf(false) }
+
+    // Merge framework — see CONTRACTS.md "Merge framework" / archive-sourced files
+    val archiveMergeChoice by viewModel.archiveMergeChoice.collectAsState()
+    val archiveMergePickerState by viewModel.archiveMergePickerState.collectAsState()
+    var selectedArchiveMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
+    var selectedArchiveMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
 
     // Calibre send state
     var entryForCalibre by remember { mutableStateOf<ArchiveEntry?>(null) }
@@ -241,6 +254,11 @@ fun ArchiveScreen(
                                     onLongClick = { viewModel.toggleSelection(entry) },
                                     onSendToCalibre = if (!entry.isDirectory) ({ entryForCalibre = entry }) else null,
                                     onAssembleBook = if (!entry.isDirectory) ({ entryForAssembly = entry }) else null,
+                                    onMerge = when {
+                                        entry.isDirectory -> ({ viewModel.openArchiveMergeChoice(entry) })
+                                        MergeContentType.entries.any { it.matchesName(entry.name) } -> ({ viewModel.openArchiveFileMerge(entry) })
+                                        else -> null
+                                    },
                                 )
                                 HorizontalDivider()
                             }
@@ -329,6 +347,79 @@ fun ArchiveScreen(
                 }
             }
         }
+    }
+
+    // Merge framework (directory trigger) — see CONTRACTS.md "Merge framework"
+    archiveMergeChoice?.let { choice ->
+        if (choice.contentType == null) {
+            MergeContentTypeChoiceDialog(
+                folderName = choice.dirName,
+                onDismiss = { viewModel.dismissArchiveMergeChoice() },
+                onChoose = { type -> viewModel.chooseArchiveMergeContentType(type) },
+            )
+        } else {
+            MergeProcessChoiceDialog(
+                folderName = choice.dirName,
+                onDismiss = { viewModel.dismissArchiveMergeChoice() },
+                onChoose = { mode -> viewModel.startArchiveMergeFolderScan(mode) },
+            )
+        }
+    }
+
+    // Merge framework (file + directory trigger) — picker/reorder sheet
+    archiveMergePickerState?.let { pickerState ->
+        if (selectedArchiveMergeFlatFiles == null && selectedArchiveMergeGroups == null) {
+            MergePackSheet(
+                state = pickerState,
+                onDismiss = { viewModel.dismissArchiveMergePicker() },
+                onConfirmFlat = { files ->
+                    selectedArchiveMergeFlatFiles = files
+                    viewModel.dismissArchiveMergePicker()
+                },
+                onConfirmGrouped = { groups ->
+                    selectedArchiveMergeGroups = groups
+                    viewModel.dismissArchiveMergePicker()
+                },
+            )
+        }
+    }
+
+    if (selectedArchiveMergeFlatFiles != null) {
+        val candidates = selectedArchiveMergeFlatFiles!!
+        val (initialTitle, initialAuthor) = remember(candidates) {
+            MetadataUtils.extractMetadata(candidates.first().file.displayName)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${candidates.size} files",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedArchiveMergeFlatFiles = null },
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook)
+                selectedArchiveMergeFlatFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+        )
+    }
+
+    if (selectedArchiveMergeGroups != null) {
+        val groups = selectedArchiveMergeGroups!!
+        val (initialTitle, initialAuthor) = remember(groups) {
+            MetadataUtils.extractMetadata(groups.first().label)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${groups.size} chapters",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedArchiveMergeGroups = null },
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook)
+                selectedArchiveMergeGroups = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+        )
     }
 
     // Calibre send sheet
@@ -649,6 +740,7 @@ private fun ArchiveEntryItem(
     onLongClick: () -> Unit,
     onSendToCalibre: (() -> Unit)? = null,
     onAssembleBook: (() -> Unit)? = null,
+    onMerge: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -730,7 +822,7 @@ private fun ArchiveEntryItem(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
-        } else if (!isSelectionMode && (onSendToCalibre != null || onAssembleBook != null)) {
+        } else if (!isSelectionMode && (onSendToCalibre != null || onAssembleBook != null || onMerge != null)) {
             Box {
                 IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -750,6 +842,13 @@ private fun ArchiveEntryItem(
                         DropdownMenuItem(
                             text = { Text("Assemble book") },
                             onClick = { menuExpanded = false; onAssembleBook() },
+                        )
+                    }
+                    if (onMerge != null) {
+                        // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                        DropdownMenuItem(
+                            text = { Text("Merge") },
+                            onClick = { menuExpanded = false; onMerge() },
                         )
                     }
                 }

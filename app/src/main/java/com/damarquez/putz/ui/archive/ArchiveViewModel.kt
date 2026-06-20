@@ -13,12 +13,19 @@ import com.damarquez.putz.data.model.ExtractionProgress
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.ArchiveRepository
+import com.damarquez.putz.data.repository.AudiobookFile
 import com.damarquez.putz.data.repository.CalibreBatchItem
 import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.data.repository.LanFilesRepository
 import com.damarquez.putz.settings.SettingsRepository
+import com.damarquez.putz.ui.files.MergeCandidateFile
+import com.damarquez.putz.ui.files.MergeCandidateGroup
+import com.damarquez.putz.ui.files.MergeContentType
+import com.damarquez.putz.ui.files.MergePickerState
+import com.damarquez.putz.ui.files.MergeProcessMode
+import com.damarquez.putz.ui.files.matchesName
 import com.damarquez.putz.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -58,6 +65,17 @@ data class LanPickerState(
     val pathStack: List<String> = emptyList(),
     val dirs: List<PutioFile> = emptyList(),
     val isLoading: Boolean = true,
+)
+
+/**
+ * Pending directory-trigger merge choice (walking through "what content type" then "what
+ * process" before scanning starts) for a directory inside this archive — see
+ * FilesViewModel.MergeProcessChoice for the put.io-folder equivalent.
+ */
+data class ArchiveMergeChoice(
+    val dirPath: String,
+    val dirName: String,
+    val contentType: MergeContentType? = null,
 )
 
 sealed class ArchiveUiState {
@@ -133,6 +151,19 @@ class ArchiveViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val uploadProgress: StateFlow<Map<Long, String>> = calibreRepository.uploadProgress
+
+    // Merge framework — see CONTRACTS.md "Merge framework" / archive-sourced files.
+    // Mirrors FilesViewModel's mergeProcessChoice/mergePickerState pattern, but scans the
+    // already-loaded allEntries list locally instead of making API calls.
+    private val _archiveMergeChoice = MutableStateFlow<ArchiveMergeChoice?>(null)
+    val archiveMergeChoice: StateFlow<ArchiveMergeChoice?> = _archiveMergeChoice.asStateFlow()
+
+    private val _archiveMergePickerState = MutableStateFlow<MergePickerState?>(null)
+    val archiveMergePickerState: StateFlow<MergePickerState?> = _archiveMergePickerState.asStateFlow()
+
+    // The content type backing _archiveMergePickerState — read at confirm time to pick the
+    // right item type/fileName, since archiveMergeChoice is cleared once the scan starts.
+    private var activeArchiveMergeContentType: MergeContentType? = null
 
     init {
         load()
@@ -596,6 +627,258 @@ class ArchiveViewModel @Inject constructor(
             _snackbarMessage.value = "Failed: $msg"
             _calibreSendStatus.value = CalibreSendStatus.Error(msg)
         }
+    }
+
+    // ---- Merge framework: trigger merges from inside this archive, treating it like a folder ----
+    // See CONTRACTS.md "Merge framework" / archive-sourced files. Reuses the merge framework's
+    // Compose dialogs (MergeContentTypeChoiceDialog/MergeProcessChoiceDialog/MergePackSheet) and
+    // MergeCandidateFile/MergeCandidateGroup/MergePickerState types unchanged — none of
+    // FilesViewModel.kt/resolveForMerge/sendMergeFiles is touched, so the already-verified
+    // put.io-folder merge flow is unaffected.
+
+    // Wraps an archive entry as a PutioFile purely so MergeCandidateFile/MergePackSheet can
+    // display it (file.displayName) — never resolved as a real local/remote/synced file. lanPath
+    // (otherwise meaningless here; isLan stays false so nothing treats this as a real LAN file)
+    // carries this entry's full in-archive path so sendArchiveMerge can recover it directly
+    // instead of re-deriving prefixes from MergeCandidateGroup's labels.
+    private fun ArchiveEntry.asMergeCandidatePutioFile(): PutioFile =
+        PutioFile(id = path.hashCode().toLong(), name = name, lanPath = path)
+
+    private fun scanArchiveFlat(rootDir: String, allEntries: List<ArchiveEntry>, matches: (ArchiveEntry) -> Boolean): List<MergeCandidateFile> {
+        val prefix = if (rootDir.isEmpty()) "" else "$rootDir/"
+        return allEntries
+            .filter { !it.isDirectory && it.path.startsWith(prefix) && matches(it) }
+            .sortedBy { it.path }
+            .map { MergeCandidateFile(it.asMergeCandidatePutioFile(), it.path.removePrefix(prefix)) }
+    }
+
+    private fun scanArchiveGrouped(rootDir: String, allEntries: List<ArchiveEntry>, matches: (ArchiveEntry) -> Boolean): List<MergeCandidateGroup> {
+        val subdirs = directChildren(rootDir, allEntries).filter { it.isDirectory }.sortedBy { it.name.lowercase() }
+        return subdirs.mapNotNull { dir ->
+            val files = scanArchiveFlat(dir.path, allEntries, matches)
+            if (files.isEmpty()) null else MergeCandidateGroup(dir.name, files)
+        }
+    }
+
+    /** File-trigger entry point: pick siblings of the same content type in the current directory. */
+    fun openArchiveFileMerge(entry: ArchiveEntry) {
+        val contentType = MergeContentType.entries.firstOrNull { it.matchesName(entry.name) } ?: return
+        val s = _uiState.value as? ArchiveUiState.Success ?: return
+        activeArchiveMergeContentType = contentType
+        val siblings = scanArchiveFlat(s.currentDir, s.allEntries) { contentType.matchesName(it.name) }
+        _archiveMergePickerState.value = MergePickerState.ReadyFlat(
+            s.currentDir.ifEmpty { archiveName }, siblings,
+        )
+    }
+
+    /** Directory-trigger entry point: ask content type, then flatten vs. subfolders-as-chapters. */
+    fun openArchiveMergeChoice(dir: ArchiveEntry) {
+        _archiveMergeChoice.value = ArchiveMergeChoice(dirPath = dir.path, dirName = dir.name)
+    }
+
+    fun chooseArchiveMergeContentType(type: MergeContentType) {
+        _archiveMergeChoice.value = _archiveMergeChoice.value?.copy(contentType = type)
+    }
+
+    fun dismissArchiveMergeChoice() {
+        _archiveMergeChoice.value = null
+    }
+
+    fun startArchiveMergeFolderScan(mode: MergeProcessMode) {
+        val choice = _archiveMergeChoice.value ?: return
+        val contentType = choice.contentType ?: return
+        val s = _uiState.value as? ArchiveUiState.Success ?: return
+        _archiveMergeChoice.value = null
+        activeArchiveMergeContentType = contentType
+        when (mode) {
+            MergeProcessMode.FLATTEN -> {
+                val files = scanArchiveFlat(choice.dirPath, s.allEntries) { contentType.matchesName(it.name) }
+                _archiveMergePickerState.value = if (files.isEmpty())
+                    MergePickerState.Error(choice.dirName, "No ${contentType.label.lowercase()} found in this folder")
+                else MergePickerState.ReadyFlat(choice.dirName, files)
+            }
+            MergeProcessMode.SUBFOLDERS_AS_CHAPTERS -> {
+                val groups = scanArchiveGrouped(choice.dirPath, s.allEntries) { contentType.matchesName(it.name) }
+                _archiveMergePickerState.value = if (groups.isEmpty())
+                    MergePickerState.Error(choice.dirName, "No subfolders with ${contentType.label.lowercase()} found in this folder")
+                else MergePickerState.ReadyGrouped(choice.dirName, groups)
+            }
+        }
+    }
+
+    fun dismissArchiveMergePicker() {
+        _archiveMergePickerState.value = null
+    }
+
+    private data class ResolvedArchiveForMerge(
+        val fileId: Long, val smbPath: String?, val useLocal: Boolean,
+        val localPath: String?, val downloadUrl: String?,
+    )
+
+    // Resolves the CONTAINING archive's own source fields once for the whole send (not per
+    // entry) — same three-way model every other merge file uses. Unlike sendEntryToCalibreViaDaemon
+    // (ARCHIVE_ENTRY), a remote/unsynced Putio archive is NOT routed to the client-upload fallback
+    // here: the daemon's _resolve_item_source already supports download_url generically, so the
+    // merge framework's archive_entry resolution can download the archive once server-side instead.
+    private suspend fun resolveArchiveForMerge(): ResolvedArchiveForMerge? = when (val src = source) {
+        is ArchiveSource.Lan -> {
+            val conn = lanFilesRepository.getConnectionById(src.connectionId)
+            if (conn == null) {
+                _snackbarMessage.value = "LAN connection not found"
+                null
+            } else {
+                ResolvedArchiveForMerge(System.currentTimeMillis(), buildUncPath(conn.host, conn.shareName, src.path), false, null, null)
+            }
+        }
+        is ArchiveSource.Mirror -> {
+            val localPath = calibreRepository.readStubLocalPathById(putioStubFileId)
+            ResolvedArchiveForMerge(putioFileId, null, true, localPath, null)
+        }
+        is ArchiveSource.Putio -> {
+            if (putioIsSynced) {
+                val localPath = calibreRepository.readStubLocalPathById(putioStubFileId)
+                ResolvedArchiveForMerge(putioFileId, null, true, localPath, null)
+            } else {
+                ResolvedArchiveForMerge(src.fileId, null, false, null, src.downloadUrl)
+            }
+        }
+        is ArchiveSource.Local -> null // handled separately via sendArchiveMergeViaUpload
+    }
+
+    /** Confirm step for both the file-trigger and directory-trigger archive merge flows. */
+    fun sendArchiveMerge(
+        files: List<MergeCandidateFile>?,
+        groups: List<MergeCandidateGroup>?,
+        title: String,
+        author: String,
+        calibreBookUuid: String? = null,
+        tags: String? = null,
+        isProtected: Boolean = false,
+        assembleBook: Boolean = false,
+    ) {
+        val contentType = activeArchiveMergeContentType ?: return
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+
+            if (source is ArchiveSource.Local) {
+                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount)
+                return@launch
+            }
+
+            val resolved = resolveArchiveForMerge() ?: return@launch
+            val dummyArchiveFile = PutioFile(id = resolved.fileId, name = archiveName)
+
+            fun toAudiobookFile(candidate: MergeCandidateFile) = AudiobookFile(
+                putio_file_id = resolved.fileId,
+                fileName = candidate.file.name,
+                download_url = resolved.downloadUrl,
+                smb_path = resolved.smbPath,
+                use_local = if (resolved.useLocal) true else null,
+                local_path = resolved.localPath,
+                archive_entry = candidate.file.lanPath!!,
+                archive_file_name = archiveName,
+            )
+
+            calibreRepository.addMergeTransfer(
+                type = contentType.itemType,
+                fileName = contentType.outputFileName,
+                files = files?.map { dummyArchiveFile to toAudiobookFile(it) },
+                groups = groups?.map { g -> g.label to g.files.map { dummyArchiveFile to toAudiobookFile(it) } },
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+                assembleBook = assembleBook,
+                calibreBookUuid = calibreBookUuid,
+                tags = tags,
+                isProtected = isProtected,
+            )
+            _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
+        }
+    }
+
+    // Fallback for ArchiveSource.Local (a raw on-device archive — the daemon has no access to it
+    // at all): extract each chosen entry client-side via extractEntryToTempFile (already used by
+    // sendEntryToCalibre for the single-entry case), then upload it to put.io like a normal
+    // on-device file. Once uploaded, no archive_entry/archive_file_name is needed — it's a plain file.
+    private suspend fun sendArchiveMergeViaUpload(
+        contentType: MergeContentType,
+        files: List<MergeCandidateFile>?,
+        groups: List<MergeCandidateGroup>?,
+        title: String,
+        author: String,
+        calibreBookUuid: String?,
+        tags: String?,
+        isProtected: Boolean,
+        assembleBook: Boolean,
+        googleAccount: String,
+    ) {
+        val flatCandidates = files ?: groups?.flatMap { it.files } ?: emptyList()
+        if (flatCandidates.isEmpty()) {
+            _snackbarMessage.value = "No files to merge"
+            return
+        }
+        val s = _uiState.value as? ArchiveUiState.Success
+        val allEntries = s?.allEntries ?: emptyList()
+        val entryByPath = allEntries.associateBy { it.path }
+
+        val putioToken = settingsRepository.authTokenFlow.first()
+        val rootFiles = filesRepository.listFiles(putioToken, 0).dataOrNull()?.first ?: emptyList()
+        var tempFolderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
+        if (tempFolderId == null) {
+            val r = filesRepository.createFolder(putioToken, 0, ".putz_attachments")
+            tempFolderId = (r as? NetworkResult.Success)?.data?.id
+        }
+        if (tempFolderId == null) {
+            _snackbarMessage.value = "Could not find or create .putz_attachments"
+            return
+        }
+
+        val uploaded = mutableMapOf<String, AudiobookFile>() // keyed by entry path
+        for ((index, candidate) in flatCandidates.withIndex()) {
+            val entryPath = candidate.file.lanPath!!
+            val entry = entryByPath[entryPath] ?: continue
+            calibreRepository.updatePrepareProgress((index + 1) to flatCandidates.size)
+            val tempFile = try {
+                archiveRepository.extractEntryToTempFile(source, entry, context.cacheDir)
+            } catch (e: Exception) {
+                _snackbarMessage.value = "Failed to extract ${entry.name}: ${e.message}"
+                return
+            }
+            try {
+                val uploadResult = filesRepository.uploadFileFromStream(
+                    putioToken, tempFolderId, entry.name, tempFile.inputStream(), tempFile.length(),
+                ) { _, _ -> }
+                if (uploadResult !is NetworkResult.Success) {
+                    _snackbarMessage.value = "Upload failed for ${entry.name}"
+                    return
+                }
+                val downloadUrl = filesRepository.getDownloadUrl(putioToken, uploadResult.data.id)
+                uploaded[entryPath] = AudiobookFile(uploadResult.data.id, entry.name, download_url = downloadUrl)
+            } finally {
+                tempFile.delete()
+            }
+        }
+        calibreRepository.updatePrepareProgress(null)
+
+        val dummyArchiveFile = PutioFile(id = System.currentTimeMillis(), name = archiveName)
+        calibreRepository.addMergeTransfer(
+            type = contentType.itemType,
+            fileName = contentType.outputFileName,
+            files = files?.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } },
+            groups = groups?.map { g -> g.label to g.files.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } } },
+            title = title,
+            author = author,
+            googleAccount = googleAccount,
+            assembleBook = assembleBook,
+            calibreBookUuid = calibreBookUuid,
+            tags = tags,
+            isProtected = isProtected,
+        )
+        _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
     }
 
     private fun buildUncPath(host: String, shareName: String, path: String): String {

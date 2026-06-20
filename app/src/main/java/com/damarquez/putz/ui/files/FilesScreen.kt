@@ -284,7 +284,6 @@ fun FilesScreen(
     // PDF pack flow
     var pdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedPdfFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-    var selectedPdfFilesForAssembly by remember { mutableStateOf<List<PutioFile>?>(null) }
     var isPdfPackAssembly by remember { mutableStateOf(false) }
     val pdfPackSheetState = rememberModalBottomSheetState()
 
@@ -306,39 +305,26 @@ fun FilesScreen(
     // Merge framework flow (folder trigger) — see CONTRACTS.md "Merge framework"
     var selectedMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
+    var mergeWantsNewBook by remember { mutableStateOf<Boolean?>(null) } // null = undecided (only asked when pendingAssemblies is non-empty)
     val mergeProcessChoice by viewModel.mergeProcessChoice.collectAsState()
     val mergePickerState by viewModel.mergePickerState.collectAsState()
 
-    // Folder audio picker flow (Create M4B from folder)
-    var folderForAudioPicker by remember { mutableStateOf<PutioFile?>(null) }
-    var selectedFolderAudioFiles by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
-    val folderAudioPickerState by viewModel.folderAudioPickerState.collectAsState()
-
-    // Assembly flow
+    // Assembly flow ("append into an existing pending book" — mechanism #2). SINGLE/ebook
+    // appends use selectedFileForAssembly directly; any merge-engine append (PACK/PDF_PACK/
+    // IMAGE_PDF_PACK/CBR_PDF_PACK) goes through mergeAssemblyPayload + appendMergeToAssembly.
     val pendingAssemblies by viewModel.pendingAssemblies.collectAsState()
-    var selectedFileForAssembly by remember { mutableStateOf<Pair<PutioFile, Boolean>?>(null) } // File, isPack
+    var selectedFileForAssembly by remember { mutableStateOf<Pair<PutioFile, Boolean>?>(null) } // File, isMergePayload
     var targetAssemblyForFile by remember { mutableStateOf<com.damarquez.putz.data.local.CalibreTransferEntity?>(null) }
-    var selectedPackFilesForAssembly by remember { mutableStateOf<List<PutioFile>?>(null) }
-    var selectedFolderAudioFilesForAssembly by remember { mutableStateOf<List<FolderAudioFile>?>(null) }
-    var isFolderAssembly by remember { mutableStateOf(false) }
+    var mergeAssemblyPayload by remember { mutableStateOf<MergeAssemblyPayload?>(null) }
 
     if (selectedFileForAssembly != null && targetAssemblyForFile == null) {
-        val isPack = selectedFileForAssembly!!.second
-        val canShowPicker = when {
-            isFolderAssembly -> selectedFolderAudioFilesForAssembly != null
-            isPdfPackAssembly -> selectedPdfFilesForAssembly != null
-            isPack -> selectedPackFilesForAssembly != null
-            else -> true
-        }
+        val isMergePayload = selectedFileForAssembly!!.second
+        val canShowPicker = if (isMergePayload) mergeAssemblyPayload != null else true
         if (canShowPicker) {
             AlertDialog(
                 onDismissRequest = {
                     selectedFileForAssembly = null
-                    selectedPackFilesForAssembly = null
-                    selectedFolderAudioFilesForAssembly = null
-                    selectedPdfFilesForAssembly = null
-                    isFolderAssembly = false
-                    isPdfPackAssembly = false
+                    mergeAssemblyPayload = null
                 },
                 title = { Text("Pick Assembly") },
                 text = {
@@ -360,63 +346,44 @@ fun FilesScreen(
                 dismissButton = {
                     TextButton(onClick = {
                         selectedFileForAssembly = null
-                        selectedPackFilesForAssembly = null
-                        selectedFolderAudioFilesForAssembly = null
-                        selectedPdfFilesForAssembly = null
-                        isFolderAssembly = false
-                        isPdfPackAssembly = false
+                        mergeAssemblyPayload = null
                     }) { Text("Cancel") }
                 }
             )
         }
     }
     if (targetAssemblyForFile != null) {
-        val (file, isPack) = selectedFileForAssembly!!
-        val displayName = when {
-            isFolderAssembly -> "${selectedFolderAudioFilesForAssembly?.size} audio files"
-            isPdfPackAssembly -> "${selectedPdfFilesForAssembly?.size} PDF files"
-            isPack -> "${selectedPackFilesForAssembly?.size} audio files"
-            else -> file.displayName
-        }
+        val (file, isMergePayload) = selectedFileForAssembly!!
+        val payload = mergeAssemblyPayload
         CalibreConfirmationSheet(
-            displayName = displayName,
+            displayName = if (isMergePayload) payload?.displayName ?: "" else file.displayName,
             initialTitle = targetAssemblyForFile!!.title,
             initialAuthor = targetAssemblyForFile!!.author,
             onDismiss = {
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
-                selectedPackFilesForAssembly = null
-                selectedFolderAudioFilesForAssembly = null
-                selectedPdfFilesForAssembly = null
-                isFolderAssembly = false
-                isPdfPackAssembly = false
+                mergeAssemblyPayload = null
             },
             onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _, _, _ ->
-                when {
-                    isFolderAssembly -> {
-                        viewModel.appendFolderAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedFolderAudioFilesForAssembly!!, title, author, isAltVersion)
-                    }
-                    isPdfPackAssembly -> {
-                        viewModel.appendPdfPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPdfFilesForAssembly!!, title, author)
-                    }
-                    isPack -> {
-                        viewModel.appendAudiobookPackToAssembly(targetAssemblyForFile!!.putioFileId, selectedPackFilesForAssembly!!, title, author, isAltVersion)
-                    }
-                    else -> {
-                        viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode, isAltVersion)
-                    }
+                if (isMergePayload && payload != null) {
+                    // isAltVersion -> "_bkp" filename only applies to PACK today, matching the
+                    // pre-consolidation appendAudiobookPackToAssembly (appendPdfPackToAssembly
+                    // never exposed this toggle).
+                    val fileName = if (isAltVersion && payload.type == "PACK") "Audiobook.m4b_bkp" else payload.fileName
+                    viewModel.appendMergeToAssembly(
+                        targetAssemblyForFile!!.putioFileId, payload.type, fileName,
+                        files = payload.files, groups = payload.groups, title = title, author = author,
+                    )
+                } else {
+                    viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode, isAltVersion)
                 }
                 targetAssemblyForFile = null
                 selectedFileForAssembly = null
-                selectedPackFilesForAssembly = null
-                selectedFolderAudioFilesForAssembly = null
-                selectedPdfFilesForAssembly = null
-                isFolderAssembly = false
-                isPdfPackAssembly = false
+                mergeAssemblyPayload = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            isArchive = !isPack && MetadataUtils.isArchive(file.displayName),
+            isArchive = !isMergePayload && MetadataUtils.isArchive(file.displayName),
             forceAssemble = true,
             transferRefs = completedTransfersWithUuid,
         )
@@ -469,7 +436,7 @@ fun FilesScreen(
         )
     }
 
-    if (audiobookPackTriggerFile != null && selectedPackFiles == null && selectedPackFilesForAssembly == null) {
+    if (audiobookPackTriggerFile != null && selectedPackFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
         val audioFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
@@ -485,7 +452,7 @@ fun FilesScreen(
             },
             onConfirm = { files ->
                 if (selectedFileForAssembly?.second == true) {
-                    selectedPackFilesForAssembly = files
+                    mergeAssemblyPayload = MergeAssemblyPayload("PACK", "Audiobook.m4b", "${files.size} audio files", files = files)
                 } else {
                     selectedPackFiles = files
                 }
@@ -494,7 +461,7 @@ fun FilesScreen(
         )
     }
 
-    if (pdfPackTriggerFile != null && selectedPdfFiles == null && selectedPdfFilesForAssembly == null) {
+    if (pdfPackTriggerFile != null && selectedPdfFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
         val pdfFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
@@ -513,7 +480,7 @@ fun FilesScreen(
             },
             onConfirm = { files ->
                 if (isPdfPackAssembly) {
-                    selectedPdfFilesForAssembly = files
+                    mergeAssemblyPayload = MergeAssemblyPayload("PDF_PACK", "Book.pdf", "${files.size} PDF files", files = files)
                 } else {
                     selectedPdfFiles = files
                 }
@@ -533,7 +500,8 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             onDismiss = { selectedPackFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
-                viewModel.sendAudiobookPack(packFiles, title, author, assembleBook, isAltVersion, uuid, tags, isProtected)
+                val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
+                viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedPackFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -553,7 +521,7 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             onDismiss = { selectedPdfFiles = null },
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendPdfPack(pdfFiles, title, author, assembleBook, uuid, tags, isProtected)
+                viewModel.sendMergeFiles("PDF_PACK", "Book.pdf", pdfFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedPdfFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -589,8 +557,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedEpubFiles = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendEpubPack(epubFiles, title, author, uuid, tags, isProtected)
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("EPUB_PACK", "Book.epub", epubFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedEpubFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -638,12 +606,22 @@ fun FilesScreen(
     }
 
     // Merge framework (folder trigger) — see CONTRACTS.md "Merge framework"
+    val activeMergeContentType by viewModel.activeMergeContentType.collectAsState()
+
     mergeProcessChoice?.let { choice ->
-        MergeProcessChoiceDialog(
-            folderName = choice.folder.name,
-            onDismiss = { viewModel.dismissMergeProcessChoice() },
-            onChoose = { mode -> viewModel.startMergeFolderScan(mode) },
-        )
+        if (choice.contentType == null) {
+            MergeContentTypeChoiceDialog(
+                folderName = choice.folder.name,
+                onDismiss = { viewModel.dismissMergeProcessChoice() },
+                onChoose = { type -> viewModel.chooseMergeContentType(type) },
+            )
+        } else {
+            MergeProcessChoiceDialog(
+                folderName = choice.folder.name,
+                onDismiss = { viewModel.dismissMergeProcessChoice() },
+                onChoose = { mode -> viewModel.startMergeFolderScan(mode) },
+            )
+        }
     }
 
     mergePickerState?.let { pickerState ->
@@ -663,19 +641,58 @@ fun FilesScreen(
         }
     }
 
-    if (selectedMergeFlatFiles != null) {
+    // When there's at least one pending assembly, ask "new book or add to an existing one"
+    // before going further — same choice the old per-engine "Assemble into X" menu items
+    // offered, now available for any merge engine's folder trigger.
+    if ((selectedMergeFlatFiles != null || selectedMergeGroups != null) && mergeWantsNewBook == null && pendingAssemblies.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = {
+                selectedMergeFlatFiles = null
+                selectedMergeGroups = null
+            },
+            title = { Text("New book or existing assembly?") },
+            text = { Text("Merge now into a new book, or add it as a format to a book that's already being assembled?") },
+            confirmButton = {
+                TextButton(onClick = { mergeWantsNewBook = true }) { Text("New book") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    val contentType = activeMergeContentType ?: MergeContentType.IMAGES
+                    val flatFiles = selectedMergeFlatFiles
+                    val groups = selectedMergeGroups
+                    val anchorFile = flatFiles?.firstOrNull()?.file ?: groups?.firstOrNull()?.files?.firstOrNull()?.file
+                    if (anchorFile != null) {
+                        val displayName = if (flatFiles != null) "${flatFiles.size} ${contentType.label.lowercase()} → ${contentType.outputFileName}"
+                            else "${groups!!.size} chapters → ${contentType.outputFileName}"
+                        mergeAssemblyPayload = MergeAssemblyPayload(
+                            contentType.itemType, contentType.outputFileName, displayName,
+                            files = flatFiles?.map { it.file }, groups = groups,
+                        )
+                        selectedFileForAssembly = anchorFile to true
+                    }
+                    selectedMergeFlatFiles = null
+                    selectedMergeGroups = null
+                    mergeWantsNewBook = null
+                }) { Text("Existing assembly") }
+            },
+        )
+    }
+
+    if (selectedMergeFlatFiles != null && (mergeWantsNewBook == true || pendingAssemblies.isEmpty())) {
         val candidates = selectedMergeFlatFiles!!
+        val contentType = activeMergeContentType ?: MergeContentType.IMAGES
         val (initialTitle, initialAuthor) = remember(candidates) {
             MetadataUtils.extractMetadata(candidates.first().file.displayName)
         }
         CalibreConfirmationSheet(
-            displayName = "${candidates.size} images → PDF",
+            displayName = "${candidates.size} ${contentType.label.lowercase()} → ${contentType.outputFileName}",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
-            onDismiss = { selectedMergeFlatFiles = null },
+            onDismiss = { selectedMergeFlatFiles = null; mergeWantsNewBook = null },
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles("IMAGE_PDF_PACK", "Book.pdf", candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
+                viewModel.sendMergeFiles(contentType.itemType, contentType.outputFileName, candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeFlatFiles = null
+                mergeWantsNewBook = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -683,19 +700,21 @@ fun FilesScreen(
         )
     }
 
-    if (selectedMergeGroups != null) {
+    if (selectedMergeGroups != null && (mergeWantsNewBook == true || pendingAssemblies.isEmpty())) {
         val groups = selectedMergeGroups!!
+        val contentType = activeMergeContentType ?: MergeContentType.IMAGES
         val (initialTitle, initialAuthor) = remember(groups) {
             MetadataUtils.extractMetadata(groups.first().label)
         }
         CalibreConfirmationSheet(
-            displayName = "${groups.size} chapters → PDF",
+            displayName = "${groups.size} chapters → ${contentType.outputFileName}",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
-            onDismiss = { selectedMergeGroups = null },
+            onDismiss = { selectedMergeGroups = null; mergeWantsNewBook = null },
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeGroups("IMAGE_PDF_PACK", "Book.pdf", groups, title, author, uuid, tags, isProtected, assembleBook)
+                viewModel.sendMergeGroups(contentType.itemType, contentType.outputFileName, groups, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeGroups = null
+                mergeWantsNewBook = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -731,8 +750,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedCbrFiles = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendCbrPdfPack(cbrFiles, title, author, uuid, tags, isProtected)
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("CBR_PDF_PACK", "Book.pdf", cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedCbrFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -822,51 +841,6 @@ fun FilesScreen(
         )
     }
 
-    folderAudioPickerState?.let { pickerState ->
-        FolderAudioPickerSheet(
-            state = pickerState,
-            onDismiss = {
-                viewModel.dismissFolderAudioPicker()
-                if (isFolderAssembly) {
-                    selectedFileForAssembly = null
-                    isFolderAssembly = false
-                }
-            },
-            onConfirm = { files ->
-                if (isFolderAssembly) {
-                    selectedFolderAudioFilesForAssembly = files
-                } else {
-                    selectedFolderAudioFiles = files
-                }
-                viewModel.dismissFolderAudioPicker()
-            },
-        )
-    }
-
-    if (selectedFolderAudioFiles != null && folderForAudioPicker != null) {
-        val folder = folderForAudioPicker!!
-        val files = selectedFolderAudioFiles!!
-        val (initialTitle, initialAuthor) = remember(folder) {
-            MetadataUtils.extractMetadata(folder.name)
-        }
-        CalibreConfirmationSheet(
-            displayName = "${files.size} audio files",
-            initialTitle = initialTitle,
-            initialAuthor = initialAuthor,
-            onDismiss = {
-                selectedFolderAudioFiles = null
-                folderForAudioPicker = null
-            },
-            onConfirm = { title, author, _, _, _, _, uuid, _, tags, _ ->
-                viewModel.sendFolderAudiobookPack(files, title, author, uuid, tags)
-                selectedFolderAudioFiles = null
-                folderForAudioPicker = null
-            },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
-            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            transferRefs = completedTransfersWithUuid,
-        )
-    }
 
     // Plex assembly picker for subtitles
     if (subtitleForAssembly != null && targetPlexAssembly == null) {
@@ -1478,16 +1452,6 @@ fun FilesScreen(
                                                 plexampSelectedDestPath = ""
                                                 selectedFilesForPlexamp = listOf(target)
                                             }
-                                        },
-                                        onCreateM4bFromFolder = { folder ->
-                                            folderForAudioPicker = folder
-                                            viewModel.openFolderAudioPicker(folder)
-                                        },
-                                        onAssembleFolderToCalibre = { folder ->
-                                            folderForAudioPicker = folder
-                                            isFolderAssembly = true
-                                            selectedFileForAssembly = folder to true
-                                            viewModel.openFolderAudioPicker(folder)
                                         },
                                         onMergeFolder = { folder -> viewModel.openMergeProcessChoice(folder) },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
