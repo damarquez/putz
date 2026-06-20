@@ -79,6 +79,9 @@ class TransfersViewModel @Inject constructor(
     private val _navigationEvent = MutableStateFlow<TransfersNavigationEvent?>(null)
     val navigationEvent: StateFlow<TransfersNavigationEvent?> = _navigationEvent.asStateFlow()
 
+    private val _resumeError = MutableStateFlow<String?>(null)
+    val resumeError: StateFlow<String?> = _resumeError.asStateFlow()
+
     private var pollJob: Job? = null
 
     init {
@@ -245,8 +248,15 @@ class TransfersViewModel @Inject constructor(
             val token = settingsRepository.authTokenFlow.first()
             val result = transfersRepository.resumeTransfer(token, id)
             println("TransfersViewModel: Resume result: $result")
+            if (result is NetworkResult.Error) {
+                _resumeError.value = result.message
+            }
             refresh()
         }
+    }
+
+    fun onResumeErrorShown() {
+        _resumeError.value = null
     }
 
     fun updateDisplayName(id: Long, newName: String) {

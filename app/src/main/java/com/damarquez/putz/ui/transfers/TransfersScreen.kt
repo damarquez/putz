@@ -68,7 +68,8 @@ fun TransfersScreen(
     val prefillMagnet by viewModel.prefillMagnet.collectAsState()
     val addState by viewModel.addState.collectAsState()
     val navigationEvent by viewModel.navigationEvent.collectAsState()
-    
+    val resumeError by viewModel.resumeError.collectAsState()
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val historySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -85,6 +86,13 @@ fun TransfersScreen(
                 onNavigateToFiles(event.parentId, event.folderName, event.highlightFileId)
                 viewModel.onNavigationHandled()
             }
+        }
+    }
+
+    LaunchedEffect(resumeError) {
+        resumeError?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.onResumeErrorShown()
         }
     }
 

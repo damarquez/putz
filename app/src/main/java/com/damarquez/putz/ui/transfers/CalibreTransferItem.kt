@@ -227,6 +227,7 @@ fun CalibreTransferItem(
                         isAssemblyUploading = isAssemblyUploading,
                         isAppendPending = isPendingAppend,
                         errorMessage = transfer.errorMessage,
+                        probeCount = transfer.probeCount,
                     )
                     Spacer(Modifier.weight(1f))
                     if (isAssembled) {
@@ -318,12 +319,27 @@ fun CalibreTransferItem(
                 },
             )
         }
+        if (transfer.status == CalibreTransferStatus.COMPLETED) {
+            // CONTRACT: probe pattern — re-verifies the book/formats with the daemon and
+            // refreshes assets.db for it, same request the in-progress probe button sends;
+            // pollResponses tells the two apart by the transfer's current status.
+            DropdownMenuItem(
+                text = { Text("Check & refresh") },
+                leadingIcon = {
+                    Icon(Icons.Default.Sync, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onProbe()
+                },
+            )
+        }
     }
     } // Box
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null, probeCount: Int = 0) {
     val (icon, color, label) = when (status) {
         CalibreTransferStatus.UPLOADING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
         CalibreTransferStatus.ASSEMBLED -> if (isAssemblyUploading) {
@@ -343,7 +359,14 @@ private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? =
             }
             Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, progressLabel)
         }
-        CalibreTransferStatus.COMPLETED -> Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, "Completed")
+        CalibreTransferStatus.COMPLETED -> {
+            val label = when {
+                probeCount <= 0 -> "Completed"
+                probeCount == 1 -> "Completed and checked"
+                else -> "Completed and checked ${probeCount}x"
+            }
+            Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, label)
+        }
         CalibreTransferStatus.FAILED -> Triple(Icons.Default.Error, MaterialTheme.colorScheme.error, "Failed")
     }
 

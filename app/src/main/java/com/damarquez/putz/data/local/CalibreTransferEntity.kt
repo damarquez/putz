@@ -57,6 +57,11 @@ data class CalibreTransferEntity(
     /** True once the book has been confirmed present in the synced Calibre library.
      *  COMPLETED transfers show yellow until this is set; then they turn green. */
     val libraryVerified: Boolean = false,
+
+    /** Number of times the user has manually re-checked this COMPLETED transfer via
+     *  "Check & refresh" (CalibreTransferItem.kt) — each check also re-verifies the
+     *  book/formats with the daemon and refreshes its assets.db entry. */
+    val probeCount: Int = 0,
     ) {
 
     fun parsedFileIds(): List<Long> = 

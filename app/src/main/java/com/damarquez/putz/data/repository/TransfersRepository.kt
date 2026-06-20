@@ -80,7 +80,14 @@ class TransfersRepository @Inject constructor(
     suspend fun resumeTransfer(token: String, id: Long): NetworkResult<Unit> = withContext(Dispatchers.IO) {
         println("TransfersRepository: Resuming $id")
         val local = dao.getById(id) ?: return@withContext NetworkResult.Error("Transfer not found")
-        val magnet = local.magnetLink ?: return@withContext NetworkResult.Error("No magnet link for resume")
+        // Most transfers do have a stored magnet link, but some were added outside this flow
+        // (e.g. a .torrent upload, or already on the account before Putz first saw them) and
+        // only ever had `source` populated with a non-magnet value. Their info hash is still
+        // reliably populated though (from put.io's `hash` field), so reconstruct a magnet URI
+        // from it rather than refusing to resume at all.
+        val magnet = local.magnetLink
+            ?: local.infoHash?.let { "magnet:?xt=urn:btih:$it" }
+            ?: return@withContext NetworkResult.Error("Can't resume \"${local.displayName}\" — no magnet link or info hash was ever stored for it")
 
         // Delete the stopped record first so its infoHash doesn't trigger the duplicate guard in addTransfer.
         dao.deleteById(id)

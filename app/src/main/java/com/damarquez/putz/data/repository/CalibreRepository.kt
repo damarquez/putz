@@ -109,6 +109,9 @@ data class CalibreResponse(
     val calibre_book_id: Int? = null,
     val warnings: List<String>? = null,
     val app_id: String? = null, // Echoed from request; used to route responses to the correct device
+    // CONTRACT: probe pattern — echoed by the daemon when this response answers an is_probe
+    // request, so pollResponses can tell a manual re-check apart from a normal completion.
+    val is_probe: Boolean? = null,
 )
 
 data class CalibreBookMatch(
@@ -355,6 +358,18 @@ class CalibreRepository @Inject constructor(
 
     private val _deleteProgress = MutableStateFlow<TransferDeleteProgress?>(null)
     val deleteProgress = _deleteProgress.asStateFlow()
+
+    // CONTRACT: probe pattern. SmartDaemonTransport deliberately dual-submits requests over
+    // LAN+Drive when LAN is reachable, and dual-polls responses from both channels too — by
+    // design (see its kdoc), relying on pollResponses' status-comparison guards to make
+    // re-processing the same logical response harmless. That's fine for a plain status update
+    // (re-applying COMPLETED is a no-op) but pollResponses' is_probe branch counts each delivery
+    // as a check, so a manual probe sent once could be counted twice (once per channel) or more
+    // (if Drive redelivers an un-acked response across a couple of poll cycles before the ack
+    // lands). Track in-flight probes here so only the first response for a given attempt counts;
+    // a duplicate delivery of that same response is then correctly treated as a re-confirmation,
+    // not a new check. Synchronized since LAN/Drive polling can run concurrently.
+    private val probesAwaitingResponse = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
 
     fun updateDeleteProgress(progress: TransferDeleteProgress?) {
         _deleteProgress.value = progress
@@ -1056,8 +1071,24 @@ class CalibreRepository @Inject constructor(
                                 }
                             }
                         } else {
+                            // No real status transition. If this was a manual "Check & refresh"
+                            // probe on an already-completed transfer (CalibreTransferItem.kt),
+                            // record the result: a COMPLETED probe means the daemon re-verified
+                            // the book/formats and refreshed assets.db for it, so bump the
+                            // displayed check count; a FAILED probe means it found a real
+                            // discrepancy, surfaced via errorMessage without touching status
+                            // (the original add did succeed — only this later check disagrees).
+                            // probesAwaitingResponse.remove(...) returns true only for the FIRST
+                            // response matched to this probe attempt — SmartDaemonTransport can
+                            // deliver the same logical response twice (once via LAN, once via
+                            // Drive) by design, so without this a single probe could be counted
+                            // more than once.
+                            val isFirstProbeResponse = response.is_probe == true && probesAwaitingResponse.remove(transfer.putioFileId)
+                            val isCompletedRecheck = isFirstProbeResponse && transfer.status == CalibreTransferStatus.COMPLETED
                             calibreTransferDao.updateTransfer(transfer.copy(
-                                lastUpdatedAt = System.currentTimeMillis()
+                                lastUpdatedAt = System.currentTimeMillis(),
+                                probeCount = if (isCompletedRecheck && newStatus == CalibreTransferStatus.COMPLETED) transfer.probeCount + 1 else transfer.probeCount,
+                                errorMessage = if (isCompletedRecheck && newStatus == CalibreTransferStatus.FAILED) response.error else transfer.errorMessage,
                             ))
                         }
                     }
@@ -2035,6 +2066,9 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
 
+        // Mark this attempt in-flight BEFORE submitting so pollResponses can recognize the
+        // first matching response, however it arrives (LAN or Drive — see probesAwaitingResponse).
+        probesAwaitingResponse.add(transfer.putioFileId)
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_probe_${transfer.putioFileId}.json", jsonStr)
         if (gDriveId != null) {
@@ -2043,6 +2077,7 @@ class CalibreRepository @Inject constructor(
             ))
             return true
         }
+        probesAwaitingResponse.remove(transfer.putioFileId)
         return false
     }
 
