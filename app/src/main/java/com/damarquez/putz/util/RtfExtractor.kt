@@ -9,6 +9,7 @@ private val SKIP_DESTINATIONS = setOf(
     "footnote", "comment", "themedata", "colorschememapping", "latentstyles",
     "rsidtbl", "datastore", "xmlnstbl", "listtable", "listoverridetable",
     "revtbl", "panose", "fldinst", "nonshppict", "shppict", "bkmkstart", "bkmkend",
+    "docvar",
 )
 
 /**
