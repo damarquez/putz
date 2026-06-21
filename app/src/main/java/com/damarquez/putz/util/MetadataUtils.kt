@@ -79,6 +79,11 @@ object MetadataUtils {
         return ext == "epub"
     }
 
+    fun isMobi(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext == "mobi"
+    }
+
     fun isVideo(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS

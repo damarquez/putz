@@ -36,6 +36,7 @@ fun ViewerScreen(
         when (kind) {
             ViewerKind.IMAGE -> ImageViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.EPUB -> EpubViewer(filePath = filePath, modifier = Modifier.padding(padding))
+            ViewerKind.MOBI -> MobiViewer(filePath = filePath, modifier = Modifier.padding(padding))
         }
     }
 }
