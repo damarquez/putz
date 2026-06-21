@@ -8,7 +8,8 @@ enum class ViewerKind {
     EPUB,
     MOBI,
     PDF,
-    TXT;
+    TXT,
+    CBR;
 
     companion object {
         fun forFileName(fileName: String): ViewerKind? = when {
@@ -17,6 +18,7 @@ enum class ViewerKind {
             MetadataUtils.isMobi(fileName) -> MOBI
             MetadataUtils.isPdf(fileName) -> PDF
             MetadataUtils.isTxt(fileName) -> TXT
+            MetadataUtils.isComicArchive(fileName) -> CBR
             else -> null
         }
     }

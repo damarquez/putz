@@ -6,6 +6,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.damarquez.putz.data.archive.LocalArchiveStream
 import com.damarquez.putz.data.archive.MirrorArchiveStream
 import com.damarquez.putz.data.archive.PutioArchiveStream
+import com.damarquez.putz.data.archive.SevenZipInit
 import com.damarquez.putz.data.model.ArchiveDestination
 import com.damarquez.putz.data.model.ArchiveEntry
 import com.damarquez.putz.data.model.ArchiveSource
@@ -23,7 +24,6 @@ import net.sf.sevenzipjbinding.IInStream
 import net.sf.sevenzipjbinding.ISequentialOutStream
 import net.sf.sevenzipjbinding.PropID
 import net.sf.sevenzipjbinding.SevenZip
-import net.sf.sevenzipjbinding.SevenZipNativeInitializationException
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.settings.SettingsRepository
 import java.io.ByteArrayInputStream
@@ -44,15 +44,7 @@ class ArchiveRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val okHttpClient: OkHttpClient,
 ) {
-    private val initialized: Boolean by lazy {
-        try {
-            SevenZip.initSevenZipFromPlatformJAR()
-            true
-        } catch (e: SevenZipNativeInitializationException) {
-            android.util.Log.e("ArchiveRepository", "7-Zip init failed: ${e.message}")
-            false
-        }
-    }
+    private val initialized: Boolean get() = SevenZipInit.initialized
 
     suspend fun listEntries(source: ArchiveSource): List<ArchiveEntry> = withContext(Dispatchers.IO) {
         check(initialized) { "7-Zip native library failed to initialize" }
