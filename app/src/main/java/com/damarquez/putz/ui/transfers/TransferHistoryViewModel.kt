@@ -2,6 +2,7 @@ package com.damarquez.putz.ui.transfers
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.damarquez.putz.data.model.AddTransferOutcome
 import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.TransferHistoryRepository
@@ -45,6 +46,9 @@ class TransferHistoryViewModel @Inject constructor(
 
     private val _searchInFiles = MutableStateFlow(false)
     val searchInFiles: StateFlow<Boolean> = _searchInFiles.asStateFlow()
+
+    private val _actionMessage = MutableStateFlow<String?>(null)
+    val actionMessage: StateFlow<String?> = _actionMessage.asStateFlow()
 
     val filteredEntries: StateFlow<List<HistoryFileEntry>> = combine(_uiState, _searchQuery, _searchInFiles) { state, query, inFiles ->
         val entries = (state as? HistoryUiState.Success)?.entries ?: return@combine emptyList()
@@ -141,5 +145,43 @@ class TransferHistoryViewModel @Inject constructor(
             // device don't overwrite this edit by re-registering the old label.
             entry.putioId?.let { transfersRepository.updateDisplayName(it, newLabel) }
         }
+    }
+
+    fun onActionMessageShown() {
+        _actionMessage.value = null
+    }
+
+    /** Re-submits a history entry's magnet to put.io. If put.io's transfer limit is still
+     *  reached, the entry is flagged QUEUED_OUTSIDE_PUTIO instead of failing outright — same
+     *  retry semantics as [TransfersViewModel.activateQueued], exposed here for any history entry. */
+    fun activateEntry(entry: HistoryFileEntry) {
+        viewModelScope.launch {
+            val token = secureStorage.authTokenFlow.value
+            if (token.isBlank()) {
+                _actionMessage.value = "Not authenticated with put.io"
+                return@launch
+            }
+
+            when (val outcome = transfersRepository.activateHistoryEntry(token, entry)) {
+                is AddTransferOutcome.Added -> {
+                    applyEntryUpdate(entry.copy(status = outcome.merged.transfer.status, putioId = outcome.merged.transfer.id))
+                    _actionMessage.value = "Added to put.io"
+                }
+                is AddTransferOutcome.Queued -> {
+                    applyEntryUpdate(outcome.entry)
+                    _actionMessage.value = "Still at the transfer limit — queued for later"
+                }
+                is AddTransferOutcome.Failed -> {
+                    _actionMessage.value = outcome.message
+                }
+            }
+        }
+    }
+
+    private fun applyEntryUpdate(entry: HistoryFileEntry) {
+        val current = _uiState.value as? HistoryUiState.Success ?: return
+        _uiState.value = HistoryUiState.Success(
+            current.entries.map { if (it.infoHash == entry.infoHash) entry else it }
+        )
     }
 }

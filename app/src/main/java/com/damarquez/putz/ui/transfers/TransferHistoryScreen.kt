@@ -1,7 +1,9 @@
 package com.damarquez.putz.ui.transfers
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +26,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,6 +37,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -47,12 +53,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +89,7 @@ fun TransferHistoryScreen(
     val filteredEntries by viewModel.filteredEntries.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchInFiles by viewModel.searchInFiles.collectAsState()
+    val actionMessage by viewModel.actionMessage.collectAsState()
 
     var isSearchActive by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
@@ -88,10 +98,18 @@ fun TransferHistoryScreen(
     var editLabelValue by remember { mutableStateOf("") }
     var selectedEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(isSearchActive) {
         if (isSearchActive) runCatching { searchFocusRequester.requestFocus() }
         else viewModel.setSearchQuery("")
+    }
+
+    LaunchedEffect(actionMessage) {
+        actionMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.onActionMessageShown()
+        }
     }
 
     if (editingEntry != null) {
@@ -216,6 +234,7 @@ fun TransferHistoryScreen(
                 )
             }
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
         when (val state = uiState) {
@@ -265,6 +284,7 @@ fun TransferHistoryScreen(
                                 HistoryEntryRow(
                                     entry = entry,
                                     onClick = { selectedEntry = entry },
+                                    onActivate = { viewModel.activateEntry(entry) },
                                 )
                                 HorizontalDivider()
                             }
@@ -276,14 +296,39 @@ fun TransferHistoryScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryEntryRow(
     entry: HistoryFileEntry,
     onClick: () -> Unit,
+    onActivate: () -> Unit,
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                showMenu = true
+            },
+        ),
         headlineContent = {
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+            ) {
+                if (entry.magnetUri != null) {
+                    DropdownMenuItem(
+                        text = { Text("Activate") },
+                        onClick = {
+                            showMenu = false
+                            onActivate()
+                        },
+                    )
+                }
+            }
             Text(
                 text = entry.resolvedName ?: entry.label,
                 maxLines = 1,
