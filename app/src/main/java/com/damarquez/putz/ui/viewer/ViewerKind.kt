@@ -14,10 +14,12 @@ enum class ViewerKind {
     CBR,
     RTF,
     DOCX,
-    DOC;
+    DOC,
+    AUDIO;
 
     companion object {
         fun forFileName(fileName: String): ViewerKind? = when {
+            MetadataUtils.isAudio(fileName) -> AUDIO
             MetadataUtils.isImage(fileName) -> IMAGE
             MetadataUtils.isEpub(fileName) -> EPUB
             // AZW3 (KF8) and AZW (pre-KF8) text records use the same PalmDOC layout as legacy MOBI — same extractor/viewer.

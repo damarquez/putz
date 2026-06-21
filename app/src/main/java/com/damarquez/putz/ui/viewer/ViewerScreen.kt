@@ -43,6 +43,7 @@ fun ViewerScreen(
             ViewerKind.RTF -> RtfViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.DOCX -> DocxViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.DOC -> DocViewer(filePath = filePath, modifier = Modifier.padding(padding))
+            ViewerKind.AUDIO -> AudioViewer(filePath = filePath, modifier = Modifier.padding(padding))
         }
     }
 }

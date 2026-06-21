@@ -358,7 +358,10 @@ fun FileItem(
                             )
                             HorizontalDivider()
                         }
-                        if (!file.isFolder && !file.isTrash && !isRegularRemote) {
+                        // Audio previews stream progressively (HTTP range requests), so unlike other
+                        // formats they don't need a full download/sync first — safe to allow even
+                        // on a plain remote put.io file that was never synced to the LAN server.
+                        if (!file.isFolder && !file.isTrash && (!isRegularRemote || isAudio)) {
                             DropdownMenuItem(
                                 text = { Text("Preview") },
                                 onClick = {

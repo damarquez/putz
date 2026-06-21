@@ -292,6 +292,38 @@ class FilesViewModel @Inject constructor(
     }
 
     fun previewFile(file: PutioFile) {
+        // Audio streams progressively via ExoPlayer instead of going through the generic preview
+        // path below, which would otherwise wait for the *entire* file to download/copy first —
+        // fine for a small image, unworkable for a multi-GB audiobook. No isPreviewLoading wait
+        // either: the player screen shows its own buffering state. isLocal/isLan files are already
+        // fast local/already-copied access, so they keep using the path below.
+        if (MetadataUtils.isAudio(file.displayName) && !file.isLocal && !file.isLan) {
+            viewModelScope.launch {
+                if (file.isSynced) {
+                    if (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) {
+                        _snackbarMessage.value = "Preview not available — LAN connection required"
+                        return@launch
+                    }
+                    // The daemon's /mirror/file endpoint serves with Werkzeug range-request
+                    // support (conditional=True), so ExoPlayer can seek without re-fetching
+                    // from the start — same as streaming straight from put.io below.
+                    val host = settingsRepository.lanHostFlow.first().trim()
+                    val port = settingsRepository.lanPortFlow.first()
+                    val localPath = calibreRepository.readStubLocalPath(file)
+                    val url = buildString {
+                        append("http://$host:$port/api/mirror/file/${file.syncedFileId}")
+                        if (localPath != null) append("?local_path=${Uri.encode(localPath)}")
+                    }
+                    _viewerEvent.emit(ViewerEvent(ViewerKind.AUDIO, file.displayName, url))
+                } else {
+                    val token = settingsRepository.authTokenFlow.first()
+                    val url = filesRepository.getDownloadUrl(token, file.id)
+                    _viewerEvent.emit(ViewerEvent(ViewerKind.AUDIO, file.displayName, url))
+                }
+            }
+            return
+        }
+
         viewModelScope.launch {
             val current = _uiState.value
             if (current is FilesUiState.Success) {
@@ -353,9 +385,14 @@ class FilesViewModel @Inject constructor(
                 }
 
                 // Real content wins over the (possibly wrong) extension — old ebook/scene
-                // releases frequently mislabel plain text/RTF as .doc, or worse.
-                val viewerKind = withContext(Dispatchers.IO) { ViewerKind.forFile(localFile) }
-                    ?: ViewerKind.forFileName(file.displayName)
+                // releases frequently mislabel plain text/RTF as .doc, or worse. Audio has no
+                // content-sniffing signature, so it's checked by extension first.
+                val viewerKind = if (MetadataUtils.isAudio(file.displayName)) {
+                    ViewerKind.AUDIO
+                } else {
+                    withContext(Dispatchers.IO) { ViewerKind.forFile(localFile) }
+                        ?: ViewerKind.forFileName(file.displayName)
+                }
                 if (viewerKind != null) {
                     _viewerEvent.emit(ViewerEvent(viewerKind, file.displayName, localFile.absolutePath))
                 } else {

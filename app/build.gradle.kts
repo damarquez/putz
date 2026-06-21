@@ -124,6 +124,8 @@ dependencies {
     implementation(libs.google.http.client.gson)
     implementation(libs.smbj)
     implementation(libs.sevenzipjbinding)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.common)
 
     debugImplementation(libs.compose.ui.tooling)
 }
