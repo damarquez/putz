@@ -106,6 +106,11 @@ object MetadataUtils {
         return ext == "rtf"
     }
 
+    fun isDocx(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext == "docx"
+    }
+
     fun isVideo(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS

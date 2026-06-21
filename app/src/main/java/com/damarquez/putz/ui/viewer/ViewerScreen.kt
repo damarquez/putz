@@ -41,6 +41,7 @@ fun ViewerScreen(
             ViewerKind.TXT -> TxtViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.CBR -> CbrViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.RTF -> RtfViewer(filePath = filePath, modifier = Modifier.padding(padding))
+            ViewerKind.DOCX -> DocxViewer(filePath = filePath, modifier = Modifier.padding(padding))
         }
     }
 }

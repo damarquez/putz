@@ -44,7 +44,7 @@ object EpubExtractor {
             parser.setInput(input, null)
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
-                if (eventType == XmlPullParser.START_TAG && parser.name == "rootfile") {
+                if (eventType == XmlPullParser.START_TAG && parser.name?.substringAfter(':') == "rootfile") {
                     return parser.getAttributeValue(null, "full-path")
                 }
                 eventType = parser.next()
@@ -65,7 +65,7 @@ object EpubExtractor {
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
                 if (eventType == XmlPullParser.START_TAG) {
-                    when (parser.name) {
+                    when (parser.name?.substringAfter(':')) {
                         "item" -> {
                             val id = parser.getAttributeValue(null, "id")
                             val href = parser.getAttributeValue(null, "href")

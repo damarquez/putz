@@ -10,7 +10,8 @@ enum class ViewerKind {
     PDF,
     TXT,
     CBR,
-    RTF;
+    RTF,
+    DOCX;
 
     companion object {
         fun forFileName(fileName: String): ViewerKind? = when {
@@ -22,6 +23,7 @@ enum class ViewerKind {
             MetadataUtils.isTxt(fileName) -> TXT
             MetadataUtils.isComicArchive(fileName) -> CBR
             MetadataUtils.isRtf(fileName) -> RTF
+            MetadataUtils.isDocx(fileName) -> DOCX
             else -> null
         }
     }
