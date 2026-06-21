@@ -15,8 +15,8 @@ enum class ViewerKind {
         fun forFileName(fileName: String): ViewerKind? = when {
             MetadataUtils.isImage(fileName) -> IMAGE
             MetadataUtils.isEpub(fileName) -> EPUB
-            // AZW3 (KF8) text records use the same PalmDOC layout as legacy MOBI — same extractor/viewer.
-            MetadataUtils.isMobi(fileName) || MetadataUtils.isAzw3(fileName) -> MOBI
+            // AZW3 (KF8) and AZW (pre-KF8) text records use the same PalmDOC layout as legacy MOBI — same extractor/viewer.
+            MetadataUtils.isMobi(fileName) || MetadataUtils.isAzw3(fileName) || MetadataUtils.isAzw(fileName) -> MOBI
             MetadataUtils.isPdf(fileName) -> PDF
             MetadataUtils.isTxt(fileName) -> TXT
             MetadataUtils.isComicArchive(fileName) -> CBR

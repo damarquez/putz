@@ -95,6 +95,12 @@ object MetadataUtils {
         return ext == "azw3"
     }
 
+    /** AZW — pre-KF8 Kindle format; identical Mobipocket PalmDB container to .mobi, just renamed by Amazon. */
+    fun isAzw(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext == "azw"
+    }
+
     fun isVideo(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS
