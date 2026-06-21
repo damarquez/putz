@@ -1574,7 +1574,7 @@ class CalibreRepository @Inject constructor(
     }
 
     @Serializable
-    private data class StubContent(val local_path: String? = null)
+    private data class StubContent(val local_path: String? = null, val file_size: Long? = null)
 
     // CONTRACT: stub convention — read local_path from stub JSON by file ID; for use when PutioFile is unavailable
     suspend fun readStubLocalPathById(stubFileId: Long): String? {
@@ -1597,6 +1597,28 @@ class CalibreRepository @Inject constructor(
             val result = putioApiClient.downloadFileAsString(token, file.id)
             (result as? NetworkResult.Success)?.data?.let { body ->
                 try { json.decodeFromString<StubContent>(body).local_path } catch (_: Exception) { null }
+            }
+        }
+    }
+
+    // Stub content is immutable once written (CONTRACT: stub convention), so the resolved
+    // original size for a given stub's put.io ID never changes — cache it for the process lifetime
+    // to avoid re-fetching it every time the Files screen reloads the same folder.
+    private val stubFileSizeCache = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+
+    // CONTRACT: stub convention — read file_size from stub JSON (the original file's real size,
+    // not the tiny stub's put.io-reported size); returns null if not synced, unavailable, or on error
+    suspend fun readStubFileSize(file: com.damarquez.putz.data.model.PutioFile): Long? {
+        if (!file.isSynced) return null
+        stubFileSizeCache[file.id]?.let { return it }
+        val token = secureStorage.authTokenFlow.value
+        if (token.isBlank()) return null
+        return withContext(Dispatchers.IO) {
+            val result = putioApiClient.downloadFileAsString(token, file.id)
+            (result as? NetworkResult.Success)?.data?.let { body ->
+                try {
+                    json.decodeFromString<StubContent>(body).file_size?.also { stubFileSizeCache[file.id] = it }
+                } catch (_: Exception) { null }
             }
         }
     }

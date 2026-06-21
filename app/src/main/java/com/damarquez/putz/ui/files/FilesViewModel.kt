@@ -509,6 +509,7 @@ class FilesViewModel @Inject constructor(
                         files = augmentWithLocal(files),
                         parent = parent,
                     )
+                    enrichSyncedFileSizes(files)
                     return@launch
                 }
                 _uiState.value = FilesUiState.Loading
@@ -527,6 +528,7 @@ class FilesViewModel @Inject constructor(
                     _uiState.value = FilesUiState.Success(files = augmentWithLocal(files), parent = parent)
                     _allSyncedFolderIds.value = emptySet()
                     checkSubfolderSyncState(files.filter { it.isFolder && !it.isLocal && !it.isLan }, token)
+                    enrichSyncedFileSizes(files)
                 }
                 is NetworkResult.Error -> {
                     _uiState.value = FilesUiState.Error(result.message)
@@ -552,6 +554,31 @@ class FilesViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // CONTRACT: stub convention — put.io reports the tiny stub's own size, not the original
+    // file's. Fetches the real size from each stub's JSON content (small batches, cached in
+    // CalibreRepository) and patches it into the displayed list as results arrive.
+    private fun enrichSyncedFileSizes(files: List<PutioFile>) {
+        val stubs = files.filter { it.isSynced }
+        if (stubs.isEmpty()) return
+        viewModelScope.launch {
+            stubs.chunked(5).forEach { chunk ->
+                chunk.map { stub ->
+                    async {
+                        val size = calibreRepository.readStubFileSize(stub)
+                        if (size != null && size > 0) applySyncedFileSize(stub.id, size)
+                    }
+                }.awaitAll()
+            }
+        }
+    }
+
+    private fun applySyncedFileSize(fileId: Long, size: Long) {
+        val current = _uiState.value as? FilesUiState.Success ?: return
+        _uiState.value = current.copy(
+            files = current.files.map { if (it.id == fileId) it.copy(size = size) else it }
+        )
     }
 
     private fun augmentWithLocal(apiFiles: List<PutioFile>): List<PutioFile> {
