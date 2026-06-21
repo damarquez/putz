@@ -74,6 +74,7 @@ fun TransferItem(
     onResume: (Long) -> Unit,
     onEditName: (Long, String) -> Unit,
     onGoToFiles: (Long) -> Unit,
+    onActivate: (MergedTransfer) -> Unit = {},
     onTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -127,24 +128,31 @@ fun TransferItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Edit display name") },
-                            onClick = {
-                                showMenu = false
-                                onEditName(transfer.id, merged.appDisplayName)
-                            }
-                        )
-                        if (status == TransferStatus.COMPLETED && transfer.fileId != null) {
+                        if (!merged.isPendingLocal) {
                             DropdownMenuItem(
-                                text = { Text("Go to files") },
+                                text = { Text("Edit display name") },
                                 onClick = {
                                     showMenu = false
-                                    onGoToFiles(transfer.fileId)
+                                    onEditName(transfer.id, merged.appDisplayName)
                                 }
                             )
+                            if (status == TransferStatus.COMPLETED && transfer.fileId != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Go to files") },
+                                    onClick = {
+                                        showMenu = false
+                                        onGoToFiles(transfer.fileId)
+                                    }
+                                )
+                            }
                         }
                         DropdownMenuItem(
-                            text = { Text("Remove from list", color = MaterialTheme.colorScheme.error) },
+                            text = {
+                                Text(
+                                    if (merged.isPendingLocal) "Remove from queue" else "Remove from list",
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
                             onClick = {
                                 showMenu = false
                                 onRemove(transfer.id)
@@ -169,7 +177,19 @@ fun TransferItem(
                         }
                     }
 
-                    if (!merged.isPendingLocal) {
+                    if (merged.isPendingLocal) {
+                        androidx.compose.material3.IconButton(
+                            onClick = { onActivate(merged) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Activate",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    } else {
                         if (merged.isStopped) {
                             androidx.compose.material3.IconButton(
                                 onClick = {
@@ -223,7 +243,7 @@ fun TransferItem(
 
                 if (merged.isPendingLocal) {
                     Text(
-                        text = "Waiting for an active transfer slot to free up",
+                        text = "Transfer limit reached — tap Activate to retry adding it",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

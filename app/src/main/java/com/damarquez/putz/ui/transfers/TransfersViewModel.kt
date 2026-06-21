@@ -2,7 +2,6 @@ package com.damarquez.putz.ui.transfers
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.damarquez.putz.data.local.PendingTransferEntity
 import com.damarquez.putz.data.model.AddTransferOutcome
 import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.model.MergedTransfer
@@ -67,6 +66,10 @@ class TransfersViewModel @Inject constructor(
     // Cached history keyed by lowercase info hash; refreshed on init and manual refresh
     private var historyByHash: Map<String, HistoryFileEntry> = emptyMap()
 
+    // Last successfully-fetched put.io transfers, so loadHistory() can rebuild the grouped
+    // map (including the history-derived "waiting for a free slot" section) without re-polling.
+    private var lastTransfers: List<MergedTransfer> = emptyList()
+
     private val _uiState = MutableStateFlow<TransfersUiState>(TransfersUiState.Loading)
     val uiState: StateFlow<TransfersUiState> = _uiState.asStateFlow()
 
@@ -121,12 +124,9 @@ class TransfersViewModel @Inject constructor(
                 val token = settingsRepository.authTokenFlow.first()
                 when (val result = transfersRepository.syncAndGetTransfers(token)) {
                     is NetworkResult.Success -> {
-                        val addedFromQueue = transfersRepository.processPendingQueue(token)
-                        val transfers = if (addedFromQueue > 0) {
-                            (transfersRepository.syncAndGetTransfers(token) as? NetworkResult.Success)?.data ?: result.data
-                        } else result.data
-                        val pending = transfersRepository.getPendingTransfers()
-                        _uiState.value = TransfersUiState.Success(grouped = buildGroupedMap(transfers, pending))
+                        val transfers = result.data
+                        lastTransfers = transfers
+                        _uiState.value = TransfersUiState.Success(grouped = buildGroupedMap(transfers))
                         registerTransferHistory(transfers, token)
 
                         val seeding = transfers.filter {
@@ -136,7 +136,7 @@ class TransfersViewModel @Inject constructor(
                             seeding.forEach { transfersRepository.stopTransfer(token, it.transfer.id) }
                             // re-poll immediately so the UI reflects the cancellations
                         } else {
-                            val hasActive = transfers.any { it.transfer.isActive() } || pending.isNotEmpty()
+                            val hasActive = transfers.any { it.transfer.isActive() }
                             delay(if (hasActive) POLL_ACTIVE_MS else POLL_IDLE_MS)
                         }
                     }
@@ -174,12 +174,10 @@ class TransfersViewModel @Inject constructor(
                 // Re-poll so the updated displayNames from DB are loaded into state
                 startPolling(immediate = true)
             } else {
-                // Nothing persisted — just attach history entries to current state for tap-to-detail
+                // Nothing persisted — rebuild from the last known transfers so the
+                // "waiting for a free slot" section (sourced from history) stays current.
                 val current = _uiState.value as? TransfersUiState.Success ?: return@launch
-                val enriched = current.grouped.mapValues { (_, list) ->
-                    list.map { it.copy(historyEntry = historyByHash[it.transfer.hash?.lowercase()]) }
-                }
-                _uiState.value = current.copy(grouped = enriched)
+                _uiState.value = current.copy(grouped = buildGroupedMap(lastTransfers))
             }
         }
     }
@@ -225,10 +223,10 @@ class TransfersViewModel @Inject constructor(
                     startPolling(immediate = true)
                 }
                 is AddTransferOutcome.Queued -> {
+                    applyHistoryUpdate(outcome.entry)
                     _showAddSheet.value = false
                     _addState.value = AddTransferState.Idle
-                    _queuedMessage.value = "Active transfer limit reached — queued, will be added automatically"
-                    startPolling(immediate = true)
+                    _queuedMessage.value = "Active transfer limit reached — saved to history, tap Activate when ready"
                 }
                 is AddTransferOutcome.Failed -> {
                     _addState.value = AddTransferState.Failed(outcome.message)
@@ -250,12 +248,6 @@ class TransfersViewModel @Inject constructor(
     fun removeTransfer(id: Long) {
         println("TransfersViewModel: Removing transfer $id")
         viewModelScope.launch {
-            if (id < 0) {
-                // Negative sentinel: this is a locally-queued entry, not a real put.io transfer.
-                transfersRepository.removePendingTransfer(-id)
-                refresh()
-                return@launch
-            }
             val token = settingsRepository.authTokenFlow.first()
             val result = transfersRepository.removeTransfer(token, id)
             println("TransfersViewModel: Remove result: $result")
@@ -265,6 +257,49 @@ class TransfersViewModel @Inject constructor(
 
     fun onQueuedMessageShown() {
         _queuedMessage.value = null
+    }
+
+    /** User explicitly asked to retry a magnet that's flagged QUEUED_OUTSIDE_PUTIO in history.
+     *  This never runs on its own — put.io manages its own queue below the limit; above it,
+     *  only an explicit tap here ever calls /transfers/add again. */
+    fun activateQueued(entry: HistoryFileEntry) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            when (val outcome = transfersRepository.activateHistoryEntry(token, entry)) {
+                is AddTransferOutcome.Added -> {
+                    applyHistoryUpdate(entry.copy(status = outcome.merged.transfer.status, putioId = outcome.merged.transfer.id))
+                    startPolling(immediate = true)
+                }
+                is AddTransferOutcome.Queued -> {
+                    applyHistoryUpdate(outcome.entry)
+                    _queuedMessage.value = "Still at the transfer limit — try again later"
+                }
+                is AddTransferOutcome.Failed -> {
+                    _resumeError.value = outcome.message
+                }
+            }
+        }
+    }
+
+    fun cancelQueued(entry: HistoryFileEntry) {
+        viewModelScope.launch {
+            val updated = transfersRepository.cancelQueuedHistoryEntry(entry)
+            if (updated != null) {
+                applyHistoryUpdate(updated)
+            } else {
+                // Couldn't confirm the cancel reached shared history — leave it showing rather
+                // than hiding something that might still be queued from another device's view.
+                _resumeError.value = "Couldn't reach shared history to cancel — try again"
+            }
+        }
+    }
+
+    /** Splices a freshly-registered history entry into the cache and rebuilds the grouped map
+     *  immediately, instead of waiting on the daemon's upload-then-refetch round trip. */
+    private fun applyHistoryUpdate(entry: HistoryFileEntry) {
+        historyByHash = historyByHash + (entry.infoHash.lowercase() to entry)
+        val current = _uiState.value as? TransfersUiState.Success ?: return
+        _uiState.value = current.copy(grouped = buildGroupedMap(lastTransfers))
     }
 
     fun resumeTransfer(id: Long) {
@@ -371,18 +406,23 @@ class TransfersViewModel @Inject constructor(
         }
     }
 
-    private fun buildGroupedMap(
-        transfers: List<MergedTransfer>,
-        pending: List<PendingTransferEntity> = emptyList(),
-    ): Map<TransferGroup, List<MergedTransfer>> {
+    private fun buildGroupedMap(transfers: List<MergedTransfer>): Map<TransferGroup, List<MergedTransfer>> {
+        val activeHashes = transfers.mapNotNull { it.transfer.hash?.lowercase() }.toSet()
         val enriched = transfers.map { t ->
             val entry = t.transfer.hash?.lowercase()?.let { historyByHash[it] }
             if (entry != null) t.copy(historyEntry = entry) else t
         }
         val grouped = enriched.groupBy { it.transfer.group() }
+
+        // Entries the daemon's history still flags as queued-outside-put.io, but that already
+        // exist as a real put.io transfer (e.g. another device Activated it) shouldn't double-show.
+        val queuedOutside = historyByHash.values
+            .filter { it.status == TransfersRepository.HISTORY_STATUS_QUEUED_OUTSIDE_PUTIO }
+            .filter { it.infoHash.lowercase() !in activeHashes }
+
         return buildMap {
-            if (pending.isNotEmpty()) {
-                put(TransferGroup.PENDING_LOCAL, pending.map { it.toMergedTransfer() })
+            if (queuedOutside.isNotEmpty()) {
+                put(TransferGroup.PENDING_LOCAL, queuedOutside.map { it.toMergedTransfer() })
             }
             TransferGroup.entries.forEach { group ->
                 if (group == TransferGroup.PENDING_LOCAL) return@forEach
@@ -392,14 +432,22 @@ class TransfersViewModel @Inject constructor(
         }
     }
 
-    private fun PendingTransferEntity.toMergedTransfer(): MergedTransfer {
-        val name = displayNameHint?.takeIf { it.isNotBlank() } ?: "Queued transfer"
+    private fun HistoryFileEntry.toMergedTransfer(): MergedTransfer {
+        // Stable per-hash sentinel — never a real put.io ID — just so the UI has a list key.
+        // Actions on these entries go through historyEntry directly, never through this ID.
+        val sentinelId = -(infoHash.hashCode().toLong() and 0x7fffffffL) - 1
+        // Same precedence used everywhere else history is shown: the daemon's independently
+        // metadata-enriched resolvedName wins over whatever label happened to be registered.
+        val displayName = resolvedName?.takeIf { it.isNotBlank() }
+            ?: putioName?.takeIf { it.isNotBlank() }
+            ?: label
         return MergedTransfer(
-            transfer = PutioTransfer(id = -id, name = name, status = "WAITING"),
-            appDisplayName = name,
-            magnetLink = magnetOrUrl.takeIf { MagnetParser.isMagnetLink(it) },
+            transfer = PutioTransfer(id = sentinelId, name = displayName, status = "WAITING"),
+            appDisplayName = displayName,
+            magnetLink = magnetUri,
             addedByApp = true,
             isPendingLocal = true,
+            historyEntry = this,
         )
     }
 

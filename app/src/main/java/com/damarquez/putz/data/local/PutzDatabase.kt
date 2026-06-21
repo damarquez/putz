@@ -10,9 +10,8 @@ import androidx.room.RoomDatabase
         LocalAttachmentEntity::class,
         HiddenLocalFileEntity::class,
         LanConnectionEntity::class,
-        PendingTransferEntity::class,
     ],
-    version = 20,
+    version = 21,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {
@@ -21,5 +20,4 @@ abstract class PutzDatabase : RoomDatabase() {
     abstract fun localAttachmentDao(): LocalAttachmentDao
     abstract fun hiddenLocalFileDao(): HiddenLocalFileDao
     abstract fun lanConnectionDao(): LanConnectionDao
-    abstract fun pendingTransferDao(): PendingTransferDao
 }

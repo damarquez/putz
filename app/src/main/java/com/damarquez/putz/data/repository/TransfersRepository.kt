@@ -2,16 +2,17 @@ package com.damarquez.putz.data.repository
 
 import com.damarquez.putz.data.local.AppTransferDao
 import com.damarquez.putz.data.local.AppTransferEntity
-import com.damarquez.putz.data.local.PendingTransferDao
-import com.damarquez.putz.data.local.PendingTransferEntity
 import com.damarquez.putz.data.model.AddTransferOutcome
+import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioTransfer
 import com.damarquez.putz.data.model.TransferStatus
 import com.damarquez.putz.data.remote.PutioApiClient
+import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.util.MagnetParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,7 +21,8 @@ import javax.inject.Singleton
 class TransfersRepository @Inject constructor(
     private val apiClient: PutioApiClient,
     private val dao: AppTransferDao,
-    private val pendingDao: PendingTransferDao,
+    private val calibreRepository: CalibreRepository,
+    private val settingsRepository: SettingsRepository,
 ) {
 
     suspend fun syncAndGetTransfers(token: String): NetworkResult<List<MergedTransfer>> =
@@ -96,13 +98,13 @@ class TransfersRepository @Inject constructor(
         // Delete the stopped record first so its infoHash doesn't trigger the duplicate guard in addTransfer.
         dao.deleteById(id)
 
-        when (val outcome = addTransfer(token, magnet)) {
+        when (val outcome = addTransfer(token, magnet, displayNameOverride = local.displayName)) {
             is AddTransferOutcome.Added -> {
                 println("TransfersRepository: Resume add success")
                 NetworkResult.Success(Unit)
             }
             is AddTransferOutcome.Queued -> {
-                println("TransfersRepository: Resume hit the transfer limit, queued locally")
+                println("TransfersRepository: Resume hit the transfer limit, flagged in shared history")
                 NetworkResult.Success(Unit)
             }
             is AddTransferOutcome.Failed -> {
@@ -129,47 +131,52 @@ class TransfersRepository @Inject constructor(
         token: String,
         magnetOrUrl: String,
         saveParentId: Long = 0L,
+        displayNameOverride: String? = null,
     ): AddTransferOutcome = withContext(Dispatchers.IO) {
         val isMagnet = MagnetParser.isMagnetLink(magnetOrUrl)
         val infoHash = if (isMagnet) MagnetParser.extractInfoHash(magnetOrUrl) else null
+        val parsedName = if (isMagnet) MagnetParser.extractDisplayName(magnetOrUrl)?.takeIf { it.isNotBlank() } else null
+        val displayName = displayNameOverride?.takeIf { it.isNotBlank() }
+            ?: parsedName
+            ?: (if (isMagnet) (infoHash ?: magnetOrUrl) else magnetOrUrl)
 
-        if (infoHash != null) {
-            if (dao.getByInfoHash(infoHash) != null || pendingDao.getByInfoHash(infoHash) != null) {
-                return@withContext AddTransferOutcome.Failed("This transfer is already in the queue")
-            }
+        if (infoHash != null && dao.getByInfoHash(infoHash) != null) {
+            return@withContext AddTransferOutcome.Failed("This transfer is already in the queue")
         }
 
         when (val result = apiClient.addTransfer(token, magnetOrUrl, saveParentId)) {
             is NetworkResult.Success -> {
                 val transfer = result.data
-                val displayName = if (isMagnet) {
-                    MagnetParser.extractDisplayName(magnetOrUrl)?.takeIf { it.isNotBlank() }
-                        ?: transfer.name
-                } else transfer.name
+                val resolvedName = displayNameOverride?.takeIf { it.isNotBlank() }
+                    ?: parsedName
+                    ?: transfer.name
 
-                dao.upsert(buildEntity(transfer, magnetOrUrl, isMagnet, infoHash, displayName))
+                dao.upsert(buildEntity(transfer, magnetOrUrl, isMagnet, infoHash, resolvedName))
 
                 AddTransferOutcome.Added(
                     MergedTransfer(
                         transfer = transfer,
-                        appDisplayName = displayName,
+                        appDisplayName = resolvedName,
                         magnetLink = if (isMagnet) magnetOrUrl else null,
                         addedByApp = true,
                     )
                 )
             }
             is NetworkResult.Error -> {
-                if (result.errorType == TRANSFER_ADD_LIMIT_ERROR_TYPE) {
-                    pendingDao.insert(
-                        PendingTransferEntity(
-                            magnetOrUrl = magnetOrUrl,
-                            saveParentId = saveParentId,
-                            infoHash = infoHash,
-                            displayNameHint = if (isMagnet) MagnetParser.extractDisplayName(magnetOrUrl) else null,
-                            addedAt = System.currentTimeMillis(),
-                        )
+                if (result.errorType == TRANSFER_ADD_LIMIT_ERROR_TYPE && infoHash != null) {
+                    val entry = registerHistoryStatus(
+                        infoHash = infoHash,
+                        label = displayName,
+                        magnetUri = magnetOrUrl,
+                        status = HISTORY_STATUS_QUEUED_OUTSIDE_PUTIO,
                     )
-                    AddTransferOutcome.Queued
+                    if (entry != null) {
+                        AddTransferOutcome.Queued(entry)
+                    } else {
+                        AddTransferOutcome.Failed(
+                            "Active transfer limit reached, but couldn't save to shared history — check your connection and try again"
+                        )
+                    }
                 } else {
                     AddTransferOutcome.Failed(result.message)
                 }
@@ -178,41 +185,111 @@ class TransfersRepository @Inject constructor(
         }
     }
 
-    suspend fun getPendingTransfers(): List<PendingTransferEntity> = withContext(Dispatchers.IO) {
-        pendingDao.getAll()
-    }
+    /** User-triggered retry for a magnet that previously hit put.io's transfer limit and was
+     *  flagged [HISTORY_STATUS_QUEUED_OUTSIDE_PUTIO] in the shared history. Never runs automatically —
+     *  put.io's own queue manages everything below the limit; above it, the user decides when to retry. */
+    suspend fun activateHistoryEntry(token: String, entry: HistoryFileEntry): AddTransferOutcome =
+        withContext(Dispatchers.IO) {
+            val magnet = entry.magnetUri
+                ?: return@withContext AddTransferOutcome.Failed("No magnet link stored for this entry")
 
-    suspend fun removePendingTransfer(id: Long) = withContext(Dispatchers.IO) {
-        pendingDao.deleteById(id)
-    }
-
-    /** Retries locally-queued transfers now that put.io may have freed up a slot.
-     *  Stops at the first one that still hits the limit, since later ones would too. */
-    suspend fun processPendingQueue(token: String): Int = withContext(Dispatchers.IO) {
-        var added = 0
-        for (pending in pendingDao.getAll()) {
-            when (val result = apiClient.addTransfer(token, pending.magnetOrUrl, pending.saveParentId)) {
+            when (val result = apiClient.addTransfer(token, magnet, 0L)) {
                 is NetworkResult.Success -> {
                     val transfer = result.data
-                    val isMagnet = MagnetParser.isMagnetLink(pending.magnetOrUrl)
-                    val displayName = pending.displayNameHint?.takeIf { it.isNotBlank() } ?: transfer.name
-                    dao.upsert(buildEntity(transfer, pending.magnetOrUrl, isMagnet, pending.infoHash, displayName))
-                    pendingDao.deleteById(pending.id)
-                    added++
+                    val isMagnet = MagnetParser.isMagnetLink(magnet)
+                    dao.upsert(buildEntity(transfer, magnet, isMagnet, entry.infoHash, entry.label))
+                    registerHistoryStatus(
+                        infoHash = entry.infoHash,
+                        label = entry.label,
+                        magnetUri = magnet,
+                        status = transfer.status,
+                        putioId = transfer.id,
+                        putioName = transfer.name,
+                    )
+                    AddTransferOutcome.Added(
+                        MergedTransfer(
+                            transfer = transfer,
+                            appDisplayName = entry.label,
+                            magnetLink = magnet,
+                            addedByApp = true,
+                        )
+                    )
                 }
                 is NetworkResult.Error -> {
                     if (result.errorType == TRANSFER_ADD_LIMIT_ERROR_TYPE) {
-                        break
+                        val updated = registerHistoryStatus(
+                            infoHash = entry.infoHash,
+                            label = entry.label,
+                            magnetUri = magnet,
+                            status = HISTORY_STATUS_QUEUED_OUTSIDE_PUTIO,
+                        )
+                        if (updated != null) {
+                            AddTransferOutcome.Queued(updated)
+                        } else {
+                            AddTransferOutcome.Failed(
+                                "Still at the transfer limit, and couldn't reach shared history to confirm — try again"
+                            )
+                        }
                     } else {
-                        // Permanent failure (bad magnet, revoked token, etc.) — drop it rather than retry forever.
-                        pendingDao.deleteById(pending.id)
+                        AddTransferOutcome.Failed(result.message)
                     }
                 }
-                NetworkResult.Loading -> Unit
+                NetworkResult.Loading -> AddTransferOutcome.Failed("Loading")
             }
         }
-        added
+
+    /** Drops a never-added entry out of the "Waiting for a free slot" list. There's no delete
+     *  endpoint on the daemon, so this just flips the status away from the queued flag.
+     *  Returns null if the flip couldn't be confirmed durable — callers should leave the entry
+     *  showing rather than optimistically hiding something that might still be queued. */
+    suspend fun cancelQueuedHistoryEntry(entry: HistoryFileEntry): HistoryFileEntry? = withContext(Dispatchers.IO) {
+        registerHistoryStatus(
+            infoHash = entry.infoHash,
+            label = entry.label,
+            magnetUri = entry.magnetUri,
+            status = HISTORY_STATUS_CANCELLED_OUTSIDE_PUTIO,
+        )
     }
+
+    /** Registers a status with the shared history and only returns the entry once the write is
+     *  confirmed durable (reached Drive/LAN, so the daemon will see it even if offline right now).
+     *  Returns null otherwise — never claim something is tracked when it might not be. */
+    private suspend fun registerHistoryStatus(
+        infoHash: String,
+        label: String,
+        magnetUri: String?,
+        status: String,
+        putioId: Long? = null,
+        putioName: String? = null,
+    ): HistoryFileEntry? {
+        val googleAccount = settingsRepository.googleTokenFlow.first()
+        if (googleAccount.isBlank()) return null
+        val confirmed = calibreRepository.registerTransferHistory(
+            // Real transfers key the daemon's request filename by put.io transfer ID; entries
+            // that were never accepted by put.io don't have one, so derive a stable per-hash
+            // placeholder instead. The daemon's actual lookup/dedup key is info_hash, not this value.
+            putioTransferId = putioId ?: placeholderTransferId(infoHash),
+            infoHash = infoHash,
+            label = label,
+            putioName = putioName,
+            magnetUri = magnetUri,
+            putioId = putioId,
+            status = status,
+            googleAccount = googleAccount,
+        )
+        if (!confirmed) return null
+        return HistoryFileEntry(
+            infoHash = infoHash,
+            label = label,
+            status = status,
+            addedAt = System.currentTimeMillis() / 1000L,
+            magnetUri = magnetUri,
+            putioId = putioId,
+        )
+    }
+
+    private fun placeholderTransferId(infoHash: String): Long =
+        (infoHash.hashCode().toLong() and 0x7fffffffL)
 
     private fun buildEntity(
         transfer: PutioTransfer,
@@ -339,6 +416,8 @@ class TransfersRepository @Inject constructor(
     companion object {
         const val HIDDEN_FOLDER_NAME = ".putz_hidden"
         private const val TRANSFER_ADD_LIMIT_ERROR_TYPE = "TRANSFER_ADD_LIMIT_REACHED"
+        const val HISTORY_STATUS_QUEUED_OUTSIDE_PUTIO = "QUEUED_OUTSIDE_PUTIO"
+        const val HISTORY_STATUS_CANCELLED_OUTSIDE_PUTIO = "CANCELLED_OUTSIDE_PUTIO"
 
         private val RESOLVING_STATUSES = setOf(
             TransferStatus.DOWNLOADING,

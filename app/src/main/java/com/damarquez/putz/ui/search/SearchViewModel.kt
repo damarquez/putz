@@ -194,7 +194,7 @@ class SearchViewModel @Inject constructor(
                         addingMagnets = _uiState.value.addingMagnets - result.magnet,
                         addedMagnets = _uiState.value.addedMagnets + result.magnet,
                     )
-                    _snackbarMessage.value = "Active transfer limit reached — queued, will be added automatically"
+                    _snackbarMessage.value = "Active transfer limit reached — saved to history, tap Activate when ready"
                 }
                 is AddTransferOutcome.Failed -> {
                     _uiState.value = _uiState.value.copy(

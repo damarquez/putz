@@ -209,8 +209,15 @@ fun TransfersScreen(
                                             }
                                         },
                                         onStop = { viewModel.stopTransfer(it) },
-                                        onRemove = { viewModel.removeTransfer(it) },
+                                        onRemove = {
+                                            if (merged.isPendingLocal) {
+                                                merged.historyEntry?.let(viewModel::cancelQueued)
+                                            } else {
+                                                viewModel.removeTransfer(it)
+                                            }
+                                        },
                                         onResume = { viewModel.resumeTransfer(it) },
+                                        onActivate = { m -> m.historyEntry?.let(viewModel::activateQueued) },
                                         onEditName = { id, currentName ->
                                             editNameValue = currentName
                                             editNameTransferId = id

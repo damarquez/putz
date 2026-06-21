@@ -981,6 +981,9 @@ class CalibreRepository @Inject constructor(
     }
 
     // CONTRACT: REGISTER_TRANSFER_HISTORY
+    /** Returns true once the request has been durably handed off (Drive upload succeeded, so the
+     *  daemon will pick it up even if it's offline right now) — false if it was never persisted
+     *  anywhere and the caller should treat the registration as having not happened. */
     suspend fun registerTransferHistory(
         putioTransferId: Long,
         infoHash: String,
@@ -991,8 +994,8 @@ class CalibreRepository @Inject constructor(
         putioId: Long?,
         status: String,
         googleAccount: String,
-    ) {
-        if (googleAccount.isBlank()) return
+    ): Boolean {
+        if (googleAccount.isBlank()) return false
         val appId = settingsRepository.getOrCreateAppId()
         val request = RegisterHistoryRequest(
             putio_file_id = putioTransferId,
@@ -1006,8 +1009,10 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        daemonTransport.submitRequest(googleAccount, "req_hist_$putioTransferId.json", jsonStr)
-        // Response is silently acknowledged by pollResponses — no DB tracking needed for history
+        val driveId = daemonTransport.submitRequest(googleAccount, "req_hist_$putioTransferId.json", jsonStr)
+        // Response is silently acknowledged by pollResponses — no DB tracking needed for history.
+        // The non-null check here is the only confirmation that the write actually landed somewhere durable.
+        return driveId != null
     }
 
     suspend fun pollResponses(googleAccount: String) {
