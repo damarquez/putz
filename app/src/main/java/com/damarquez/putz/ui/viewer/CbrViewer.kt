@@ -16,11 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.damarquez.putz.util.CbrExtractor
+import com.damarquez.putz.util.EncryptedFileSignature
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private data class CbrContents(val destDir: File, val pages: List<File>)
+private data class CbrContents(val destDir: File, val pages: List<File>, val errorMessage: String? = null)
 
 /**
  * Quick CBR (comic book RAR) preview: extracts the image pages in archive order and browses
@@ -33,9 +34,17 @@ fun CbrViewer(filePath: String, modifier: Modifier = Modifier) {
     val contents by produceState<CbrContents?>(initialValue = null, key1 = filePath) {
         value = withContext(Dispatchers.IO) {
             val cbrFile = File(filePath)
-            val destDir = File(context.cacheDir, "previews/cbr_${cbrFile.name}")
-            val pages = runCatching { CbrExtractor.extractImages(cbrFile, destDir) }.getOrDefault(emptyList())
-            CbrContents(destDir, pages)
+            if (EncryptedFileSignature.isEncrypted(cbrFile)) {
+                CbrContents(cbrFile, emptyList(), EncryptedFileSignature.MESSAGE)
+            } else {
+                val destDir = File(context.cacheDir, "previews/cbr_${cbrFile.name}")
+                // Own destDir end-to-end: don't rely on FilesViewModel's startup cache wipe (which
+                // runs in its own coroutine and can race a preview triggered right after screen
+                // entry, deleting files out from under — or just after — this extraction).
+                destDir.deleteRecursively()
+                val pages = runCatching { CbrExtractor.extractImages(cbrFile, destDir) }.getOrDefault(emptyList())
+                CbrContents(destDir, pages)
+            }
         }
     }
 
@@ -47,7 +56,7 @@ fun CbrViewer(filePath: String, modifier: Modifier = Modifier) {
             CircularProgressIndicator()
         }
         current.pages.isEmpty() -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Couldn't read this file")
+            Text(current.errorMessage ?: "Couldn't read this file")
         }
         else -> Column(modifier = modifier.fillMaxSize()) {
             ImageViewer(

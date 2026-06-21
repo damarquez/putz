@@ -9,6 +9,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.damarquez.putz.util.EncryptedFileSignature
 import com.damarquez.putz.util.EpubExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +17,7 @@ import java.io.File
 
 private const val EPUB_PATH_PREFIX = "/epub/"
 
-private data class EpubContents(val destDir: File, val chapters: List<File>)
+private data class EpubContents(val destDir: File, val chapters: List<File>, val errorMessage: String? = null)
 
 /**
  * Quick EPUB text preview: extracts the spine and browses it chapter-by-chapter (native
@@ -30,9 +31,17 @@ fun EpubViewer(filePath: String, modifier: Modifier = Modifier) {
     val contents by produceState<EpubContents?>(initialValue = null, key1 = filePath) {
         value = withContext(Dispatchers.IO) {
             val epubFile = File(filePath)
-            val destDir = File(context.cacheDir, "previews/epub_${epubFile.name}")
-            val chapters = runCatching { EpubExtractor.extractSpine(epubFile, destDir) }.getOrDefault(emptyList())
-            EpubContents(destDir, chapters)
+            if (EncryptedFileSignature.isEncrypted(epubFile)) {
+                EpubContents(epubFile, emptyList(), EncryptedFileSignature.MESSAGE)
+            } else {
+                val destDir = File(context.cacheDir, "previews/epub_${epubFile.name}")
+                // Own destDir end-to-end: don't rely on FilesViewModel's startup cache wipe
+                // (which runs in its own coroutine and can race a preview triggered right after
+                // screen entry, deleting files out from under — or just after — this extraction).
+                destDir.deleteRecursively()
+                val chapters = runCatching { EpubExtractor.extractSpine(epubFile, destDir) }.getOrDefault(emptyList())
+                EpubContents(destDir, chapters)
+            }
         }
     }
 
@@ -40,6 +49,12 @@ fun EpubViewer(filePath: String, modifier: Modifier = Modifier) {
     if (current == null) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     } else {
-        PagedHtmlViewer(destDir = current.destDir, pages = current.chapters, pathPrefix = EPUB_PATH_PREFIX, modifier = modifier)
+        PagedHtmlViewer(
+            destDir = current.destDir,
+            pages = current.chapters,
+            pathPrefix = EPUB_PATH_PREFIX,
+            modifier = modifier,
+            emptyMessage = current.errorMessage ?: "Couldn't read this file",
+        )
     }
 }

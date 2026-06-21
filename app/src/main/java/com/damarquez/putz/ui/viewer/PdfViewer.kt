@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import com.damarquez.putz.util.EncryptedFileSignature
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -40,10 +41,17 @@ fun PdfViewer(filePath: String, modifier: Modifier = Modifier) {
     var currentIndex by remember { mutableIntStateOf(0) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var failed by remember { mutableStateOf(false) }
+    var protectedFile by remember { mutableStateOf(false) }
 
     DisposableEffect(filePath) {
+        val file = File(filePath)
+        if (EncryptedFileSignature.isEncrypted(file)) {
+            protectedFile = true
+            return@DisposableEffect onDispose {}
+        }
+
         val descriptor = runCatching {
-            ParcelFileDescriptor.open(File(filePath), ParcelFileDescriptor.MODE_READ_ONLY)
+            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
         }.getOrNull()
         val r = descriptor?.let { d -> runCatching { PdfRenderer(d) }.getOrNull() }
         if (descriptor == null || r == null || r.pageCount == 0) {
@@ -81,6 +89,7 @@ fun PdfViewer(filePath: String, modifier: Modifier = Modifier) {
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val page = bitmap
             when {
+                protectedFile -> Text(EncryptedFileSignature.MESSAGE)
                 failed -> Text("Couldn't read this file")
                 page == null -> CircularProgressIndicator()
                 else -> Image(

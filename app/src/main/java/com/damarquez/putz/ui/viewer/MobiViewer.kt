@@ -9,6 +9,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.damarquez.putz.util.EncryptedFileSignature
 import com.damarquez.putz.util.MobiExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +17,7 @@ import java.io.File
 
 private const val MOBI_PATH_PREFIX = "/mobi/"
 
-private data class MobiContents(val destDir: File, val pages: List<File>)
+private data class MobiContents(val destDir: File, val pages: List<File>, val errorMessage: String? = null)
 
 /**
  * Quick MOBI / AZW3 text preview: decompresses the PalmDOC text records and browses the result
@@ -30,9 +31,17 @@ fun MobiViewer(filePath: String, modifier: Modifier = Modifier) {
     val contents by produceState<MobiContents?>(initialValue = null, key1 = filePath) {
         value = withContext(Dispatchers.IO) {
             val mobiFile = File(filePath)
-            val destDir = File(context.cacheDir, "previews/mobi_${mobiFile.name}")
-            val pages = runCatching { MobiExtractor.extractPages(mobiFile, destDir) }.getOrDefault(emptyList())
-            MobiContents(destDir, pages)
+            if (EncryptedFileSignature.isEncrypted(mobiFile)) {
+                MobiContents(mobiFile, emptyList(), EncryptedFileSignature.MESSAGE)
+            } else {
+                val destDir = File(context.cacheDir, "previews/mobi_${mobiFile.name}")
+                // Own destDir end-to-end: don't rely on FilesViewModel's startup cache wipe
+                // (which runs in its own coroutine and can race a preview triggered right after
+                // screen entry, deleting files out from under — or just after — this extraction).
+                destDir.deleteRecursively()
+                val pages = runCatching { MobiExtractor.extractPages(mobiFile, destDir) }.getOrDefault(emptyList())
+                MobiContents(destDir, pages)
+            }
         }
     }
 
@@ -40,6 +49,12 @@ fun MobiViewer(filePath: String, modifier: Modifier = Modifier) {
     if (current == null) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     } else {
-        PagedHtmlViewer(destDir = current.destDir, pages = current.pages, pathPrefix = MOBI_PATH_PREFIX, modifier = modifier)
+        PagedHtmlViewer(
+            destDir = current.destDir,
+            pages = current.pages,
+            pathPrefix = MOBI_PATH_PREFIX,
+            modifier = modifier,
+            emptyMessage = current.errorMessage ?: "Couldn't read this file",
+        )
     }
 }

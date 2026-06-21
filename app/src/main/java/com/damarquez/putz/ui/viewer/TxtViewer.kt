@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.damarquez.putz.util.EncryptedFileSignature
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -17,9 +18,14 @@ import java.io.File
 fun TxtViewer(filePath: String, modifier: Modifier = Modifier) {
     val content by produceState<String?>(initialValue = null, key1 = filePath) {
         value = withContext(Dispatchers.IO) {
-            runCatching {
-                truncateForPreview(File(filePath).bufferedReader(Charsets.UTF_8).use { it.readText() })
-            }.getOrElse { "Couldn't read this file" }
+            val file = File(filePath)
+            if (EncryptedFileSignature.isEncrypted(file)) {
+                EncryptedFileSignature.MESSAGE
+            } else {
+                runCatching {
+                    truncateForPreview(file.bufferedReader(Charsets.UTF_8).use { it.readText() })
+                }.getOrElse { "Couldn't read this file" }
+            }
         }
     }
 

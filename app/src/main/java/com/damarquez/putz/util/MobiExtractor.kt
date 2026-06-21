@@ -40,6 +40,7 @@ object MobiExtractor {
 
         val huffCdic = if (compression == COMPRESSION_HUFFCDIC) buildHuffCdicReader(record0, ::record) else null
         val (multibyte, trailerCount) = readTrailingDataConfig(record0)
+        val textCharset = readTextCharset(record0)
 
         val textBuilder = StringBuilder()
         for (i in 1..recordCount) {
@@ -50,7 +51,7 @@ object MobiExtractor {
                 COMPRESSION_HUFFCDIC -> huffCdic!!.unpack(trimmed)
                 else -> trimmed
             }
-            textBuilder.append(String(decompressed, Charsets.UTF_8))
+            textBuilder.append(String(decompressed, textCharset))
         }
 
         val pageBreak = Regex("<mbp:pagebreak[^>]*/?>", RegexOption.IGNORE_CASE)
@@ -59,6 +60,20 @@ object MobiExtractor {
 
         return pages.mapIndexed { index, pageHtml ->
             File(destDir, "page_$index.html").apply { writeText(pageHtml) }
+        }
+    }
+
+    /**
+     * MOBI header's `text encoding` field (offset 0x1C, 4 bytes): 1252 = Windows-1252 (the
+     * default for older Mobipocket files that predate this field even existing), 65001 = UTF-8.
+     * Misreading a cp1252 book as UTF-8 (or vice versa) mangles smart quotes/accents.
+     */
+    private fun readTextCharset(record0: ByteArray): java.nio.charset.Charset {
+        if (record0.size < 0x1C + 4) return Charsets.ISO_8859_1
+        return when (readUInt32(record0, 0x1C)) {
+            65001 -> Charsets.UTF_8
+            1252 -> charset("windows-1252")
+            else -> Charsets.ISO_8859_1
         }
     }
 

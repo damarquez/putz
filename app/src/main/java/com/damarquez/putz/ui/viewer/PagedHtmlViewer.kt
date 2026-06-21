@@ -31,13 +31,19 @@ private const val PAGED_HTML_DOMAIN = "appassets.androidplatform.net"
  * references correctly since the virtual path mirrors the extracted directory structure.
  */
 @Composable
-fun PagedHtmlViewer(destDir: File, pages: List<File>, pathPrefix: String, modifier: Modifier = Modifier) {
+fun PagedHtmlViewer(
+    destDir: File,
+    pages: List<File>,
+    pathPrefix: String,
+    modifier: Modifier = Modifier,
+    emptyMessage: String = "Couldn't read this file",
+) {
     val context = LocalContext.current
     var currentIndex by remember(pages) { mutableIntStateOf(0) }
 
     if (pages.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Couldn't read this file")
+            Text(emptyMessage)
         }
         return
     }
@@ -56,11 +62,18 @@ fun PagedHtmlViewer(destDir: File, pages: List<File>, pathPrefix: String, modifi
             factory = { ctx ->
                 WebView(ctx).apply {
                     settings.javaScriptEnabled = false
+                    // EPUB/MOBI chapter HTML is always written as UTF-8, but WebViewAssetLoader's
+                    // response carries no charset, so Chromium's encoding sniffer can fall back to
+                    // a non-UTF-8 default and turn multi-byte characters (smart quotes, accents)
+                    // into mojibake like "â€œ". Force UTF-8 on both the response and the WebView's
+                    // fallback decoder.
+                    settings.defaultTextEncodingName = "utf-8"
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(
                             view: WebView,
                             request: WebResourceRequest,
-                        ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+                        ): WebResourceResponse? =
+                            assetLoader.shouldInterceptRequest(request.url)?.apply { encoding = "utf-8" }
                     }
                 }
             },
