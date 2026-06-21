@@ -299,9 +299,13 @@ class FilesViewModel @Inject constructor(
             }
 
             try {
-                val uri: Uri = when {
+                // localFile is the real on-disk copy (cheap to reuse for LAN/synced/remote — we
+                // just wrote it — and only requires an extra copy for the isLocal/SAF-uri case).
+                val (uri: Uri, localFile: File) = when {
                     file.isLocal && file.localUri != null -> {
-                        Uri.parse(file.localUri)
+                        val parsedUri = Uri.parse(file.localUri)
+                        val resolved = withContext(Dispatchers.IO) { resolveFileForViewer(parsedUri, file.displayName) }
+                        parsedUri to resolved
                     }
                     file.isLan && file.lanConnectionId != null && file.lanPath != null -> {
                         val targetFile = File(File(context.cacheDir, "previews"), file.name)
@@ -313,7 +317,7 @@ class FilesViewModel @Inject constructor(
                                 }
                             }
                         }
-                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
+                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile) to targetFile
                     }
                     // CONTRACT: stub convention — preview requires LAN; downloading the stub itself is useless
                     file.isSynced && (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) -> {
@@ -331,7 +335,7 @@ class FilesViewModel @Inject constructor(
                                 return@launch
                             }
                         }
-                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
+                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile) to targetFile
                     }
                     else -> {
                         val token = settingsRepository.authTokenFlow.first()
@@ -344,14 +348,16 @@ class FilesViewModel @Inject constructor(
                                 return@launch
                             }
                         }
-                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile)
+                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile) to targetFile
                     }
                 }
 
-                val viewerKind = ViewerKind.forFileName(file.displayName)
+                // Real content wins over the (possibly wrong) extension — old ebook/scene
+                // releases frequently mislabel plain text/RTF as .doc, or worse.
+                val viewerKind = withContext(Dispatchers.IO) { ViewerKind.forFile(localFile) }
+                    ?: ViewerKind.forFileName(file.displayName)
                 if (viewerKind != null) {
-                    val viewerFile = withContext(Dispatchers.IO) { resolveFileForViewer(uri, file.displayName) }
-                    _viewerEvent.emit(ViewerEvent(viewerKind, file.displayName, viewerFile.absolutePath))
+                    _viewerEvent.emit(ViewerEvent(viewerKind, file.displayName, localFile.absolutePath))
                 } else {
                     val extension = MimeTypeMap.getFileExtensionFromUrl(file.displayName)
                     val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
