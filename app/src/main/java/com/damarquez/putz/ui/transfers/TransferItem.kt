@@ -169,35 +169,37 @@ fun TransferItem(
                         }
                     }
 
-                    if (merged.isStopped) {
-                        androidx.compose.material3.IconButton(
-                            onClick = { 
-                                println("TransferItem: Resume clicked for id ${transfer.id}")
-                                onResume(transfer.id) 
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Resume",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    } else {
-                        androidx.compose.material3.IconButton(
-                            onClick = { 
-                                println("TransferItem: Stop clicked for id ${transfer.id}")
-                                onStop(transfer.id) 
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = "Stop",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp),
-                            )
+                    if (!merged.isPendingLocal) {
+                        if (merged.isStopped) {
+                            androidx.compose.material3.IconButton(
+                                onClick = {
+                                    println("TransferItem: Resume clicked for id ${transfer.id}")
+                                    onResume(transfer.id)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Resume",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        } else {
+                            androidx.compose.material3.IconButton(
+                                onClick = {
+                                    println("TransferItem: Stop clicked for id ${transfer.id}")
+                                    onStop(transfer.id)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Stop,
+                                    contentDescription = "Stop",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
                         }
                     }
 
@@ -219,7 +221,13 @@ fun TransferItem(
 
                 Spacer(Modifier.height(6.dp))
 
-                if (merged.isStopped && status != TransferStatus.COMPLETED) {
+                if (merged.isPendingLocal) {
+                    Text(
+                        text = "Waiting for an active transfer slot to free up",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (merged.isStopped && status != TransferStatus.COMPLETED) {
                     StoppedInfo(merged = merged)
                 } else {
                     when (status) {

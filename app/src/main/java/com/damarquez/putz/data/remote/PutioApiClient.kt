@@ -287,12 +287,13 @@ class PutioApiClient @Inject constructor(
                     val parsed = runCatching { json.decodeFromString<AddTransferResponse>(raw) }.getOrNull()
                     return NetworkResult.Error(
                         parsed?.error ?: parsed?.errorType ?: "HTTP ${response.code}",
-                        response.code
+                        response.code,
+                        parsed?.errorType,
                     )
                 }
                 val parsed = json.decodeFromString<AddTransferResponse>(raw)
                 if (parsed.status == "ERROR") {
-                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error")
+                    return NetworkResult.Error(parsed.error ?: parsed.errorType ?: "API error", errorType = parsed.errorType)
                 }
                 val transfer = parsed.transfer ?: return NetworkResult.Error("No transfer in response")
                 NetworkResult.Success(transfer)

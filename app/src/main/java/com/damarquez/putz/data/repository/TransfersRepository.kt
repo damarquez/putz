@@ -2,6 +2,9 @@ package com.damarquez.putz.data.repository
 
 import com.damarquez.putz.data.local.AppTransferDao
 import com.damarquez.putz.data.local.AppTransferEntity
+import com.damarquez.putz.data.local.PendingTransferDao
+import com.damarquez.putz.data.local.PendingTransferEntity
+import com.damarquez.putz.data.model.AddTransferOutcome
 import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioTransfer
@@ -17,6 +20,7 @@ import javax.inject.Singleton
 class TransfersRepository @Inject constructor(
     private val apiClient: PutioApiClient,
     private val dao: AppTransferDao,
+    private val pendingDao: PendingTransferDao,
 ) {
 
     suspend fun syncAndGetTransfers(token: String): NetworkResult<List<MergedTransfer>> =
@@ -92,19 +96,19 @@ class TransfersRepository @Inject constructor(
         // Delete the stopped record first so its infoHash doesn't trigger the duplicate guard in addTransfer.
         dao.deleteById(id)
 
-        when (val result = addTransfer(token, magnet)) {
-            is NetworkResult.Success -> {
+        when (val outcome = addTransfer(token, magnet)) {
+            is AddTransferOutcome.Added -> {
                 println("TransfersRepository: Resume add success")
                 NetworkResult.Success(Unit)
             }
-            is NetworkResult.Error -> {
-                println("TransfersRepository: Resume add failed: ${result.message}")
-                dao.upsert(local)
-                result
+            is AddTransferOutcome.Queued -> {
+                println("TransfersRepository: Resume hit the transfer limit, queued locally")
+                NetworkResult.Success(Unit)
             }
-            NetworkResult.Loading -> {
+            is AddTransferOutcome.Failed -> {
+                println("TransfersRepository: Resume add failed: ${outcome.message}")
                 dao.upsert(local)
-                NetworkResult.Loading
+                NetworkResult.Error(outcome.message)
             }
         }
     }
@@ -125,14 +129,13 @@ class TransfersRepository @Inject constructor(
         token: String,
         magnetOrUrl: String,
         saveParentId: Long = 0L,
-    ): NetworkResult<MergedTransfer> = withContext(Dispatchers.IO) {
+    ): AddTransferOutcome = withContext(Dispatchers.IO) {
         val isMagnet = MagnetParser.isMagnetLink(magnetOrUrl)
         val infoHash = if (isMagnet) MagnetParser.extractInfoHash(magnetOrUrl) else null
 
         if (infoHash != null) {
-            val existing = dao.getByInfoHash(infoHash)
-            if (existing != null) {
-                return@withContext NetworkResult.Error("This transfer is already in the queue")
+            if (dao.getByInfoHash(infoHash) != null || pendingDao.getByInfoHash(infoHash) != null) {
+                return@withContext AddTransferOutcome.Failed("This transfer is already in the queue")
             }
         }
 
@@ -144,33 +147,91 @@ class TransfersRepository @Inject constructor(
                         ?: transfer.name
                 } else transfer.name
 
-                val entity = AppTransferEntity(
-                    putioId = transfer.id,
-                    displayName = displayName,
-                    putioName = transfer.name,
-                    magnetLink = if (isMagnet) magnetOrUrl else null,
-                    infoHash = infoHash,
-                    addedByApp = true,
-                    addedAt = System.currentTimeMillis(),
-                    nameResolved = false,
-                    percentDone = transfer.percentDone,
-                    size = transfer.size,
-                )
-                dao.upsert(entity)
+                dao.upsert(buildEntity(transfer, magnetOrUrl, isMagnet, infoHash, displayName))
 
-                NetworkResult.Success(
+                AddTransferOutcome.Added(
                     MergedTransfer(
                         transfer = transfer,
                         appDisplayName = displayName,
-                        magnetLink = entity.magnetLink,
+                        magnetLink = if (isMagnet) magnetOrUrl else null,
                         addedByApp = true,
                     )
                 )
             }
-            is NetworkResult.Error -> result
-            NetworkResult.Loading -> NetworkResult.Loading
+            is NetworkResult.Error -> {
+                if (result.errorType == TRANSFER_ADD_LIMIT_ERROR_TYPE) {
+                    pendingDao.insert(
+                        PendingTransferEntity(
+                            magnetOrUrl = magnetOrUrl,
+                            saveParentId = saveParentId,
+                            infoHash = infoHash,
+                            displayNameHint = if (isMagnet) MagnetParser.extractDisplayName(magnetOrUrl) else null,
+                            addedAt = System.currentTimeMillis(),
+                        )
+                    )
+                    AddTransferOutcome.Queued
+                } else {
+                    AddTransferOutcome.Failed(result.message)
+                }
+            }
+            NetworkResult.Loading -> AddTransferOutcome.Failed("Loading")
         }
     }
+
+    suspend fun getPendingTransfers(): List<PendingTransferEntity> = withContext(Dispatchers.IO) {
+        pendingDao.getAll()
+    }
+
+    suspend fun removePendingTransfer(id: Long) = withContext(Dispatchers.IO) {
+        pendingDao.deleteById(id)
+    }
+
+    /** Retries locally-queued transfers now that put.io may have freed up a slot.
+     *  Stops at the first one that still hits the limit, since later ones would too. */
+    suspend fun processPendingQueue(token: String): Int = withContext(Dispatchers.IO) {
+        var added = 0
+        for (pending in pendingDao.getAll()) {
+            when (val result = apiClient.addTransfer(token, pending.magnetOrUrl, pending.saveParentId)) {
+                is NetworkResult.Success -> {
+                    val transfer = result.data
+                    val isMagnet = MagnetParser.isMagnetLink(pending.magnetOrUrl)
+                    val displayName = pending.displayNameHint?.takeIf { it.isNotBlank() } ?: transfer.name
+                    dao.upsert(buildEntity(transfer, pending.magnetOrUrl, isMagnet, pending.infoHash, displayName))
+                    pendingDao.deleteById(pending.id)
+                    added++
+                }
+                is NetworkResult.Error -> {
+                    if (result.errorType == TRANSFER_ADD_LIMIT_ERROR_TYPE) {
+                        break
+                    } else {
+                        // Permanent failure (bad magnet, revoked token, etc.) — drop it rather than retry forever.
+                        pendingDao.deleteById(pending.id)
+                    }
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+        added
+    }
+
+    private fun buildEntity(
+        transfer: PutioTransfer,
+        magnetOrUrl: String,
+        isMagnet: Boolean,
+        infoHash: String?,
+        displayName: String,
+    ) = AppTransferEntity(
+        putioId = transfer.id,
+        displayName = displayName,
+        putioName = transfer.name,
+        magnetLink = if (isMagnet) magnetOrUrl else null,
+        infoHash = infoHash,
+        addedByApp = true,
+        addedAt = System.currentTimeMillis(),
+        nameResolved = false,
+        percentDone = transfer.percentDone,
+        size = transfer.size,
+    )
 
     suspend fun updateDisplayName(id: Long, newName: String) = withContext(Dispatchers.IO) {
         val local = dao.getById(id)
@@ -277,6 +338,7 @@ class TransfersRepository @Inject constructor(
 
     companion object {
         const val HIDDEN_FOLDER_NAME = ".putz_hidden"
+        private const val TRANSFER_ADD_LIMIT_ERROR_TYPE = "TRANSFER_ADD_LIMIT_REACHED"
 
         private val RESOLVING_STATUSES = setOf(
             TransferStatus.DOWNLOADING,

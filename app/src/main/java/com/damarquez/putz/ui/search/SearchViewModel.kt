@@ -2,6 +2,7 @@ package com.damarquez.putz.ui.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.damarquez.putz.data.model.AddTransferOutcome
 import com.damarquez.putz.data.model.MediaType
 import com.damarquez.putz.data.model.MetaCandidate
 import com.damarquez.putz.data.model.NetworkResult
@@ -181,20 +182,26 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             when (val added = transfersRepository.addTransfer(token, result.magnet)) {
-                is NetworkResult.Success -> {
+                is AddTransferOutcome.Added -> {
                     _uiState.value = _uiState.value.copy(
                         addingMagnets = _uiState.value.addingMagnets - result.magnet,
                         addedMagnets = _uiState.value.addedMagnets + result.magnet,
                     )
                     _snackbarMessage.value = "Transfer added to put.io"
                 }
-                is NetworkResult.Error -> {
+                is AddTransferOutcome.Queued -> {
+                    _uiState.value = _uiState.value.copy(
+                        addingMagnets = _uiState.value.addingMagnets - result.magnet,
+                        addedMagnets = _uiState.value.addedMagnets + result.magnet,
+                    )
+                    _snackbarMessage.value = "Active transfer limit reached — queued, will be added automatically"
+                }
+                is AddTransferOutcome.Failed -> {
                     _uiState.value = _uiState.value.copy(
                         addingMagnets = _uiState.value.addingMagnets - result.magnet,
                     )
                     _snackbarMessage.value = added.message
                 }
-                NetworkResult.Loading -> Unit
             }
         }
     }

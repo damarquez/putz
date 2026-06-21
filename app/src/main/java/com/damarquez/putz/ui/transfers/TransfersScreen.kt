@@ -69,6 +69,7 @@ fun TransfersScreen(
     val addState by viewModel.addState.collectAsState()
     val navigationEvent by viewModel.navigationEvent.collectAsState()
     val resumeError by viewModel.resumeError.collectAsState()
+    val queuedMessage by viewModel.queuedMessage.collectAsState()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val historySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -93,6 +94,13 @@ fun TransfersScreen(
         resumeError?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.onResumeErrorShown()
+        }
+    }
+
+    LaunchedEffect(queuedMessage) {
+        queuedMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.onQueuedMessageShown()
         }
     }
 

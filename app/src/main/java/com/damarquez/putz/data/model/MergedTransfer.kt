@@ -23,4 +23,8 @@ data class MergedTransfer(
 
     /** Matching history entry from the daemon, if available for this transfer's hash. */
     val historyEntry: HistoryFileEntry? = null,
+
+    /** True if this is a locally-queued entry that hasn't been accepted by put.io yet
+     *  (active-transfer limit reached). [transfer.id] is a negative sentinel in this case. */
+    val isPendingLocal: Boolean = false,
 )

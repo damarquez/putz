@@ -49,6 +49,7 @@ enum class TransferStatus(val label: String) {
 }
 
 enum class TransferGroup(val label: String) {
+    PENDING_LOCAL("Waiting for a free slot"),
     ACTIVE("Active"),
     QUEUED("Queued"),
     COMPLETED("Completed"),

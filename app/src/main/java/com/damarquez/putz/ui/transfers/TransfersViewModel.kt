@@ -2,9 +2,12 @@ package com.damarquez.putz.ui.transfers
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.damarquez.putz.data.local.PendingTransferEntity
+import com.damarquez.putz.data.model.AddTransferOutcome
 import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.data.model.PutioTransfer
 import com.damarquez.putz.data.model.TransferGroup
 import com.damarquez.putz.data.model.TransferStatus
 import com.damarquez.putz.data.model.group
@@ -82,6 +85,9 @@ class TransfersViewModel @Inject constructor(
     private val _resumeError = MutableStateFlow<String?>(null)
     val resumeError: StateFlow<String?> = _resumeError.asStateFlow()
 
+    private val _queuedMessage = MutableStateFlow<String?>(null)
+    val queuedMessage: StateFlow<String?> = _queuedMessage.asStateFlow()
+
     private var pollJob: Job? = null
 
     init {
@@ -115,8 +121,12 @@ class TransfersViewModel @Inject constructor(
                 val token = settingsRepository.authTokenFlow.first()
                 when (val result = transfersRepository.syncAndGetTransfers(token)) {
                     is NetworkResult.Success -> {
-                        val transfers = result.data
-                        _uiState.value = TransfersUiState.Success(grouped = buildGroupedMap(transfers))
+                        val addedFromQueue = transfersRepository.processPendingQueue(token)
+                        val transfers = if (addedFromQueue > 0) {
+                            (transfersRepository.syncAndGetTransfers(token) as? NetworkResult.Success)?.data ?: result.data
+                        } else result.data
+                        val pending = transfersRepository.getPendingTransfers()
+                        _uiState.value = TransfersUiState.Success(grouped = buildGroupedMap(transfers, pending))
                         registerTransferHistory(transfers, token)
 
                         val seeding = transfers.filter {
@@ -126,7 +136,7 @@ class TransfersViewModel @Inject constructor(
                             seeding.forEach { transfersRepository.stopTransfer(token, it.transfer.id) }
                             // re-poll immediately so the UI reflects the cancellations
                         } else {
-                            val hasActive = transfers.any { it.transfer.isActive() }
+                            val hasActive = transfers.any { it.transfer.isActive() } || pending.isNotEmpty()
                             delay(if (hasActive) POLL_ACTIVE_MS else POLL_IDLE_MS)
                         }
                     }
@@ -208,16 +218,21 @@ class TransfersViewModel @Inject constructor(
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val saveParentId = if (hideFromDaemon) transfersRepository.getOrCreateHiddenFolderId(token) else 0L
-            when (val result = transfersRepository.addTransfer(token, magnetOrUrl, saveParentId)) {
-                is NetworkResult.Success -> {
+            when (val outcome = transfersRepository.addTransfer(token, magnetOrUrl, saveParentId)) {
+                is AddTransferOutcome.Added -> {
                     _showAddSheet.value = false
                     _addState.value = AddTransferState.Idle
                     startPolling(immediate = true)
                 }
-                is NetworkResult.Error -> {
-                    _addState.value = AddTransferState.Failed(result.message)
+                is AddTransferOutcome.Queued -> {
+                    _showAddSheet.value = false
+                    _addState.value = AddTransferState.Idle
+                    _queuedMessage.value = "Active transfer limit reached — queued, will be added automatically"
+                    startPolling(immediate = true)
                 }
-                NetworkResult.Loading -> Unit
+                is AddTransferOutcome.Failed -> {
+                    _addState.value = AddTransferState.Failed(outcome.message)
+                }
             }
         }
     }
@@ -235,11 +250,21 @@ class TransfersViewModel @Inject constructor(
     fun removeTransfer(id: Long) {
         println("TransfersViewModel: Removing transfer $id")
         viewModelScope.launch {
+            if (id < 0) {
+                // Negative sentinel: this is a locally-queued entry, not a real put.io transfer.
+                transfersRepository.removePendingTransfer(-id)
+                refresh()
+                return@launch
+            }
             val token = settingsRepository.authTokenFlow.first()
             val result = transfersRepository.removeTransfer(token, id)
             println("TransfersViewModel: Remove result: $result")
             refresh()
         }
+    }
+
+    fun onQueuedMessageShown() {
+        _queuedMessage.value = null
     }
 
     fun resumeTransfer(id: Long) {
@@ -346,18 +371,36 @@ class TransfersViewModel @Inject constructor(
         }
     }
 
-    private fun buildGroupedMap(transfers: List<MergedTransfer>): Map<TransferGroup, List<MergedTransfer>> {
+    private fun buildGroupedMap(
+        transfers: List<MergedTransfer>,
+        pending: List<PendingTransferEntity> = emptyList(),
+    ): Map<TransferGroup, List<MergedTransfer>> {
         val enriched = transfers.map { t ->
             val entry = t.transfer.hash?.lowercase()?.let { historyByHash[it] }
             if (entry != null) t.copy(historyEntry = entry) else t
         }
         val grouped = enriched.groupBy { it.transfer.group() }
         return buildMap {
+            if (pending.isNotEmpty()) {
+                put(TransferGroup.PENDING_LOCAL, pending.map { it.toMergedTransfer() })
+            }
             TransferGroup.entries.forEach { group ->
+                if (group == TransferGroup.PENDING_LOCAL) return@forEach
                 val items = grouped[group] ?: return@forEach
                 put(group, items)
             }
         }
+    }
+
+    private fun PendingTransferEntity.toMergedTransfer(): MergedTransfer {
+        val name = displayNameHint?.takeIf { it.isNotBlank() } ?: "Queued transfer"
+        return MergedTransfer(
+            transfer = PutioTransfer(id = -id, name = name, status = "WAITING"),
+            appDisplayName = name,
+            magnetLink = magnetOrUrl.takeIf { MagnetParser.isMagnetLink(it) },
+            addedByApp = true,
+            isPendingLocal = true,
+        )
     }
 
     companion object {
