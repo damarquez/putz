@@ -8,18 +8,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.damarquez.putz.util.RtfExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Plain text preview: scrollable, selectable, copyable. Truncated for very large files. */
+/** Quick RTF preview: strips control words/groups down to plain readable text. No formatting. */
 @Composable
-fun TxtViewer(filePath: String, modifier: Modifier = Modifier) {
+fun RtfViewer(filePath: String, modifier: Modifier = Modifier) {
     val content by produceState<String?>(initialValue = null, key1 = filePath) {
         value = withContext(Dispatchers.IO) {
-            runCatching {
-                truncateForPreview(File(filePath).bufferedReader(Charsets.UTF_8).use { it.readText() })
-            }.getOrElse { "Couldn't read this file" }
+            runCatching { truncateForPreview(RtfExtractor.extractText(File(filePath))) }
+                .getOrElse { "Couldn't read this file" }
         }
     }
 
