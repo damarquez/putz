@@ -38,6 +38,7 @@ fun ViewerScreen(
             ViewerKind.EPUB -> EpubViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.MOBI -> MobiViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.PDF -> PdfViewer(filePath = filePath, modifier = Modifier.padding(padding))
+            ViewerKind.TXT -> TxtViewer(filePath = filePath, modifier = Modifier.padding(padding))
         }
     }
 }
