@@ -89,6 +89,12 @@ object MetadataUtils {
         return ext == "txt"
     }
 
+    /** AZW3 (Kindle KF8) — same PalmDB/PalmDOC text records as legacy MOBI, just with a KF8 layout system on top. */
+    fun isAzw3(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext == "azw3"
+    }
+
     fun isVideo(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext in VIDEO_EXTENSIONS

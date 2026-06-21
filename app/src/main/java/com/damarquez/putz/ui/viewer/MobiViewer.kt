@@ -19,7 +19,7 @@ private const val MOBI_PATH_PREFIX = "/mobi/"
 private data class MobiContents(val destDir: File, val pages: List<File>)
 
 /**
- * Quick MOBI text preview: decompresses the PalmDOC text records and browses the result
+ * Quick MOBI / AZW3 text preview: decompresses the PalmDOC text records and browses the result
  * page-by-page (native long-press text selection/copy comes for free from the WebView).
  * DRM-protected or HUFF/CDIC-compressed files fall back to "Couldn't read this file".
  */
