@@ -73,6 +73,14 @@ sealed class Screen(val route: String) {
         const val ARG_PUTIO_IS_SYNCED = "putioIsSynced"
     }
 
+    data object Viewer : Screen("viewer/{kind}/{title}?uri={uri}") {
+        fun createRoute(kind: String, title: String, uri: String): String =
+            "viewer/$kind/${Uri.encode(title)}?uri=${Uri.encode(uri)}"
+        const val ARG_KIND = "kind"
+        const val ARG_TITLE = "title"
+        const val ARG_URI = "uri"
+    }
+
     data object Transfers : Screen("transfers")
 
     data object Search : Screen("find_content")

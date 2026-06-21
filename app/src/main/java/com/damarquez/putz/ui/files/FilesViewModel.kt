@@ -23,6 +23,7 @@ import com.damarquez.putz.data.repository.PackGroup
 import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.Screen
+import com.damarquez.putz.ui.viewer.ViewerKind
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -169,6 +170,10 @@ class FilesViewModel @Inject constructor(
 
     private val _previewIntent = MutableSharedFlow<Intent>()
     val previewIntent: SharedFlow<Intent> = _previewIntent.asSharedFlow()
+
+    data class ViewerEvent(val kind: ViewerKind, val title: String, val uri: String)
+    private val _viewerEvent = MutableSharedFlow<ViewerEvent>()
+    val viewerEvent: SharedFlow<ViewerEvent> = _viewerEvent.asSharedFlow()
 
     private val _accountInfo = MutableStateFlow<AccountInfo?>(null)
     val accountInfo: StateFlow<AccountInfo?> = _accountInfo.asStateFlow()
@@ -343,16 +348,21 @@ class FilesViewModel @Inject constructor(
                     }
                 }
 
-                val extension = MimeTypeMap.getFileExtensionFromUrl(file.displayName)
-                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+                val viewerKind = ViewerKind.forFileName(file.displayName)
+                if (viewerKind != null) {
+                    _viewerEvent.emit(ViewerEvent(viewerKind, file.displayName, uri.toString()))
+                } else {
+                    val extension = MimeTypeMap.getFileExtensionFromUrl(file.displayName)
+                    val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
 
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, mimeType)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, mimeType)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+
+                    _previewIntent.emit(intent)
                 }
-
-                _previewIntent.emit(intent)
             } catch (e: Exception) {
                 _snackbarMessage.value = "Preview error: ${e.message}"
             } finally {

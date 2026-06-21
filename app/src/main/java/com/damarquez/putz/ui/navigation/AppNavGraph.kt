@@ -37,6 +37,8 @@ import com.damarquez.putz.ui.settings.SettingsScreen
 import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
 import com.damarquez.putz.ui.transfers.TransferHistoryScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
+import com.damarquez.putz.ui.viewer.ViewerKind
+import com.damarquez.putz.ui.viewer.ViewerScreen
 
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -294,6 +296,9 @@ fun AppNavGraph(
                             )
                         )
                     },
+                    onNavigateToViewer = { kind, title, uri ->
+                        navController.navigate(Screen.Viewer.createRoute(kind.name, title, uri))
+                    },
                     onNavigateToTrash = { navController.navigate(Screen.Trash.route) },
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
@@ -303,6 +308,25 @@ fun AppNavGraph(
                         }
                     },
                     viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(
+                route = Screen.Viewer.route,
+                arguments = listOf(
+                    navArgument(Screen.Viewer.ARG_KIND) { type = NavType.StringType },
+                    navArgument(Screen.Viewer.ARG_TITLE) { type = NavType.StringType },
+                    navArgument(Screen.Viewer.ARG_URI) { type = NavType.StringType },
+                ),
+            ) { backStackEntry ->
+                val kindArg = backStackEntry.arguments?.getString(Screen.Viewer.ARG_KIND).orEmpty()
+                val title = backStackEntry.arguments?.getString(Screen.Viewer.ARG_TITLE).orEmpty()
+                val uri = backStackEntry.arguments?.getString(Screen.Viewer.ARG_URI).orEmpty()
+                ViewerScreen(
+                    kind = ViewerKind.valueOf(kindArg),
+                    title = title,
+                    uri = uri,
+                    onNavigateUp = { navController.navigateUp() },
                 )
             }
 

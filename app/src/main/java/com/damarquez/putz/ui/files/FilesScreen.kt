@@ -104,6 +104,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material3.NavigationRailItemDefaults
+import com.damarquez.putz.ui.viewer.ViewerKind
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,6 +113,7 @@ fun FilesScreen(
     onNavigateToFolderHighlighted: (folderId: Long, folderName: String, highlightId: Long) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
     onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean) -> Unit,
+    onNavigateToViewer: (kind: ViewerKind, title: String, uri: String) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -226,6 +228,12 @@ fun FilesScreen(
     LaunchedEffect(Unit) {
         viewModel.previewIntent.collect { intent ->
             context.startActivity(intent)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.viewerEvent.collect { event ->
+            onNavigateToViewer(event.kind, event.title, event.uri)
         }
     }
 
