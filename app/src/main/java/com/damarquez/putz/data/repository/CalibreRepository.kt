@@ -2205,8 +2205,14 @@ class CalibreRepository @Inject constructor(
 
     suspend fun deleteFileFromPutio(token: String, fileId: Long): NetworkResult<Unit> {
         return withContext(Dispatchers.IO) {
-            val originalIds = calibreTransferDao.getTransferById(fileId)?.parsedFileIds() ?: listOf(fileId)
+            val transfer = calibreTransferDao.getTransferById(fileId)
+            val originalIds = transfer?.parsedFileIds() ?: listOf(fileId)
             val idsToDelete = mutableListOf<Long>()
+            // Source IDs whose put.io state we couldn't confirm this round (transient lookup
+            // failure or a failed batch delete) — kept around so a retry only targets these
+            // instead of redoing the whole pack, and so a single bad file can't wipe out
+            // deletions already resolved for the rest of a multi-file pack.
+            val unresolvedIds = mutableListOf<Long>()
             for ((index, originalId) in originalIds.withIndex()) {
                 if (originalIds.size > 1) {
                     updateDeleteProgress(TransferDeleteProgress(
@@ -2231,8 +2237,8 @@ class CalibreRepository @Inject constructor(
                     // - 404: file was synced to a stub, but search didn't find it. Adding originalId
                     //        would silently no-op (put.io accepts deletes of non-existent IDs), leaving
                     //        the stub on put.io. Log a warning instead.
-                    // - other error: network issue → bail out for this file only, rather than risk
-                    //        deleting the wrong file or silently leaving the stub behind.
+                    // - other error: network issue → leave this file for a retry rather than risk
+                    //        deleting the wrong file, but keep resolving the rest of the pack.
                     val fileCheck = withPutioRetry { putioApiClient.getFile(token, originalId) }
                     when {
                         fileCheck is NetworkResult.Success ->
@@ -2241,21 +2247,31 @@ class CalibreRepository @Inject constructor(
                             android.util.Log.w("CalibreRepository",
                                 "Stub for put.io file $originalId not found via search and original is gone — stub may remain on put.io")
                         else -> {
-                            val errorMessage = (fileCheck as? NetworkResult.Error)?.message ?: "unknown error"
-                            return@withContext NetworkResult.Error(
-                                "Could not verify put.io file $originalId: $errorMessage",
-                                (fileCheck as? NetworkResult.Error)?.code)
+                            android.util.Log.w("CalibreRepository",
+                                "Could not verify put.io file $originalId — will retry later: ${(fileCheck as? NetworkResult.Error)?.message}")
+                            unresolvedIds.add(originalId)
                         }
                     }
                 }
             }
-            if (idsToDelete.isEmpty()) return@withContext NetworkResult.Success(Unit)
-            val result = withPutioRetry { putioApiClient.deleteFiles(token, idsToDelete.distinct()) }
-            if (result is NetworkResult.Error) {
-                android.util.Log.w("CalibreRepository",
-                    "Failed to delete put.io files $idsToDelete: ${result.message}")
+            if (idsToDelete.isNotEmpty()) {
+                val result = withPutioRetry { putioApiClient.deleteFiles(token, idsToDelete.distinct()) }
+                if (result is NetworkResult.Error) {
+                    android.util.Log.w("CalibreRepository",
+                        "Failed to delete put.io files $idsToDelete: ${result.message}")
+                    unresolvedIds.addAll(idsToDelete)
+                }
             }
-            result
+            if (unresolvedIds.isEmpty()) return@withContext NetworkResult.Success(Unit)
+
+            // Narrow the transfer's tracked IDs to just what's left so a retry doesn't
+            // re-resolve files that were already confirmed deleted in this pass.
+            if (transfer != null) {
+                calibreTransferDao.updateTransfer(transfer.copy(
+                    allPutioFileIds = unresolvedIds.distinct().joinToString(","),
+                ))
+            }
+            NetworkResult.Error("Could not delete ${unresolvedIds.distinct().size} of ${originalIds.size} file(s) from put.io")
         }
     }
 
