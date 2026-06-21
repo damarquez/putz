@@ -6,13 +6,15 @@ import com.damarquez.putz.util.MetadataUtils
 enum class ViewerKind {
     IMAGE,
     EPUB,
-    MOBI;
+    MOBI,
+    PDF;
 
     companion object {
         fun forFileName(fileName: String): ViewerKind? = when {
             MetadataUtils.isImage(fileName) -> IMAGE
             MetadataUtils.isEpub(fileName) -> EPUB
             MetadataUtils.isMobi(fileName) -> MOBI
+            MetadataUtils.isPdf(fileName) -> PDF
             else -> null
         }
     }

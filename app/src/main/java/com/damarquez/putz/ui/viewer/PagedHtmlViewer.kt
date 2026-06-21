@@ -4,18 +4,10 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,7 +17,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import java.io.File
@@ -75,18 +66,11 @@ fun PagedHtmlViewer(destDir: File, pages: List<File>, pathPrefix: String, modifi
             },
             update = { webView -> webView.loadUrl(pageUrl) },
         )
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = { currentIndex-- }, enabled = currentIndex > 0) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous")
-            }
-            Text("${currentIndex + 1} / ${pages.size}")
-            IconButton(onClick = { currentIndex++ }, enabled = currentIndex < pages.size - 1) {
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next")
-            }
-        }
+        PageNavBar(
+            currentIndex = currentIndex,
+            pageCount = pages.size,
+            onPrevious = { currentIndex-- },
+            onNext = { currentIndex++ },
+        )
     }
 }
