@@ -296,8 +296,8 @@ fun AppNavGraph(
                             )
                         )
                     },
-                    onNavigateToViewer = { kind, title, uri ->
-                        navController.navigate(Screen.Viewer.createRoute(kind.name, title, uri))
+                    onNavigateToViewer = { kind, title, filePath ->
+                        navController.navigate(Screen.Viewer.createRoute(kind.name, title, filePath))
                     },
                     onNavigateToTrash = { navController.navigate(Screen.Trash.route) },
                     onNavigateUp = { navController.navigateUp() },
@@ -316,16 +316,16 @@ fun AppNavGraph(
                 arguments = listOf(
                     navArgument(Screen.Viewer.ARG_KIND) { type = NavType.StringType },
                     navArgument(Screen.Viewer.ARG_TITLE) { type = NavType.StringType },
-                    navArgument(Screen.Viewer.ARG_URI) { type = NavType.StringType },
+                    navArgument(Screen.Viewer.ARG_FILE_PATH) { type = NavType.StringType },
                 ),
             ) { backStackEntry ->
                 val kindArg = backStackEntry.arguments?.getString(Screen.Viewer.ARG_KIND).orEmpty()
                 val title = backStackEntry.arguments?.getString(Screen.Viewer.ARG_TITLE).orEmpty()
-                val uri = backStackEntry.arguments?.getString(Screen.Viewer.ARG_URI).orEmpty()
+                val filePath = backStackEntry.arguments?.getString(Screen.Viewer.ARG_FILE_PATH).orEmpty()
                 ViewerScreen(
                     kind = ViewerKind.valueOf(kindArg),
                     title = title,
-                    uri = uri,
+                    filePath = filePath,
                     onNavigateUp = { navController.navigateUp() },
                 )
             }

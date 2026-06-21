@@ -171,7 +171,7 @@ class FilesViewModel @Inject constructor(
     private val _previewIntent = MutableSharedFlow<Intent>()
     val previewIntent: SharedFlow<Intent> = _previewIntent.asSharedFlow()
 
-    data class ViewerEvent(val kind: ViewerKind, val title: String, val uri: String)
+    data class ViewerEvent(val kind: ViewerKind, val title: String, val filePath: String)
     private val _viewerEvent = MutableSharedFlow<ViewerEvent>()
     val viewerEvent: SharedFlow<ViewerEvent> = _viewerEvent.asSharedFlow()
 
@@ -350,7 +350,8 @@ class FilesViewModel @Inject constructor(
 
                 val viewerKind = ViewerKind.forFileName(file.displayName)
                 if (viewerKind != null) {
-                    _viewerEvent.emit(ViewerEvent(viewerKind, file.displayName, uri.toString()))
+                    val viewerFile = withContext(Dispatchers.IO) { resolveFileForViewer(uri, file.displayName) }
+                    _viewerEvent.emit(ViewerEvent(viewerKind, file.displayName, viewerFile.absolutePath))
                 } else {
                     val extension = MimeTypeMap.getFileExtensionFromUrl(file.displayName)
                     val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
@@ -372,6 +373,18 @@ class FilesViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** In-app viewers need a real File (e.g. for ZipFile access), not a content:// grant meant for external apps. */
+    private fun resolveFileForViewer(uri: Uri, displayName: String): File {
+        if (uri.scheme == "file") return File(requireNotNull(uri.path))
+        val dest = File(File(context.cacheDir, "previews"), "viewer_$displayName")
+        if (!dest.exists()) {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        return dest
     }
 
     fun loadFiles(isRefresh: Boolean = false) {

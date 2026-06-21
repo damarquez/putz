@@ -16,15 +16,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
+import java.io.File
 
 /** Quick image preview with pinch-to-zoom and pan; no cropping, filters, or editing. */
 @Composable
-fun ImageViewer(uri: String, modifier: Modifier = Modifier) {
+fun ImageViewer(filePath: String, modifier: Modifier = Modifier) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
     AsyncImage(
-        model = uri,
+        model = File(filePath),
         contentDescription = null,
         contentScale = ContentScale.Fit,
         modifier = modifier

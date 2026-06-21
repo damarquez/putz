@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 fun ViewerScreen(
     kind: ViewerKind,
     title: String,
-    uri: String,
+    filePath: String,
     onNavigateUp: () -> Unit,
 ) {
     Scaffold(
@@ -34,7 +34,8 @@ fun ViewerScreen(
         },
     ) { padding ->
         when (kind) {
-            ViewerKind.IMAGE -> ImageViewer(uri = uri, modifier = Modifier.padding(padding))
+            ViewerKind.IMAGE -> ImageViewer(filePath = filePath, modifier = Modifier.padding(padding))
+            ViewerKind.EPUB -> EpubViewer(filePath = filePath, modifier = Modifier.padding(padding))
         }
     }
 }
