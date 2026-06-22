@@ -81,7 +81,7 @@ fun FileItem(
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
     onSendAsJoinedPdf: (PutioFile) -> Unit,
-    onAssembleIntoPdf: (PutioFile) -> Unit,
+    onAssembleIntoPack: (PutioFile, type: String) -> Unit,
     onSendAsJoinedEpub: (PutioFile) -> Unit,
     onSendAsCbrPdf: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
@@ -437,6 +437,16 @@ fun FileItem(
                                         onSendAsImagePdf(file)
                                     },
                                 )
+                                if (hasPendingAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into fused image PDF") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleIntoPack(file, "IMAGE_PDF_PACK")
+                                        },
+                                    )
+                                }
                             }
                             if (isMultiTrackAudio) {
                                 DropdownMenuItem(
@@ -475,7 +485,7 @@ fun FileItem(
                                         enabled = isGoogleSignedIn,
                                         onClick = {
                                             showMenu = false
-                                            onAssembleIntoPdf(file)
+                                            onAssembleIntoPack(file, "PDF_PACK")
                                         },
                                     )
                                 }
@@ -490,6 +500,16 @@ fun FileItem(
                                         onSendAsJoinedEpub(file)
                                     },
                                 )
+                                if (hasPendingAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into fused EPUB") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleIntoPack(file, "EPUB_PACK")
+                                        },
+                                    )
+                                }
                             }
                             if (isComicArchive) {
                                 DropdownMenuItem(
@@ -501,6 +521,16 @@ fun FileItem(
                                         onSendAsCbrPdf(file)
                                     },
                                 )
+                                if (hasPendingAssemblies) {
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into fused CBR PDF") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleIntoPack(file, "CBR_PDF_PACK")
+                                        },
+                                    )
+                                }
                             }
                             if (isVideo && file.isSynced) {
                                 DropdownMenuItem(

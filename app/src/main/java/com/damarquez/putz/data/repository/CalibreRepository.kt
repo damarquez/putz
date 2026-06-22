@@ -872,6 +872,97 @@ class CalibreRepository @Inject constructor(
         ))
     }
 
+    // CONTRACT: merge framework — pack-shaped item types whose `files`/`groups` hold the
+    // homogeneous source files being joined, as opposed to SINGLE/ARCHIVE/ARCHIVE_ENTRY items.
+    private val PACK_TYPES = setOf("PACK", "PDF_PACK", "EPUB_PACK", "IMAGE_PDF_PACK", "CBR_PDF_PACK")
+
+    // Only PDF_PACK/EPUB_PACK can absorb a lone SINGLE item of the matching extension into the
+    // pack as its first file: a finished .pdf/.epub is valid raw input for "join PDFs/EPUBs".
+    // IMAGE_PDF_PACK/CBR_PDF_PACK take raw images/archives as input, so a finished SINGLE .pdf
+    // isn't valid input for those — no promotion offered for them.
+    private val PROMOTABLE_SINGLE_EXTENSION = mapOf("PDF_PACK" to "pdf", "EPUB_PACK" to "epub")
+
+    private fun CalibreBatchItem.sourceFileNames(): List<String> = when {
+        type in PACK_TYPES && files != null -> files.map { it.fileName }
+        type in PACK_TYPES && groups != null -> groups.flatMap { g -> g.files.map { it.fileName } }
+        else -> listOf(fileName)
+    }
+
+    private fun CalibreBatchItem.outputExtension(): String =
+        fileName.substringAfterLast('.', "").lowercase()
+
+    /**
+     * Finds the item within [transfer]'s batchData that a new [payloadType] pack should fold
+     * into: either an existing item of the same type, or — for PDF_PACK/EPUB_PACK only — a lone
+     * SINGLE item of the matching output extension that can be promoted into the pack's first
+     * file. Returns null if nothing compatible exists.
+     */
+    fun compatibleAssemblyItem(transfer: CalibreTransferEntity, payloadType: String): CalibreBatchItem? {
+        val items = transfer.batchData?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
+        } ?: return null
+        items.firstOrNull { it.type == payloadType }?.let { return it }
+        val ext = PROMOTABLE_SINGLE_EXTENSION[payloadType] ?: return null
+        return items.firstOrNull { it.type == "SINGLE" && it.outputExtension() == ext }
+    }
+
+    /**
+     * Folds [newItem]'s files into the matching item found by [compatibleAssemblyItem] (extending
+     * an existing pack, or promoting a lone matching SINGLE into a new pack) instead of appending
+     * [newItem] as a separate item — this is what lets a join-pack be built up across multiple
+     * "Assemble into fused X" calls without hitting the daemon's same-output-format dedup, which
+     * otherwise silently drops the second of two same-type pack items at dispatch (see the TODO
+     * on [appendToAssembly] below). Falls back to [appendToAssembly] when nothing is compatible.
+     * Always preserves the assembly's own title/author/tags — those came from [transfer], not
+     * from whatever the user typed while building this new batch.
+     */
+    suspend fun mergeIntoAssemblyItem(
+        assemblyFileId: Long,
+        newItem: CalibreBatchItem,
+        newFileIds: List<Long>,
+    ): Boolean {
+        val transfer = calibreTransferDao.getTransferById(assemblyFileId) ?: return false
+        val matched = compatibleAssemblyItem(transfer, newItem.type)
+            ?: return appendToAssembly(assemblyFileId, transfer.title, transfer.author, newItem, newFileIds)
+
+        // v1: only flat (ungrouped) packs can be combined this way.
+        if (matched.groups != null || newItem.groups != null) return false
+
+        val currentItems = transfer.batchData?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
+        } ?: emptyList()
+
+        val existingFileNames = currentItems.flatMap { it.sourceFileNames() }.toSet()
+        if (newItem.sourceFileNames().any { it in existingFileNames }) return false
+
+        val mergedItem = if (matched.type == newItem.type) {
+            matched.copy(files = (matched.files ?: emptyList()) + (newItem.files ?: emptyList()))
+        } else {
+            // Promotion: matched is a lone SINGLE of the matching extension — fold it in as the
+            // pack's first file.
+            val promotedFile = AudiobookFile(
+                putio_file_id = matched.putio_file_id,
+                fileName = matched.fileName,
+                download_url = matched.download_url,
+                smb_path = matched.smb_path,
+                use_local = matched.use_local,
+                local_path = matched.local_path,
+            )
+            newItem.copy(files = listOf(promotedFile) + (newItem.files ?: emptyList()))
+        }
+
+        val updatedItems = currentItems.map { if (it == matched) mergedItem else it }
+        val updatedIds = (transfer.parsedFileIds() + newFileIds).distinct()
+
+        calibreTransferDao.updateTransfer(transfer.copy(
+            batchData = json.encodeToString(updatedItems),
+            allPutioFileIds = updatedIds.joinToString(","),
+            lastUpdatedAt = System.currentTimeMillis(),
+            errorMessage = null,
+        ))
+        return true
+    }
+
     suspend fun appendToAssembly(
         assemblyFileId: Long,
         title: String,

@@ -185,7 +185,7 @@ fun PdfPackSheet(
             Button(
                 onClick = { onConfirm(selectedFiles) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = selectedFiles.size >= 2,
+                enabled = selectedFiles.isNotEmpty(),
             ) {
                 Text("Continue")
             }

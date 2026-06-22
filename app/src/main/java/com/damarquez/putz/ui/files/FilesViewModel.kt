@@ -1371,10 +1371,16 @@ class FilesViewModel @Inject constructor(
     // CONTRACT: ADD_BOOK_BATCH — merge framework. Appends a merge item into an existing pending
     // (not-yet-dispatched) assembly transfer — the "Assemble into fused PDF"-style mechanism,
     // generalized for any merge engine. Pass either `files` (flat) or `groups` (chaptered).
+    // Which item (if any) in [assembly] a new [payloadType] pack batch would fold into, for the
+    // "Pick Assembly" picker to filter candidates and preview what's already in each one.
+    fun compatibleAssemblyItem(assembly: com.damarquez.putz.data.local.CalibreTransferEntity, payloadType: String) =
+        calibreRepository.compatibleAssemblyItem(assembly, payloadType)
+
+    // Always folds into the assembly's existing title/author/tags — never the sheet's typed
+    // values, since this batch is just adding more files to an existing book, not retitling it.
     fun appendMergeToAssembly(
         assemblyFileId: Long, type: String, fileName: String,
         files: List<PutioFile>? = null, groups: List<MergeCandidateGroup>? = null,
-        title: String, author: String,
     ) {
         viewModelScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
@@ -1382,8 +1388,8 @@ class FilesViewModel @Inject constructor(
                 val putioToken = settingsRepository.authTokenFlow.first()
                 val (newItem, newIds) = buildResolvedMergeItem(type, fileName, putioToken, assemblyFileId, files, groups)
                     ?: return@launch
-                val added = calibreRepository.appendToAssembly(assemblyFileId, title, author, newItem, newIds)
-                _snackbarMessage.value = if (added) "Added to assembly: $title" else "\"$fileName\" is already in this assembly"
+                val added = calibreRepository.mergeIntoAssemblyItem(assemblyFileId, newItem, newIds)
+                _snackbarMessage.value = if (added) "Added to assembly" else "\"$fileName\" is already in this assembly"
             } finally {
                 calibreRepository.clearAssemblyAppendPending(assemblyFileId)
             }

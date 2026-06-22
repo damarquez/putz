@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreRepository
+import androidx.compose.ui.text.style.TextOverflow
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileItem
 import com.damarquez.putz.ui.navigation.Screen
@@ -296,8 +297,12 @@ fun FilesScreen(
     // PDF pack flow
     var pdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedPdfFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-    var isPdfPackAssembly by remember { mutableStateOf(false) }
     val pdfPackSheetState = rememberModalBottomSheetState()
+
+    // Non-null while a pack sheet (PDF/EPUB/Image/CBR) was opened via "Assemble into fused X"
+    // rather than plain "Merge" — its onConfirm should park a MergeAssemblyPayload for the
+    // existing-assembly picker instead of starting a brand-new transfer. Value is the pack type.
+    var assembleIntoPackType by remember { mutableStateOf<String?>(null) }
 
     // EPUB pack flow
     var epubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
@@ -331,8 +336,19 @@ fun FilesScreen(
 
     if (selectedFileForAssembly != null && targetAssemblyForFile == null) {
         val isMergePayload = selectedFileForAssembly!!.second
-        val canShowPicker = if (isMergePayload) mergeAssemblyPayload != null else true
+        val payload = mergeAssemblyPayload
+        val canShowPicker = if (isMergePayload) payload != null else true
         if (canShowPicker) {
+            // For a merge payload, only offer assemblies that already have a compatible item
+            // (same pack type, or a lone SINGLE of the matching extension that can be promoted)
+            // — and preview that item's files so the user can tell candidates apart before picking.
+            val candidates = if (isMergePayload && payload != null) {
+                pendingAssemblies.mapNotNull { assembly ->
+                    viewModel.compatibleAssemblyItem(assembly, payload.type)?.let { item -> assembly to item }
+                }
+            } else {
+                pendingAssemblies.map { it to null }
+            }
             AlertDialog(
                 onDismissRequest = {
                     selectedFileForAssembly = null
@@ -341,16 +357,29 @@ fun FilesScreen(
                 title = { Text("Pick Assembly") },
                 text = {
                     Column {
-                        pendingAssemblies.forEach { assembly ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
-                                        Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                },
-                                onClick = { targetAssemblyForFile = assembly }
-                            )
+                        if (isMergePayload && candidates.isEmpty()) {
+                            Text("No compatible assembly found.")
+                        } else {
+                            candidates.forEach { (assembly, item) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
+                                            Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            if (item != null) {
+                                                Text(
+                                                    text = item.files?.joinToString { it.fileName } ?: item.fileName,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = { targetAssemblyForFile = assembly }
+                                )
+                            }
                         }
                     }
                 },
@@ -384,7 +413,7 @@ fun FilesScreen(
                     val fileName = if (isAltVersion && payload.type == "PACK") "Audiobook.m4b_bkp" else payload.fileName
                     viewModel.appendMergeToAssembly(
                         targetAssemblyForFile!!.putioFileId, payload.type, fileName,
-                        files = payload.files, groups = payload.groups, title = title, author = author,
+                        files = payload.files, groups = payload.groups,
                     )
                 } else {
                     viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode, isAltVersion)
@@ -485,13 +514,13 @@ fun FilesScreen(
             sheetState = pdfPackSheetState,
             onDismiss = {
                 pdfPackTriggerFile = null
-                if (isPdfPackAssembly) {
+                if (assembleIntoPackType == "PDF_PACK") {
                     selectedFileForAssembly = null
-                    isPdfPackAssembly = false
+                    assembleIntoPackType = null
                 }
             },
             onConfirm = { files ->
-                if (isPdfPackAssembly) {
+                if (assembleIntoPackType == "PDF_PACK") {
                     mergeAssemblyPayload = MergeAssemblyPayload("PDF_PACK", "Book.pdf", "${files.size} PDF files", files = files)
                 } else {
                     selectedPdfFiles = files
@@ -542,7 +571,7 @@ fun FilesScreen(
         )
     }
 
-    if (epubPackTriggerFile != null && selectedEpubFiles == null) {
+    if (epubPackTriggerFile != null && selectedEpubFiles == null && mergeAssemblyPayload == null) {
         val epubFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isEpub(it.displayName) }
@@ -551,9 +580,19 @@ fun FilesScreen(
         EpubPackSheet(
             epubFiles = epubFiles,
             sheetState = epubPackSheetState,
-            onDismiss = { epubPackTriggerFile = null },
+            onDismiss = {
+                epubPackTriggerFile = null
+                if (assembleIntoPackType == "EPUB_PACK") {
+                    selectedFileForAssembly = null
+                    assembleIntoPackType = null
+                }
+            },
             onConfirm = { files ->
-                selectedEpubFiles = files
+                if (assembleIntoPackType == "EPUB_PACK") {
+                    mergeAssemblyPayload = MergeAssemblyPayload("EPUB_PACK", "Book.epub", "${files.size} EPUB files", files = files)
+                } else {
+                    selectedEpubFiles = files
+                }
                 epubPackTriggerFile = null
             },
         )
@@ -579,7 +618,7 @@ fun FilesScreen(
         )
     }
 
-    if (imagePdfPackTriggerFile != null && selectedImageFiles == null) {
+    if (imagePdfPackTriggerFile != null && selectedImageFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName; filter to image siblings in current folder
         val imageFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
@@ -589,9 +628,19 @@ fun FilesScreen(
         ImagePdfPackSheet(
             imageFiles = imageFiles,
             sheetState = imagePdfPackSheetState,
-            onDismiss = { imagePdfPackTriggerFile = null },
+            onDismiss = {
+                imagePdfPackTriggerFile = null
+                if (assembleIntoPackType == "IMAGE_PDF_PACK") {
+                    selectedFileForAssembly = null
+                    assembleIntoPackType = null
+                }
+            },
             onConfirm = { files ->
-                selectedImageFiles = files
+                if (assembleIntoPackType == "IMAGE_PDF_PACK") {
+                    mergeAssemblyPayload = MergeAssemblyPayload("IMAGE_PDF_PACK", "Book.pdf", "${files.size} images", files = files)
+                } else {
+                    selectedImageFiles = files
+                }
                 imagePdfPackTriggerFile = null
             },
         )
@@ -734,7 +783,7 @@ fun FilesScreen(
         )
     }
 
-    if (cbrPdfPackTriggerFile != null && selectedCbrFiles == null) {
+    if (cbrPdfPackTriggerFile != null && selectedCbrFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName; filter to CBR siblings in current folder
         val cbrFiles = remember(uiState) {
             (uiState as? FilesUiState.Success)?.files
@@ -744,9 +793,19 @@ fun FilesScreen(
         CbrPdfPackSheet(
             cbrFiles = cbrFiles,
             sheetState = cbrPdfPackSheetState,
-            onDismiss = { cbrPdfPackTriggerFile = null },
+            onDismiss = {
+                cbrPdfPackTriggerFile = null
+                if (assembleIntoPackType == "CBR_PDF_PACK") {
+                    selectedFileForAssembly = null
+                    assembleIntoPackType = null
+                }
+            },
             onConfirm = { files ->
-                selectedCbrFiles = files
+                if (assembleIntoPackType == "CBR_PDF_PACK") {
+                    mergeAssemblyPayload = MergeAssemblyPayload("CBR_PDF_PACK", "Book.pdf", "${files.size} CBR files", files = files)
+                } else {
+                    selectedCbrFiles = files
+                }
                 cbrPdfPackTriggerFile = null
             },
         )
@@ -1480,10 +1539,15 @@ fun FilesScreen(
                                         onSendAsJoinedPdf = { pdfPackTriggerFile = it },
                                         onSendAsJoinedEpub = { epubPackTriggerFile = it },
                                         onSendAsCbrPdf = { cbrPdfPackTriggerFile = it },
-                                        onAssembleIntoPdf = { target ->
-                                            selectedFileForAssembly = target to false
-                                            isPdfPackAssembly = true
-                                            pdfPackTriggerFile = target
+                                        onAssembleIntoPack = { target, type ->
+                                            selectedFileForAssembly = target to true
+                                            assembleIntoPackType = type
+                                            when (type) {
+                                                "PDF_PACK" -> pdfPackTriggerFile = target
+                                                "EPUB_PACK" -> epubPackTriggerFile = target
+                                                "IMAGE_PDF_PACK" -> imagePdfPackTriggerFile = target
+                                                "CBR_PDF_PACK" -> cbrPdfPackTriggerFile = target
+                                            }
                                         },
                                         onSendToPlex = {
                                             plexSelectedDestPath = ""
