@@ -1574,53 +1574,51 @@ class CalibreRepository @Inject constructor(
     }
 
     @Serializable
-    private data class StubContent(val local_path: String? = null, val file_size: Long? = null)
+    data class StubContent(val local_path: String? = null, val file_size: Long? = null)
 
-    // CONTRACT: stub convention — read local_path from stub JSON by file ID; for use when PutioFile is unavailable
-    suspend fun readStubLocalPathById(stubFileId: Long): String? {
+    // Stub content is immutable once written (CONTRACT: stub convention), so the resolved
+    // content for a given stub's put.io ID never changes — cache it for the process lifetime
+    // to avoid re-fetching it every time the Files screen reloads the same folder.
+    private val stubContentCache = java.util.concurrent.ConcurrentHashMap<Long, StubContent>()
+
+    // CONTRACT: stub convention — read raw stub JSON by put.io file ID; the single network call
+    // backing readStubLocalPath(By Id)/readStubFileSize/readStubContent below
+    private suspend fun fetchStubContent(stubFileId: Long): StubContent? {
+        stubContentCache[stubFileId]?.let { return it }
         val token = secureStorage.authTokenFlow.value
         if (token.isBlank()) return null
         return withContext(Dispatchers.IO) {
             val result = putioApiClient.downloadFileAsString(token, stubFileId)
             (result as? NetworkResult.Success)?.data?.let { body ->
-                try { json.decodeFromString<StubContent>(body).local_path } catch (_: Exception) { null }
+                try {
+                    json.decodeFromString<StubContent>(body).also { stubContentCache[stubFileId] = it }
+                } catch (_: Exception) { null }
             }
         }
     }
+
+    // CONTRACT: stub convention — read local_path from stub JSON by file ID; for use when PutioFile is unavailable
+    suspend fun readStubLocalPathById(stubFileId: Long): String? = fetchStubContent(stubFileId)?.local_path
 
     // CONTRACT: stub convention — read local_path from stub JSON; returns null if not synced or on error
     suspend fun readStubLocalPath(file: com.damarquez.putz.data.model.PutioFile): String? {
         if (!file.isSynced) return null
-        val token = secureStorage.authTokenFlow.value
-        if (token.isBlank()) return null
-        return withContext(Dispatchers.IO) {
-            val result = putioApiClient.downloadFileAsString(token, file.id)
-            (result as? NetworkResult.Success)?.data?.let { body ->
-                try { json.decodeFromString<StubContent>(body).local_path } catch (_: Exception) { null }
-            }
-        }
+        return fetchStubContent(file.id)?.local_path
     }
-
-    // Stub content is immutable once written (CONTRACT: stub convention), so the resolved
-    // original size for a given stub's put.io ID never changes — cache it for the process lifetime
-    // to avoid re-fetching it every time the Files screen reloads the same folder.
-    private val stubFileSizeCache = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
     // CONTRACT: stub convention — read file_size from stub JSON (the original file's real size,
     // not the tiny stub's put.io-reported size); returns null if not synced, unavailable, or on error
     suspend fun readStubFileSize(file: com.damarquez.putz.data.model.PutioFile): Long? {
         if (!file.isSynced) return null
-        stubFileSizeCache[file.id]?.let { return it }
-        val token = secureStorage.authTokenFlow.value
-        if (token.isBlank()) return null
-        return withContext(Dispatchers.IO) {
-            val result = putioApiClient.downloadFileAsString(token, file.id)
-            (result as? NetworkResult.Success)?.data?.let { body ->
-                try {
-                    json.decodeFromString<StubContent>(body).file_size?.also { stubFileSizeCache[file.id] = it }
-                } catch (_: Exception) { null }
-            }
-        }
+        return fetchStubContent(file.id)?.file_size
+    }
+
+    // CONTRACT: stub convention — read the full stub JSON (local_path + file_size); returns null if
+    // not synced or on error. Used to show stub details on tap, since the stub's display name is
+    // often truncated in the UI.
+    suspend fun readStubContent(file: com.damarquez.putz.data.model.PutioFile): StubContent? {
+        if (!file.isSynced) return null
+        return fetchStubContent(file.id)
     }
 
     private fun normalize(text: String): String {

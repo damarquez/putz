@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileItem
 import com.damarquez.putz.ui.navigation.Screen
@@ -161,6 +162,9 @@ fun FilesScreen(
     val isSelectionMode = selectedFiles.isNotEmpty()
     var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
     var fileToRename by remember { mutableStateOf<PutioFile?>(null) }
+    var fileForDetails by remember { mutableStateOf<PutioFile?>(null) }
+    var fileDetailsStubContent by remember { mutableStateOf<CalibreRepository.StubContent?>(null) }
+    var fileDetailsLoading by remember { mutableStateOf(false) }
     var renameValue by remember { mutableStateOf("") }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
@@ -990,6 +994,39 @@ fun FilesScreen(
         )
     }
 
+    fileForDetails?.let { file ->
+        AlertDialog(
+            onDismissRequest = { fileForDetails = null },
+            title = { Text("File details") },
+            text = {
+                Column {
+                    @Composable
+                    fun DetailRow(label: String, value: String) {
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(value, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    DetailRow("Name", file.displayName)
+                    if (fileDetailsLoading) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Loading stub details...", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    } else {
+                        val localPath = fileDetailsStubContent?.local_path
+                        val originalSize = fileDetailsStubContent?.file_size
+                        DetailRow("Local path", localPath ?: "Unavailable")
+                        DetailRow("Original size", originalSize?.let { formatFileSize(it) } ?: "Unavailable")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { fileForDetails = null }) { Text("Close") }
+            },
+        )
+    }
+
     if (showBatchDeleteConfirm) {
         val hasLocal = selectedFiles.any { it.isLocal }
         val hasRemote = selectedFiles.any { !it.isLocal }
@@ -1418,6 +1455,14 @@ fun FilesScreen(
                                                 )
                                             } else if (!file.isLocal && !file.isLan && file.isSynced && MetadataUtils.isArchive(file.displayName)) {
                                                 viewModel.openPutioArchive(file)
+                                            } else if (!file.isLocal && !file.isLan && file.isSynced) {
+                                                fileForDetails = file
+                                                fileDetailsStubContent = null
+                                                fileDetailsLoading = true
+                                                scope.launch {
+                                                    fileDetailsStubContent = viewModel.readStubContent(file)
+                                                    fileDetailsLoading = false
+                                                }
                                             }
                                         },
                                         onLongClick = { selectedFiles = selectedFiles + file },
@@ -1532,6 +1577,13 @@ private fun StorageBar(usedPercent: Float, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(top = 2.dp),
         )
     }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)
+    bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
+    bytes >= 1_000L -> "%.0f KB".format(bytes / 1_000.0)
+    else -> "$bytes B"
 }
 
 @Composable

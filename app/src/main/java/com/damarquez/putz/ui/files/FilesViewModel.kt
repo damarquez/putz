@@ -1506,6 +1506,9 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    // Stub JSON's local_path/file_size, for the file-details dialog (stub names are often truncated in the UI)
+    suspend fun readStubContent(file: PutioFile) = calibreRepository.readStubContent(file)
+
     fun onSnackbarShown() {
         _snackbarMessage.value = null
     }

@@ -62,6 +62,12 @@ fun PagedHtmlViewer(
             factory = { ctx ->
                 WebView(ctx).apply {
                     settings.javaScriptEnabled = false
+                    // Pinch-to-zoom + pan, native to WebView — no custom gesture handling needed.
+                    // builtInZoomControls enables the pinch gesture itself; displayZoomControls
+                    // just hides the on-screen +/- buttons so pinch is the only way to zoom.
+                    settings.setSupportZoom(true)
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
                     // EPUB/MOBI chapter HTML is always written as UTF-8, but WebViewAssetLoader's
                     // response carries no charset, so Chromium's encoding sniffer can fall back to
                     // a non-UTF-8 default and turn multi-byte characters (smart quotes, accents)
