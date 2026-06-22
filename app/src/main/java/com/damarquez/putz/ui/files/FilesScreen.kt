@@ -1107,8 +1107,7 @@ fun FilesScreen(
                         Column {
                             Text(
                                 text = folderName,
-                                style = MaterialTheme.typography.titleLarge,
-                                maxLines = 1,
+                                style = MaterialTheme.typography.titleMedium,
                             )
                             if (isRoot) {
                                 accountInfo?.let { info ->
