@@ -11,9 +11,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -37,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -80,6 +85,7 @@ fun TransfersScreen(
     var editNameTransferId by remember { mutableStateOf<Long?>(null) }
     var editNameValue by remember { mutableStateOf("") }
     var selectedHistoryEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
+    val sortSpecs = remember { mutableStateMapOf<TransferGroup, TransferSortSpec>() }
 
     LaunchedEffect(navigationEvent) {
         navigationEvent?.let { event ->
@@ -193,11 +199,17 @@ fun TransfersScreen(
                             contentPadding = PaddingValues(bottom = 88.dp),
                         ) {
                             state.grouped.forEach { (group, transfers) ->
+                                val sortSpec = sortSpecs[group] ?: TransferSortSpec()
                                 item(key = "header_${group.name}") {
-                                    GroupHeader(group = group, count = transfers.size)
+                                    GroupHeader(
+                                        group = group,
+                                        count = transfers.size,
+                                        sortSpec = sortSpec,
+                                        onSortChange = { sortSpecs[group] = it },
+                                    )
                                 }
                                 items(
-                                    items = transfers,
+                                    items = sortTransfers(transfers, sortSpec),
                                     key = { it.transfer.id },
                                 ) { merged ->
                                     TransferItem(
@@ -271,7 +283,14 @@ fun TransfersScreen(
 }
 
 @Composable
-private fun GroupHeader(group: TransferGroup, count: Int) {
+private fun GroupHeader(
+    group: TransferGroup,
+    count: Int,
+    sortSpec: TransferSortSpec,
+    onSortChange: (TransferSortSpec) -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
     ListItem(
         headlineContent = {
             Text(
@@ -279,6 +298,46 @@ private fun GroupHeader(group: TransferGroup, count: Int) {
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
+        },
+        trailingContent = {
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Sort,
+                        contentDescription = "Sort ${group.label}",
+                        tint = if (sortSpec.field != null) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Default order") },
+                        leadingIcon = if (sortSpec.field == null) {
+                            { Icon(Icons.Default.Check, contentDescription = null) }
+                        } else null,
+                        onClick = {
+                            onSortChange(TransferSortSpec())
+                            menuExpanded = false
+                        },
+                    )
+                    HorizontalDivider()
+                    TransferSortField.entries.forEach { field ->
+                        listOf(true, false).forEach { ascending ->
+                            val selected = sortSpec.field == field && sortSpec.ascending == ascending
+                            DropdownMenuItem(
+                                text = { Text("${field.label} ${if (ascending) "▲" else "▼"}") },
+                                leadingIcon = if (selected) {
+                                    { Icon(Icons.Default.Check, contentDescription = null) }
+                                } else null,
+                                onClick = {
+                                    onSortChange(TransferSortSpec(field, ascending))
+                                    menuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         },
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth(),

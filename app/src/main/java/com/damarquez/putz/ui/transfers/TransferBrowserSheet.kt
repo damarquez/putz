@@ -1,5 +1,6 @@
 package com.damarquez.putz.ui.transfers
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,11 +17,11 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -68,6 +70,10 @@ internal fun TransferBrowserSheet(transfer: CalibreTransferEntity) {
         } ?: emptyList()
     }
 
+    // Protected is a whole-book toggle on Putz — every format item carries the same
+    // value, so it's read once off the first item and surfaced as a global property.
+    val isProtected = items.firstOrNull()?.protected == true
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
@@ -83,86 +89,65 @@ internal fun TransferBrowserSheet(transfer: CalibreTransferEntity) {
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             HorizontalDivider()
+            Spacer(Modifier.height(2.dp))
 
-            ListItem(
-                headlineContent = { Text("Added") },
-                trailingContent = {
-                    Text(
-                        text = dateFormat.format(Date(transfer.addedAt)),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-            )
-            ListItem(
-                headlineContent = { Text("Status") },
-                trailingContent = {
-                    Text(
-                        text = transfer.status.name.lowercase().replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-            )
-            ListItem(
-                headlineContent = { Text("put.io ID") },
-                trailingContent = {
-                    Text(
-                        text = transfer.putioFileId.toString(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
+            InfoRow("Added", dateFormat.format(Date(transfer.addedAt)))
+            InfoRow("Status", transfer.status.name.lowercase().replaceFirstChar { it.uppercase() })
+            InfoRow("put.io ID", transfer.putioFileId.toString())
+            InfoRow(
+                label = "Protected",
+                value = if (isProtected) "Yes" else "No",
+                icon = if (isProtected) Icons.Default.Lock else null,
+                valueColor = if (isProtected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             transfer.calibreBookUuid?.let { uuid ->
-                ListItem(
-                    headlineContent = { Text("UUID") },
-                    supportingContent = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 2.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "UUID",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Text(
                             text = uuid,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                    },
-                    trailingContent = {
-                        IconButton(onClick = { clipboard.setText(AnnotatedString(uuid)) }) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy UUID")
-                        }
-                    },
-                )
+                    }
+                    IconButton(
+                        onClick = { clipboard.setText(AnnotatedString(uuid)) },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy UUID",
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
             }
             if (!transfer.errorMessage.isNullOrBlank()) {
-                ListItem(
-                    headlineContent = { Text("Error") },
-                    supportingContent = {
-                        Text(
-                            text = transfer.errorMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                )
+                InfoRow("Error", transfer.errorMessage, valueColor = MaterialTheme.colorScheme.error)
             }
             if (!transfer.warnings.isNullOrBlank()) {
-                ListItem(
-                    headlineContent = { Text("Warnings") },
-                    supportingContent = {
-                        Text(
-                            text = transfer.warnings,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                )
+                InfoRow("Warnings", transfer.warnings)
             }
 
+            Spacer(Modifier.height(2.dp))
             HorizontalDivider()
-            ListItem(
-                headlineContent = {
-                    Text("Contents", style = MaterialTheme.typography.titleSmall)
-                },
+            Text(
+                text = "Contents",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
             )
         }
 
@@ -184,6 +169,41 @@ internal fun TransferBrowserSheet(transfer: CalibreTransferEntity) {
                     FormatTreeNode(batchItem)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    valueColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Row(
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            icon?.let {
+                Icon(it, contentDescription = null, tint = valueColor, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelMedium,
+                color = valueColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
