@@ -33,6 +33,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -40,6 +41,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -121,6 +123,8 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     var pendingProtectConfirmation by remember { mutableStateOf<PendingProtectBook?>(null) }
     var pendingUnprotectConfirmation by remember { mutableStateOf<PendingUnprotectBook?>(null) }
     var transferToDelete by remember { mutableStateOf<CalibreTransferEntity?>(null) }
+    var transferToBrowse by remember { mutableStateOf<CalibreTransferEntity?>(null) }
+    val browserSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var alsoDeleteFromPutio by remember { mutableStateOf(false) }
     var showClearGreenDialog by remember { mutableStateOf(false) }
     var clearGreenAlsoDelete by remember { mutableStateOf(false) }
@@ -653,6 +657,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
                                 isPendingAppend = transfer.putioFileId in pendingAssemblyAppends,
+                                onTap = { transferToBrowse = transfer },
                             )
                         }
                     }
@@ -692,11 +697,21 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                     clipboardManager.setText(AnnotatedString(uuid))
                                     scope.launch { snackbarHostState.showSnackbar("UUID copied") }
                                 },
+                                onTap = { transferToBrowse = transfer },
                             )
                         }
                     }
                 }
             }
+        }
+    }
+
+    transferToBrowse?.let { transfer ->
+        ModalBottomSheet(
+            onDismissRequest = { transferToBrowse = null },
+            sheetState = browserSheetState,
+        ) {
+            TransferBrowserSheet(transfer = transfer)
         }
     }
 

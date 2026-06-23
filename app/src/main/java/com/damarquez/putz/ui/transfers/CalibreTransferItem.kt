@@ -52,6 +52,15 @@ import kotlinx.serialization.decodeFromString
 private val batchItemsJson = Json { ignoreUnknownKeys = true }
 private val prettyJson = Json { prettyPrint = true }
 
+// Shared with TransferBrowserSheet.kt so the format chip shown on the card and the
+// format root node shown in the tree always agree on labeling.
+internal fun formatLabelFor(item: CalibreBatchItem): String = when (item.type) {
+    "PACK" -> "M4B"
+    else -> item.fileName.substringAfterLast('.', "")
+        .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
+        ?.uppercase() ?: item.type
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CalibreTransferItem(
@@ -64,6 +73,7 @@ fun CalibreTransferItem(
     uploadProgress: String? = null,
     isPendingAppend: Boolean = false,
     onCopyUuid: ((String) -> Unit)? = null,
+    onTap: (() -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     var showContextMenu by remember { mutableStateOf(false) }
@@ -74,14 +84,7 @@ fun CalibreTransferItem(
             try { batchItemsJson.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
         }
         if (!items.isNullOrEmpty()) {
-            items.map { item ->
-                when (item.type) {
-                    "PACK" -> "M4B"
-                    else -> item.fileName.substringAfterLast('.', "")
-                        .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
-                        ?.uppercase() ?: item.type
-                }
-            }.distinct()
+            items.map { item -> formatLabelFor(item) }.distinct()
         } else {
             val actionLabel = transfer.lastRequestPayload?.let { payload ->
                 try {
@@ -143,7 +146,7 @@ fun CalibreTransferItem(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .combinedClickable(
-                onClick = {},
+                onClick = { onTap?.invoke() },
                 onLongClick = {
                     showContextMenu = true
                 },
