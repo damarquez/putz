@@ -1157,7 +1157,17 @@ class CalibreRepository @Inject constructor(
                                 }
                             }
 
-                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && response.error?.contains("not found", ignoreCase = true) == true) {
+                            // "missing formats" is just as auto-recoverable as "not found": it's
+                            // what a probe reports when an earlier attempt got interrupted after
+                            // creating the book but before adding the format (e.g. daemon restart
+                            // mid-merge). The daemon's existing-format dedup check makes a re-send
+                            // idempotent, so retry it the same way as "not found" rather than
+                            // leaving it FAILED forever with only probes (which can never re-do
+                            // the actual merge/add-format work) able to touch it.
+                            val isAutoRecoverable = response.error?.let {
+                                it.contains("not found", ignoreCase = true) || it.contains("missing formats", ignoreCase = true)
+                            } == true
+                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && isAutoRecoverable) {
                                 if (transfer.retryCount < 3) {
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val delayMs = Random.nextLong(2000, 60000)
@@ -2285,6 +2295,16 @@ class CalibreRepository @Inject constructor(
     }
 
     suspend fun removeTransfer(fileId: Long) {
+        // Clear the Drive request too — otherwise a request the daemon hasn't picked up yet
+        // survives on Drive after its local record is gone, and the daemon (which only looks
+        // at Drive) will still pick it up and process it, e.g. on its next restart/poll.
+        val transfer = calibreTransferDao.getTransferById(fileId)
+        transfer?.gdriveRequestId?.let { requestId ->
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isNotBlank()) {
+                gDriveManager.deleteFile(account, requestId)
+            }
+        }
         calibreTransferDao.deleteTransfer(fileId)
     }
 

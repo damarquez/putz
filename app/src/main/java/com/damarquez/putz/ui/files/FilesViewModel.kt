@@ -301,7 +301,7 @@ class FilesViewModel @Inject constructor(
             viewModelScope.launch {
                 if (file.isSynced) {
                     if (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) {
-                        _snackbarMessage.value = "Preview not available — LAN connection required"
+                        _snackbarMessage.value = "Preview not available — LAN connection with active daemon required"
                         return@launch
                     }
                     // The daemon's /mirror/file endpoint serves with Werkzeug range-request
@@ -353,7 +353,7 @@ class FilesViewModel @Inject constructor(
                     }
                     // CONTRACT: stub convention — preview requires LAN; downloading the stub itself is useless
                     file.isSynced && (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) -> {
-                        _snackbarMessage.value = "Preview not available — LAN connection required"
+                        _snackbarMessage.value = "Preview not available — LAN connection with active daemon required"
                         return@launch
                     }
                     file.isSynced -> {
