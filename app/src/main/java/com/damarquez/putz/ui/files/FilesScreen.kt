@@ -479,7 +479,7 @@ fun FilesScreen(
 
     if (audiobookPackTriggerFile != null && selectedPackFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
-        val audioFiles = remember(uiState) {
+        val audioFiles = remember(audiobookPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isMultiTrackAudio(it.displayName) }
                 ?: emptyList()
@@ -504,7 +504,7 @@ fun FilesScreen(
 
     if (pdfPackTriggerFile != null && selectedPdfFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
-        val pdfFiles = remember(uiState) {
+        val pdfFiles = remember(pdfPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isPdf(it.displayName) }
                 ?: emptyList()
@@ -572,7 +572,7 @@ fun FilesScreen(
     }
 
     if (epubPackTriggerFile != null && selectedEpubFiles == null && mergeAssemblyPayload == null) {
-        val epubFiles = remember(uiState) {
+        val epubFiles = remember(epubPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isEpub(it.displayName) }
                 ?: emptyList()
@@ -620,7 +620,7 @@ fun FilesScreen(
 
     if (imagePdfPackTriggerFile != null && selectedImageFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName; filter to image siblings in current folder
-        val imageFiles = remember(uiState) {
+        val imageFiles = remember(imagePdfPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isImage(it.displayName) }
                 ?: emptyList()
@@ -785,7 +785,7 @@ fun FilesScreen(
 
     if (cbrPdfPackTriggerFile != null && selectedCbrFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName; filter to CBR siblings in current folder
-        val cbrFiles = remember(uiState) {
+        val cbrFiles = remember(cbrPdfPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isComicArchive(it.displayName) }
                 ?: emptyList()
