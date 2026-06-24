@@ -85,6 +85,9 @@ fun PdfViewer(filePath: String, modifier: Modifier = Modifier) {
                         page.height * RENDER_SCALE,
                         Bitmap.Config.ARGB_8888,
                     )
+                    // PdfRenderer leaves unpainted page areas transparent rather than white —
+                    // most PDFs paint an opaque background so it's invisible, but some don't.
+                    bmp.eraseColor(android.graphics.Color.WHITE)
                     page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     bmp
                 }

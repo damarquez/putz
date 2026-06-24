@@ -4,15 +4,24 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +49,21 @@ fun PagedHtmlViewer(
 ) {
     val context = LocalContext.current
     var currentIndex by remember(pages) { mutableIntStateOf(0) }
+    var showSearch by remember(pages) { mutableStateOf(false) }
+    var searchQuery by remember(pages) { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+    val searchEngine = remember(pages) {
+        PagedHtmlSearchEngine(
+            pages = pages,
+            scope = coroutineScope,
+            currentPageIndex = { currentIndex },
+            navigateToPage = { currentIndex = it },
+        )
+    }
+
+    LaunchedEffect(searchEngine, searchQuery) {
+        searchEngine.search(searchQuery)
+    }
 
     if (pages.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -57,6 +81,29 @@ fun PagedHtmlViewer(
         pages[currentIndex].relativeTo(destDir).path.replace(File.separatorChar, '/')
 
     Column(modifier = modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = {
+                showSearch = !showSearch
+                if (!showSearch) {
+                    searchQuery = ""
+                    searchEngine.clear()
+                }
+            }) {
+                Icon(Icons.Filled.Search, contentDescription = "Search")
+            }
+        }
+        if (showSearch) {
+            SearchBar(
+                engine = searchEngine,
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                onClose = {
+                    showSearch = false
+                    searchQuery = ""
+                    searchEngine.clear()
+                },
+            )
+        }
         AndroidView(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             factory = { ctx ->
@@ -80,8 +127,14 @@ fun PagedHtmlViewer(
                             request: WebResourceRequest,
                         ): WebResourceResponse? =
                             assetLoader.shouldInterceptRequest(request.url)?.apply { encoding = "utf-8" }
+
+                        // Page navigation clears WebView's find state; let the engine re-apply
+                        // the active query (and land on the right occurrence) on the new page.
+                        override fun onPageFinished(view: WebView, url: String) {
+                            searchEngine.onPageLoaded()
+                        }
                     }
-                }
+                }.also { searchEngine.attach(it) }
             },
             update = { webView -> webView.loadUrl(pageUrl) },
         )
