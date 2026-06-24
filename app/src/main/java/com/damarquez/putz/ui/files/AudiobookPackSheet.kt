@@ -42,7 +42,7 @@ fun AudiobookPackSheet(
 ) {
     var caseSensitiveSort by remember(audioFiles) { mutableStateOf(false) }
     var orderedFiles by remember(audioFiles, caseSensitiveSort) {
-        mutableStateOf(MetadataUtils.sortByName(audioFiles, caseSensitiveSort) { it.name })
+        mutableStateOf(MetadataUtils.sortByName(audioFiles, caseSensitiveSort) { it.displayName })
     }
     var checkedIds by remember(audioFiles) { mutableStateOf(audioFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
@@ -130,9 +130,9 @@ fun AudiobookPackSheet(
                             },
                         )
                         CollapsedFileNameText(
-                            name = file.name,
-                            previousName = orderedFiles.getOrNull(index - 1)?.name,
-                            nextName = orderedFiles.getOrNull(index + 1)?.name,
+                            name = file.displayName,
+                            previousName = orderedFiles.getOrNull(index - 1)?.displayName,
+                            nextName = orderedFiles.getOrNull(index + 1)?.displayName,
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )

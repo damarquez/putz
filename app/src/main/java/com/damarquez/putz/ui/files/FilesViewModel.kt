@@ -1471,7 +1471,7 @@ class FilesViewModel @Inject constructor(
                 else -> filesRepository.listFiles(token, currentFolder.id).dataOrNull()?.first ?: emptyList()
             }
             for (child in children) {
-                val childPath = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+                val childPath = if (prefix.isEmpty()) child.displayName else "$prefix/${child.displayName}"
                 if (child.isFolder) {
                     queue.add(child to childPath)
                 } else if (matches(child)) {

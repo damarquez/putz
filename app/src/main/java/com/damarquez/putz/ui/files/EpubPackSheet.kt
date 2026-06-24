@@ -42,7 +42,7 @@ fun EpubPackSheet(
 ) {
     var caseSensitiveSort by remember(epubFiles) { mutableStateOf(false) }
     var orderedFiles by remember(epubFiles, caseSensitiveSort) {
-        mutableStateOf(MetadataUtils.sortByName(epubFiles, caseSensitiveSort) { it.name })
+        mutableStateOf(MetadataUtils.sortByName(epubFiles, caseSensitiveSort) { it.displayName })
     }
     var checkedIds by remember(epubFiles) { mutableStateOf(epubFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
@@ -132,9 +132,9 @@ fun EpubPackSheet(
                             },
                         )
                         CollapsedFileNameText(
-                            name = file.name,
-                            previousName = orderedFiles.getOrNull(index - 1)?.name,
-                            nextName = orderedFiles.getOrNull(index + 1)?.name,
+                            name = file.displayName,
+                            previousName = orderedFiles.getOrNull(index - 1)?.displayName,
+                            nextName = orderedFiles.getOrNull(index + 1)?.displayName,
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )

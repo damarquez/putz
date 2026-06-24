@@ -42,7 +42,7 @@ fun PdfPackSheet(
 ) {
     var caseSensitiveSort by remember(pdfFiles) { mutableStateOf(false) }
     var orderedFiles by remember(pdfFiles, caseSensitiveSort) {
-        mutableStateOf(MetadataUtils.sortByName(pdfFiles, caseSensitiveSort) { it.name })
+        mutableStateOf(MetadataUtils.sortByName(pdfFiles, caseSensitiveSort) { it.displayName })
     }
     var checkedIds by remember(pdfFiles) { mutableStateOf(pdfFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
@@ -132,9 +132,9 @@ fun PdfPackSheet(
                             },
                         )
                         CollapsedFileNameText(
-                            name = file.name,
-                            previousName = orderedFiles.getOrNull(index - 1)?.name,
-                            nextName = orderedFiles.getOrNull(index + 1)?.name,
+                            name = file.displayName,
+                            previousName = orderedFiles.getOrNull(index - 1)?.displayName,
+                            nextName = orderedFiles.getOrNull(index + 1)?.displayName,
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )
