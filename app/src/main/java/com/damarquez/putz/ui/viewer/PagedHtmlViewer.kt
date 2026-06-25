@@ -4,6 +4,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +46,9 @@ fun PagedHtmlViewer(
     destDir: File,
     pages: List<File>,
     pathPrefix: String,
+    sourceFile: File,
+    formatLabel: String,
+    pageCount: Int?,
     modifier: Modifier = Modifier,
     emptyMessage: String = "Couldn't read this file",
 ) {
@@ -51,6 +56,9 @@ fun PagedHtmlViewer(
     var currentIndex by remember(pages) { mutableIntStateOf(0) }
     var showSearch by remember(pages) { mutableStateOf(false) }
     var searchQuery by remember(pages) { mutableStateOf("") }
+    var showDetails by remember(pages) { mutableStateOf(false) }
+    var webViewRef by remember(pages) { mutableStateOf<WebView?>(null) }
+    var canGoBackInWebView by remember(pages) { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val searchEngine = remember(pages) {
         PagedHtmlSearchEngine(
@@ -72,6 +80,12 @@ fun PagedHtmlViewer(
         return
     }
 
+    // A tapped in-book link (e.g. a title page's link to a chapter) navigates the WebView itself
+    // without touching currentIndex, so back must undo that navigation before leaving the viewer.
+    BackHandler(enabled = canGoBackInWebView) {
+        webViewRef?.goBack()
+    }
+
     val assetLoader = remember(destDir, pathPrefix) {
         WebViewAssetLoader.Builder()
             .addPathHandler(pathPrefix, WebViewAssetLoader.InternalStoragePathHandler(context, destDir))
@@ -90,6 +104,9 @@ fun PagedHtmlViewer(
                 }
             }) {
                 Icon(Icons.Filled.Search, contentDescription = "Search")
+            }
+            IconButton(onClick = { showDetails = true }) {
+                Icon(Icons.Filled.Info, contentDescription = "File details")
             }
         }
         if (showSearch) {
@@ -132,17 +149,39 @@ fun PagedHtmlViewer(
                         // the active query (and land on the right occurrence) on the new page.
                         override fun onPageFinished(view: WebView, url: String) {
                             searchEngine.onPageLoaded()
+                            canGoBackInWebView = view.canGoBack()
+                            // A tapped in-book link navigates the WebView directly, bypassing
+                            // currentIndex. If the visited URL matches a known page, resync so
+                            // the page counter/PageNavBar reflect what's actually on screen.
+                            val visitedPath = url.substringBefore('#')
+                            val matchedIndex = pages.indexOfFirst { page ->
+                                visitedPath.endsWith(page.relativeTo(destDir).path.replace(File.separatorChar, '/'))
+                            }
+                            if (matchedIndex >= 0) currentIndex = matchedIndex
                         }
                     }
-                }.also { searchEngine.attach(it) }
+                }.also {
+                    webViewRef = it
+                    searchEngine.attach(it)
+                }
             },
-            update = { webView -> webView.loadUrl(pageUrl) },
+            update = { webView -> if (webView.url != pageUrl) webView.loadUrl(pageUrl) },
         )
         PageNavBar(
             currentIndex = currentIndex,
             pageCount = pages.size,
             onPrevious = { currentIndex-- },
             onNext = { currentIndex++ },
+        )
+    }
+
+    if (showDetails) {
+        FileDetailsDialog(
+            file = sourceFile,
+            formatLabel = formatLabel,
+            pageCount = pageCount,
+            pageCountIsEstimate = true,
+            onDismiss = { showDetails = false },
         )
     }
 }

@@ -17,7 +17,12 @@ import java.io.File
 
 private const val MOBI_PATH_PREFIX = "/mobi/"
 
-private data class MobiContents(val destDir: File, val pages: List<File>, val errorMessage: String? = null)
+private data class MobiContents(
+    val destDir: File,
+    val pages: List<File>,
+    val errorMessage: String? = null,
+    val pageCount: Int? = null,
+)
 
 /**
  * Quick MOBI / AZW3 text preview: decompresses the PalmDOC text records and browses the result
@@ -40,7 +45,8 @@ fun MobiViewer(filePath: String, modifier: Modifier = Modifier) {
                 // screen entry, deleting files out from under — or just after — this extraction).
                 destDir.deleteRecursively()
                 val pages = runCatching { MobiExtractor.extractPages(mobiFile, destDir) }.getOrDefault(emptyList())
-                MobiContents(destDir, pages)
+                val pageCount = if (pages.isEmpty()) null else PageCountEstimator.estimateMobi(pages)
+                MobiContents(destDir, pages, pageCount = pageCount)
             }
         }
     }
@@ -53,6 +59,9 @@ fun MobiViewer(filePath: String, modifier: Modifier = Modifier) {
             destDir = current.destDir,
             pages = current.pages,
             pathPrefix = MOBI_PATH_PREFIX,
+            sourceFile = File(filePath),
+            formatLabel = "MOBI",
+            pageCount = current.pageCount,
             modifier = modifier,
             emptyMessage = current.errorMessage ?: "Couldn't read this file",
         )

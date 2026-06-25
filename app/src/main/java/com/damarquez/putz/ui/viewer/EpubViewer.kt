@@ -17,7 +17,12 @@ import java.io.File
 
 private const val EPUB_PATH_PREFIX = "/epub/"
 
-private data class EpubContents(val destDir: File, val chapters: List<File>, val errorMessage: String? = null)
+private data class EpubContents(
+    val destDir: File,
+    val chapters: List<File>,
+    val errorMessage: String? = null,
+    val pageCount: Int? = null,
+)
 
 /**
  * Quick EPUB text preview: extracts the spine and browses it chapter-by-chapter (native
@@ -40,7 +45,8 @@ fun EpubViewer(filePath: String, modifier: Modifier = Modifier) {
                 // screen entry, deleting files out from under — or just after — this extraction).
                 destDir.deleteRecursively()
                 val chapters = runCatching { EpubExtractor.extractSpine(epubFile, destDir) }.getOrDefault(emptyList())
-                EpubContents(destDir, chapters)
+                val pageCount = if (chapters.isEmpty()) null else PageCountEstimator.estimateEpub(chapters, destDir)
+                EpubContents(destDir, chapters, pageCount = pageCount)
             }
         }
     }
@@ -53,6 +59,9 @@ fun EpubViewer(filePath: String, modifier: Modifier = Modifier) {
             destDir = current.destDir,
             pages = current.chapters,
             pathPrefix = EPUB_PATH_PREFIX,
+            sourceFile = File(filePath),
+            formatLabel = "EPUB",
+            pageCount = current.pageCount,
             modifier = modifier,
             emptyMessage = current.errorMessage ?: "Couldn't read this file",
         )

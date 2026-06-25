@@ -5,11 +5,17 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -49,6 +55,7 @@ fun PdfViewer(filePath: String, modifier: Modifier = Modifier) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var failed by remember { mutableStateOf(false) }
     var protectedFile by remember { mutableStateOf(false) }
+    var showDetails by remember { mutableStateOf(false) }
 
     DisposableEffect(filePath) {
         val file = File(filePath)
@@ -96,6 +103,11 @@ fun PdfViewer(filePath: String, modifier: Modifier = Modifier) {
     }
 
     Column(modifier = modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = { showDetails = true }) {
+                Icon(Icons.Filled.Info, contentDescription = "File details")
+            }
+        }
         var zoomScale by remember(currentIndex) { mutableFloatStateOf(1f) }
         var zoomOffset by remember(currentIndex) { mutableStateOf(Offset.Zero) }
         var pageBoxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -148,5 +160,15 @@ fun PdfViewer(filePath: String, modifier: Modifier = Modifier) {
                 onNext = { currentIndex++ },
             )
         }
+    }
+
+    if (showDetails) {
+        FileDetailsDialog(
+            file = File(filePath),
+            formatLabel = "PDF",
+            pageCount = pageCount.takeIf { it > 0 },
+            pageCountIsEstimate = false,
+            onDismiss = { showDetails = false },
+        )
     }
 }
