@@ -81,6 +81,14 @@ internal fun TransferBrowserSheet(transfer: CalibreTransferEntity) {
     ) {
         item {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                val fileCount = remember(transfer.allPutioFileIds, transfer.putioFileId) {
+                    transfer.parsedFileIds().size
+                }
+                Text(
+                    text = "$fileCount file${if (fileCount == 1) "" else "s"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Text(transfer.title, style = MaterialTheme.typography.titleLarge)
                 Text(
                     text = transfer.author,
