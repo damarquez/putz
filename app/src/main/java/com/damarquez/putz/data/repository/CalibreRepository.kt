@@ -1032,6 +1032,30 @@ class CalibreRepository @Inject constructor(
         return true
     }
 
+    suspend fun updateAssemblyMetadata(
+        fileId: Long,
+        title: String,
+        author: String,
+        tags: String?,
+        items: List<CalibreBatchItem>,
+    ) {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return
+        val newAllIds = items.flatMap { item ->
+            val ids = mutableListOf(item.putio_file_id)
+            item.files?.mapTo(ids) { it.putio_file_id }
+            item.groups?.forEach { g -> g.files.mapTo(ids) { it.putio_file_id } }
+            ids
+        }.distinct()
+        calibreTransferDao.updateTransfer(transfer.copy(
+            title = title,
+            author = author,
+            tags = tags?.takeIf { it.isNotBlank() },
+            batchData = json.encodeToString(items),
+            allPutioFileIds = newAllIds.joinToString(","),
+            lastUpdatedAt = System.currentTimeMillis(),
+        ))
+    }
+
     suspend fun setTransferErrorMessage(fileId: Long, message: String?) {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return
         calibreTransferDao.updateTransfer(transfer.copy(errorMessage = message))

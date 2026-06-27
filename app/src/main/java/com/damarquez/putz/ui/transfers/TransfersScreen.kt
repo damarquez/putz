@@ -35,8 +35,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -77,7 +80,6 @@ fun TransfersScreen(
     val queuedMessage by viewModel.queuedMessage.collectAsState()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val historySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
@@ -259,14 +261,24 @@ fun TransfersScreen(
     }
 
     if (selectedHistoryEntry != null) {
-        ModalBottomSheet(
+        Dialog(
             onDismissRequest = { selectedHistoryEntry = null },
-            sheetState = historySheetState,
+            properties = DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+            ),
         ) {
-            HistoryDetailSheet(
-                entry = selectedHistoryEntry!!,
-                onEditLabel = { /* label editing not needed from transfers screen */ },
-            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.9f),
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = 6.dp,
+            ) {
+                HistoryDetailSheet(
+                    entry = selectedHistoryEntry!!,
+                    onEditLabel = { /* label editing not needed from transfers screen */ },
+                )
+            }
         }
     }
 

@@ -33,7 +33,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -41,7 +43,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -124,7 +126,6 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     var pendingUnprotectConfirmation by remember { mutableStateOf<PendingUnprotectBook?>(null) }
     var transferToDelete by remember { mutableStateOf<CalibreTransferEntity?>(null) }
     var transferToBrowse by remember { mutableStateOf<CalibreTransferEntity?>(null) }
-    val browserSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var alsoDeleteFromPutio by remember { mutableStateOf(false) }
     var showClearGreenDialog by remember { mutableStateOf(false) }
     var clearGreenAlsoDelete by remember { mutableStateOf(false) }
@@ -707,11 +708,32 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     }
 
     transferToBrowse?.let { transfer ->
-        ModalBottomSheet(
+        Dialog(
             onDismissRequest = { transferToBrowse = null },
-            sheetState = browserSheetState,
+            properties = DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+            ),
         ) {
-            TransferBrowserSheet(transfer = transfer)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.9f),
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = 6.dp,
+            ) {
+                TransferBrowserSheet(
+                    transfer = transfer,
+                    onDismiss = { transferToBrowse = null },
+                    onSave = if (transfer.status == CalibreTransferStatus.ASSEMBLED) {
+                        { title, author, tags, items ->
+                            viewModel.updateAssemblyMetadata(transfer.putioFileId, title, author, tags, items)
+                            transferToBrowse = null
+                        }
+                    } else null,
+                )
+            }
         }
     }
 

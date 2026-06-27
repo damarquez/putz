@@ -14,6 +14,11 @@ object MetadataUtils {
         return fileName.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
     }
 
+    /** Strips `.sk_synced[.id]` / `.sk_sync` suffixes from a raw file name for display. */
+    fun stripStubExtension(fileName: String): String =
+        if (".sk_synced" in fileName) fileName.substringBefore(".sk_synced")
+        else fileName.removeSuffix(".sk_sync")
+
     fun <T> sortByName(files: List<T>, caseSensitive: Boolean, name: (T) -> String): List<T> =
         if (caseSensitive) files.sortedBy(name) else files.sortedBy { name(it).lowercase() }
 

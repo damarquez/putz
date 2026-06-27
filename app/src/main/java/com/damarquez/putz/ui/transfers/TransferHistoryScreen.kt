@@ -34,7 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -46,7 +46,9 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -97,7 +99,6 @@ fun TransferHistoryScreen(
     var editingEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
     var editLabelValue by remember { mutableStateOf("") }
     var selectedEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(isSearchActive) {
@@ -144,18 +145,28 @@ fun TransferHistoryScreen(
     }
 
     if (selectedEntry != null) {
-        ModalBottomSheet(
+        Dialog(
             onDismissRequest = { selectedEntry = null },
-            sheetState = sheetState,
+            properties = DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+            ),
         ) {
-            HistoryDetailSheet(
-                entry = selectedEntry!!,
-                searchQuery = searchQuery,
-                onEditLabel = {
-                    editLabelValue = selectedEntry!!.label
-                    editingEntry = selectedEntry
-                },
-            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.9f),
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = 6.dp,
+            ) {
+                HistoryDetailSheet(
+                    entry = selectedEntry!!,
+                    searchQuery = searchQuery,
+                    onEditLabel = {
+                        editLabelValue = selectedEntry!!.label
+                        editingEntry = selectedEntry
+                    },
+                )
+            }
         }
     }
 

@@ -54,7 +54,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.rememberModalBottomSheetState
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreRepository
 import androidx.compose.ui.text.style.TextOverflow
@@ -292,12 +291,9 @@ fun FilesScreen(
     // Audiobook pack flow
     var audiobookPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedPackFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-    val audiobookPackSheetState = rememberModalBottomSheetState()
-
     // PDF pack flow
     var pdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedPdfFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-    val pdfPackSheetState = rememberModalBottomSheetState()
 
     // Non-null while a pack sheet (PDF/EPUB/Image/CBR) was opened via "Assemble into fused X"
     // rather than plain "Merge" — its onConfirm should park a MergeAssemblyPayload for the
@@ -307,17 +303,14 @@ fun FilesScreen(
     // EPUB pack flow
     var epubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedEpubFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-    val epubPackSheetState = rememberModalBottomSheetState()
 
     // Image PDF pack flow
     var imagePdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-    val imagePdfPackSheetState = rememberModalBottomSheetState()
 
     // CBR PDF pack flow
     var cbrPdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedCbrFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-    val cbrPdfPackSheetState = rememberModalBottomSheetState()
 
     // Merge framework flow (folder trigger) — see CONTRACTS.md "Merge framework"
     var selectedMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
@@ -486,7 +479,6 @@ fun FilesScreen(
         }
         AudiobookPackSheet(
             audioFiles = audioFiles,
-            sheetState = audiobookPackSheetState,
             onDismiss = {
                 audiobookPackTriggerFile = null
                 selectedFileForAssembly = null
@@ -511,7 +503,6 @@ fun FilesScreen(
         }
         PdfPackSheet(
             pdfFiles = pdfFiles,
-            sheetState = pdfPackSheetState,
             onDismiss = {
                 pdfPackTriggerFile = null
                 if (assembleIntoPackType == "PDF_PACK") {
@@ -579,7 +570,6 @@ fun FilesScreen(
         }
         EpubPackSheet(
             epubFiles = epubFiles,
-            sheetState = epubPackSheetState,
             onDismiss = {
                 epubPackTriggerFile = null
                 if (assembleIntoPackType == "EPUB_PACK") {
@@ -627,7 +617,6 @@ fun FilesScreen(
         }
         ImagePdfPackSheet(
             imageFiles = imageFiles,
-            sheetState = imagePdfPackSheetState,
             onDismiss = {
                 imagePdfPackTriggerFile = null
                 if (assembleIntoPackType == "IMAGE_PDF_PACK") {
@@ -792,7 +781,6 @@ fun FilesScreen(
         }
         CbrPdfPackSheet(
             cbrFiles = cbrFiles,
-            sheetState = cbrPdfPackSheetState,
             onDismiss = {
                 cbrPdfPackTriggerFile = null
                 if (assembleIntoPackType == "CBR_PDF_PACK") {

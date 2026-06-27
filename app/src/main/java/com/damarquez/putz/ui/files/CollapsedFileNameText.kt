@@ -24,23 +24,31 @@ fun CollapsedFileNameText(
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
 ) {
-    val isCollapsed = previousName != null && name.commonPrefixWith(previousName).length > 5
-    if (isCollapsed) {
-        Text(text = MetadataUtils.collapsePrefix(name, previousName), style = style, modifier = modifier)
-        return
-    }
+    // How many leading chars are hidden by "..." (0 = not collapsed)
+    val prevSharedLength = if (previousName != null) {
+        name.commonPrefixWith(previousName).length.let { if (it > 5) it else 0 }
+    } else 0
+    val isCollapsed = prevSharedLength > 0
 
-    val underlineLength = MetadataUtils.collapsedPrefixLength(name, nextName)
-    if (underlineLength <= 0) {
+    // How many leading chars the next row will also omit (0 = next won't collapse)
+    val nextSharedLength = MetadataUtils.collapsedPrefixLength(name, nextName)
+
+    // Chars that are visible in THIS row but still omitted by the next → underline them
+    val underlineInVisible = maxOf(0, nextSharedLength - prevSharedLength)
+
+    if (!isCollapsed && underlineInVisible == 0) {
         Text(text = name, style = style, modifier = modifier)
         return
     }
 
     val annotated = buildAnnotatedString {
-        withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) {
-            append(name.substring(0, underlineLength))
+        if (isCollapsed) append("...")
+        if (underlineInVisible > 0) {
+            withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) {
+                append(name.substring(prevSharedLength, prevSharedLength + underlineInVisible))
+            }
         }
-        append(name.substring(underlineLength))
+        append(name.substring(prevSharedLength + underlineInVisible))
     }
     Text(text = annotated, style = style, modifier = modifier)
 }

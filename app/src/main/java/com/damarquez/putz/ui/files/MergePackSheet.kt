@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,10 +17,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * "What content type" choice for a folder merge trigger — which engine to run, since a
@@ -98,7 +100,6 @@ fun MergeProcessChoiceDialog(
  * ([MergePickerState.ReadyGrouped]). [MergePickerState.Loading]/[MergePickerState.Error]
  * render a small status sheet instead.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MergePackSheet(
     state: MergePickerState,
@@ -106,18 +107,27 @@ fun MergePackSheet(
     onConfirmFlat: (List<MergeCandidateFile>) -> Unit,
     onConfirmGrouped: (List<MergeCandidateGroup>) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    Dialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+        ),
     ) {
-        when (state) {
-            is MergePickerState.Loading -> MergeStatusContent("Scanning \"${state.folderName}\"…") { CircularProgressIndicator() }
-            is MergePickerState.Error -> MergeStatusContent(state.message) {
-                TextButton(onClick = onDismiss) { Text("Close") }
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.9f),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 6.dp,
+        ) {
+            when (state) {
+                is MergePickerState.Loading -> MergeStatusContent("Scanning \"${state.folderName}\"…") { CircularProgressIndicator() }
+                is MergePickerState.Error -> MergeStatusContent(state.message) {
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                }
+                is MergePickerState.ReadyFlat -> MergeFlatContent(state.files, onDismiss, onConfirmFlat)
+                is MergePickerState.ReadyGrouped -> MergeGroupedContent(state.groups, onDismiss, onConfirmGrouped)
             }
-            is MergePickerState.ReadyFlat -> MergeFlatContent(state.files, onDismiss, onConfirmFlat)
-            is MergePickerState.ReadyGrouped -> MergeGroupedContent(state.groups, onDismiss, onConfirmGrouped)
         }
     }
 }
@@ -143,11 +153,11 @@ private fun MergeFlatContent(
     var orderedFiles by remember(files) { mutableStateOf(files) }
     var checkedPaths by remember(files) { mutableStateOf(files.map { it.relativePath }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.relativePath in checkedPaths }
+    var collapseNames by remember { mutableStateOf(true) }
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.9f)
+            .fillMaxSize()
             .padding(horizontal = 24.dp)
             .padding(bottom = 32.dp),
     ) {
@@ -174,6 +184,18 @@ private fun MergeFlatContent(
             }
         }
 
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Collapse names",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = collapseNames,
+                onCheckedChange = { collapseNames = it },
+            )
+        }
+
         Spacer(Modifier.height(8.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -185,13 +207,21 @@ private fun MergeFlatContent(
                             checkedPaths = if (checked) checkedPaths + candidate.relativePath else checkedPaths - candidate.relativePath
                         },
                     )
-                    CollapsedFileNameText(
-                        name = candidate.relativePath,
-                        previousName = orderedFiles.getOrNull(index - 1)?.relativePath,
-                        nextName = orderedFiles.getOrNull(index + 1)?.relativePath,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
+                    if (collapseNames) {
+                        CollapsedFileNameText(
+                            name = candidate.relativePath,
+                            previousName = orderedFiles.getOrNull(index - 1)?.relativePath,
+                            nextName = orderedFiles.getOrNull(index + 1)?.relativePath,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        Text(
+                            text = candidate.relativePath,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     ReorderArrowButton(
                         icon = Icons.Default.ArrowUpward,
                         contentDescription = "Move up",
@@ -243,8 +273,7 @@ private fun MergeGroupedContent(
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.9f)
+            .fillMaxSize()
             .padding(horizontal = 24.dp)
             .padding(bottom = 32.dp),
     ) {

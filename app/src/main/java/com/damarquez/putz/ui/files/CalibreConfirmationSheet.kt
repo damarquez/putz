@@ -59,6 +59,7 @@ import android.app.SearchManager
 import android.content.Intent
 import android.net.Uri
 import com.damarquez.putz.data.repository.CalibreBookMatch
+import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.util.MetadataUtils
 
 data class TransferRef(val uuid: String, val title: String, val author: String)
@@ -313,13 +314,12 @@ fun CalibreConfirmationSheet(
 
                 if (isUpdateComments) {
                     Spacer(Modifier.height(16.dp))
-                    OutlinedTextField(
+                    CompactOutlinedTextField(
                         value = tags,
                         onValueChange = { tags = it },
-                        label = { Text("Tags") },
+                        label = "Tags",
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("Programming, Python, Reference") },
+                        placeholder = "Programming, Python, Reference",
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     )
                 }
@@ -327,14 +327,13 @@ fun CalibreConfirmationSheet(
                 Spacer(Modifier.height(8.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
+                    CompactOutlinedTextField(
                         value = uuid,
                         onValueChange = { uuid = it },
-                        label = { Text(if (isReplaceCover) "Book UUID (Required)" else "Book UUID (Optional)") },
+                        label = if (isReplaceCover) "Book UUID (Required)" else "Book UUID (Optional)",
                         modifier = Modifier.weight(1f),
-                        singleLine = true,
                         enabled = !uuidFromTransfer,
-                        placeholder = { Text("Directly target an existing book") },
+                        placeholder = "Directly target an existing book",
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     )
                     if (transferRefs.isNotEmpty()) {
@@ -408,29 +407,24 @@ fun CalibreConfirmationSheet(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedTextField(
+                    CompactOutlinedTextField(
                         value = if (isReplaceCover && isUuidMatched) matchedBookTitle ?: "" else title,
                         onValueChange = { title = it },
-                        label = { Text("Title") },
+                        label = "Title",
                         modifier = Modifier.weight(1f),
-                        singleLine = true,
                         enabled = !titleAuthorLocked,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        trailingIcon = {
-                            if (!titleAuthorLocked) {
-                                IconButton(
-                                    onClick = {
-                                        title = displayName.substringBeforeLast('.')
-                                    }
-                                ) {
+                        trailingIcon = if (!titleAuthorLocked) {
+                            {
+                                IconButton(onClick = { title = displayName.substringBeforeLast('.') }) {
                                     Icon(
                                         imageVector = Icons.Default.FileOpen,
                                         contentDescription = "Load filename as title",
-                                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                                     )
                                 }
                             }
-                        }
+                        } else null,
                     )
                     if (!titleAuthorLocked && title.isNotBlank()) {
                         Spacer(Modifier.width(4.dp))
@@ -476,13 +470,12 @@ fun CalibreConfirmationSheet(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedTextField(
+                    CompactOutlinedTextField(
                         value = if (isReplaceCover && isUuidMatched) matchedBookAuthor ?: "" else author,
                         onValueChange = { author = it },
-                        label = { Text("Author") },
-                        placeholder = { Text("Unknown") },
+                        label = "Author",
+                        placeholder = "Unknown",
                         modifier = Modifier.weight(1f),
-                        singleLine = true,
                         enabled = !titleAuthorLocked,
                         isError = authorHasAnd,
                         supportingText = if (authorHasAnd) {
@@ -534,13 +527,12 @@ fun CalibreConfirmationSheet(
 
                 if (!isReplaceCover && !isUpdateComments) {
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
+                    CompactOutlinedTextField(
                         value = additionalTags,
                         onValueChange = { additionalTags = it },
-                        label = { Text("Tags (optional)") },
+                        label = "Tags (optional)",
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("Programming, Python, Reference") },
+                        placeholder = "Programming, Python, Reference",
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     )
                 }

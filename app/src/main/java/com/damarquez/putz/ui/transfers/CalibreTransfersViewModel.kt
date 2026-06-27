@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
+import com.damarquez.putz.data.repository.CalibreBatchItem
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreBookMatch
@@ -369,6 +370,18 @@ class CalibreTransfersViewModel @Inject constructor(
             } else {
                 _snackbarMessage.value = "No Google account configured"
             }
+        }
+    }
+
+    fun updateAssemblyMetadata(
+        fileId: Long,
+        title: String,
+        author: String,
+        tags: String?,
+        items: List<CalibreBatchItem>,
+    ) {
+        viewModelScope.launch {
+            calibreRepository.updateAssemblyMetadata(fileId, title, author, tags, items)
         }
     }
 
