@@ -25,11 +25,17 @@ class TransfersRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
 ) {
 
+    // IDs the user just deleted. Kept until put.io stops reporting them so a slow cancel
+    // response doesn't cause the transfer to resurrect on the next poll.
+    private val pendingRemovalIds = mutableSetOf<Long>()
+
     suspend fun syncAndGetTransfers(token: String): NetworkResult<List<MergedTransfer>> =
         withContext(Dispatchers.IO) {
             when (val result = apiClient.listTransfers(token)) {
                 is NetworkResult.Success -> {
                     val apiTransfers = result.data
+                    val apiIds = apiTransfers.map { it.id }.toSet()
+                    pendingRemovalIds.removeAll { it !in apiIds }
                     val mergedFromApi = mergeWithLocal(apiTransfers)
                     val activeIds = apiTransfers.map { it.id }
                     
@@ -75,6 +81,7 @@ class TransfersRepository @Inject constructor(
 
     suspend fun removeTransfer(token: String, id: Long): NetworkResult<Unit> = withContext(Dispatchers.IO) {
         println("TransfersRepository: Removing $id")
+        pendingRemovalIds.add(id)
         // Try to cancel on put.io in case it's still there
         val result = apiClient.cancelTransfers(token, listOf(id))
         println("TransfersRepository: Cancel API result for remove: $result")
@@ -98,7 +105,7 @@ class TransfersRepository @Inject constructor(
         // Delete the stopped record first so its infoHash doesn't trigger the duplicate guard in addTransfer.
         dao.deleteById(id)
 
-        when (val outcome = addTransfer(token, magnet, displayNameOverride = local.displayName)) {
+        when (val outcome = addTransfer(token, magnet, saveParentId = local.saveParentId, displayNameOverride = local.displayName)) {
             is AddTransferOutcome.Added -> {
                 println("TransfersRepository: Resume add success")
                 NetworkResult.Success(Unit)
@@ -308,6 +315,7 @@ class TransfersRepository @Inject constructor(
         nameResolved = false,
         percentDone = transfer.percentDone,
         size = transfer.size,
+        saveParentId = transfer.saveParentId,
     )
 
     suspend fun updateDisplayName(id: Long, newName: String) = withContext(Dispatchers.IO) {
@@ -342,7 +350,7 @@ class TransfersRepository @Inject constructor(
     }
 
     private suspend fun mergeWithLocal(apiTransfers: List<PutioTransfer>): List<MergedTransfer> {
-        return apiTransfers.map { transfer ->
+        return apiTransfers.filter { it.id !in pendingRemovalIds }.map { transfer ->
             val local = dao.getById(transfer.id)
             if (local == null) {
                 val magnetLink = transfer.source?.takeIf { it.startsWith("magnet:") }

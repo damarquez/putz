@@ -48,4 +48,8 @@ data class AppTransferEntity(
 
     /** Total size of the transfer in bytes. */
     val size: Long = 0L,
+
+    /** put.io save_parent_id used when this transfer was originally added. Non-zero means
+     *  the transfer was directed to a specific folder (e.g. .putz_hidden). */
+    val saveParentId: Long = 0L,
 )

@@ -874,7 +874,7 @@ class CalibreRepository @Inject constructor(
 
     // CONTRACT: merge framework — pack-shaped item types whose `files`/`groups` hold the
     // homogeneous source files being joined, as opposed to SINGLE/ARCHIVE/ARCHIVE_ENTRY items.
-    private val PACK_TYPES = setOf("PACK", "PDF_PACK", "EPUB_PACK", "IMAGE_PDF_PACK", "CBR_PDF_PACK")
+    private val PACK_TYPES = setOf("PACK", "PDF_PACK", "EPUB_PACK", "IMAGE_PDF_PACK", "IMAGE_EPUB_PACK", "CBR_PDF_PACK")
 
     // Only PDF_PACK/EPUB_PACK can absorb a lone SINGLE item of the matching extension into the
     // pack as its first file: a finished .pdf/.epub is valid raw input for "join PDFs/EPUBs".

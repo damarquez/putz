@@ -308,6 +308,10 @@ fun FilesScreen(
     var imagePdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
 
+    // Image EPUB pack flow
+    var imageEpubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedImageFilesForEpub by remember { mutableStateOf<List<PutioFile>?>(null) }
+
     // CBR PDF pack flow
     var cbrPdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedCbrFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
@@ -648,6 +652,52 @@ fun FilesScreen(
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
                 viewModel.sendMergeFiles("IMAGE_PDF_PACK", "Book.pdf", imageFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedImageFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (imageEpubPackTriggerFile != null && selectedImageFilesForEpub == null && mergeAssemblyPayload == null) {
+        val imageFiles = remember(imageEpubPackTriggerFile) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isImage(it.displayName) }
+                ?: emptyList()
+        }
+        ImagePdfPackSheet(
+            imageFiles = imageFiles,
+            onDismiss = {
+                imageEpubPackTriggerFile = null
+                if (assembleIntoPackType == "IMAGE_EPUB_PACK") {
+                    selectedFileForAssembly = null
+                    assembleIntoPackType = null
+                }
+            },
+            onConfirm = { files ->
+                if (assembleIntoPackType == "IMAGE_EPUB_PACK") {
+                    mergeAssemblyPayload = MergeAssemblyPayload("IMAGE_EPUB_PACK", "Book.epub", "${files.size} images", files = files)
+                } else {
+                    selectedImageFilesForEpub = files
+                }
+                imageEpubPackTriggerFile = null
+            },
+        )
+    }
+
+    if (selectedImageFilesForEpub != null) {
+        val imageFiles = selectedImageFilesForEpub!!
+        val (initialTitle, initialAuthor) = remember(imageFiles) {
+            MetadataUtils.extractMetadata(imageFiles.first().displayName)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${imageFiles.size} images → EPUB",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedImageFilesForEpub = null },
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("IMAGE_EPUB_PACK", "Book.epub", imageFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedImageFilesForEpub = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1516,6 +1566,7 @@ fun FilesScreen(
                                         onPreview = { viewModel.previewFile(it) },
                                         onReplaceCover = { selectedFileForCover = it },
                                         onSendAsImagePdf = { imagePdfPackTriggerFile = it },
+                                        onSendAsImageEpub = { imageEpubPackTriggerFile = it },
                                         onSendToCalibre = { selectedFileForCalibre = it },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                         onAssembleToCalibre = { target, isPack ->
@@ -1534,6 +1585,7 @@ fun FilesScreen(
                                                 "PDF_PACK" -> pdfPackTriggerFile = target
                                                 "EPUB_PACK" -> epubPackTriggerFile = target
                                                 "IMAGE_PDF_PACK" -> imagePdfPackTriggerFile = target
+                                                "IMAGE_EPUB_PACK" -> imageEpubPackTriggerFile = target
                                                 "CBR_PDF_PACK" -> cbrPdfPackTriggerFile = target
                                             }
                                         },

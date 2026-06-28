@@ -77,6 +77,7 @@ fun FileItem(
     onPreview: (PutioFile) -> Unit,
     onReplaceCover: (PutioFile) -> Unit,
     onSendAsImagePdf: (PutioFile) -> Unit,
+    onSendAsImageEpub: (PutioFile) -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
@@ -430,11 +431,19 @@ fun FileItem(
                                 )
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge") },
+                                    text = { Text("Merge → PDF") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onSendAsImagePdf(file)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Merge → EPUB") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsImageEpub(file)
                                     },
                                 )
                                 if (hasPendingAssemblies) {
@@ -444,6 +453,14 @@ fun FileItem(
                                         onClick = {
                                             showMenu = false
                                             onAssembleIntoPack(file, "IMAGE_PDF_PACK")
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Assemble into fused image EPUB") },
+                                        enabled = isGoogleSignedIn,
+                                        onClick = {
+                                            showMenu = false
+                                            onAssembleIntoPack(file, "IMAGE_EPUB_PACK")
                                         },
                                     )
                                 }
