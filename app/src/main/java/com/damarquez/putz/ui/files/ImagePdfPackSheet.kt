@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -34,11 +35,13 @@ import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.util.MetadataUtils
 
 @Composable
-fun ImagePdfPackSheet(
+fun ImagePackSheet(
     imageFiles: List<PutioFile>,
+    defaultFormat: ImageOutputFormat,
     onDismiss: () -> Unit,
-    onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
+    onConfirm: (selectedFiles: List<PutioFile>, format: ImageOutputFormat) -> Unit,
 ) {
+    var format by remember(defaultFormat) { mutableStateOf(defaultFormat) }
     var caseSensitiveSort by remember(imageFiles) { mutableStateOf(false) }
     var orderedFiles by remember(imageFiles, caseSensitiveSort) {
         mutableStateOf(MetadataUtils.sortByName(imageFiles, caseSensitiveSort) { it.displayName })
@@ -67,7 +70,7 @@ fun ImagePdfPackSheet(
                     .padding(bottom = 32.dp),
             ) {
                 Text(
-                    text = "Select images for PDF",
+                    text = "Select images for ${format.label}",
                     style = MaterialTheme.typography.titleLarge,
                 )
 
@@ -109,6 +112,25 @@ fun ImagePdfPackSheet(
                         checked = collapseNames,
                         onCheckedChange = { collapseNames = it },
                     )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Output format",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    ImageOutputFormat.entries.forEach { fmt ->
+                        FilterChip(
+                            selected = format == fmt,
+                            onClick = { format = fmt },
+                            label = { Text(fmt.label) },
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -214,7 +236,7 @@ fun ImagePdfPackSheet(
                 Spacer(Modifier.height(16.dp))
 
                 Button(
-                    onClick = { onConfirm(selectedFiles) },
+                    onClick = { onConfirm(selectedFiles, format) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = selectedFiles.isNotEmpty(),
                 ) {

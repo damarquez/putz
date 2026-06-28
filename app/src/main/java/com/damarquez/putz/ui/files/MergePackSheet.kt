@@ -79,7 +79,7 @@ fun MergeProcessChoiceDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Merge \"$folderName\"") },
-        text = { Text("Combine every image in this folder into one PDF, or treat each subfolder as its own chapter?") },
+        text = { Text("Combine all files into one, or treat each subfolder as its own chapter?") },
         confirmButton = {
             TextButton(onClick = { onChoose(MergeProcessMode.SUBFOLDERS_AS_CHAPTERS) }) {
                 Text("Subfolders as chapters")
@@ -106,6 +106,7 @@ fun MergePackSheet(
     onDismiss: () -> Unit,
     onConfirmFlat: (List<MergeCandidateFile>) -> Unit,
     onConfirmGrouped: (List<MergeCandidateGroup>) -> Unit,
+    extraControls: (@Composable () -> Unit)? = null,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -125,8 +126,8 @@ fun MergePackSheet(
                 is MergePickerState.Error -> MergeStatusContent(state.message) {
                     TextButton(onClick = onDismiss) { Text("Close") }
                 }
-                is MergePickerState.ReadyFlat -> MergeFlatContent(state.files, onDismiss, onConfirmFlat)
-                is MergePickerState.ReadyGrouped -> MergeGroupedContent(state.groups, onDismiss, onConfirmGrouped)
+                is MergePickerState.ReadyFlat -> MergeFlatContent(state.files, onDismiss, onConfirmFlat, extraControls)
+                is MergePickerState.ReadyGrouped -> MergeGroupedContent(state.groups, onDismiss, onConfirmGrouped, extraControls)
             }
         }
     }
@@ -149,6 +150,7 @@ private fun MergeFlatContent(
     files: List<MergeCandidateFile>,
     onDismiss: () -> Unit,
     onConfirm: (List<MergeCandidateFile>) -> Unit,
+    extraControls: (@Composable () -> Unit)? = null,
 ) {
     var orderedFiles by remember(files) { mutableStateOf(files) }
     var checkedPaths by remember(files) { mutableStateOf(files.map { it.relativePath }.toSet()) }
@@ -195,6 +197,8 @@ private fun MergeFlatContent(
                 onCheckedChange = { collapseNames = it },
             )
         }
+
+        extraControls?.invoke()
 
         Spacer(Modifier.height(8.dp))
 
@@ -268,6 +272,7 @@ private fun MergeGroupedContent(
     groups: List<MergeCandidateGroup>,
     onDismiss: () -> Unit,
     onConfirm: (List<MergeCandidateGroup>) -> Unit,
+    extraControls: (@Composable () -> Unit)? = null,
 ) {
     var orderedGroups by remember(groups) { mutableStateOf(groups) }
 
@@ -284,6 +289,9 @@ private fun MergeGroupedContent(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        extraControls?.invoke()
+
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {

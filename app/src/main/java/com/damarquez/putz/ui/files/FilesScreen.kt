@@ -28,6 +28,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -304,13 +305,10 @@ fun FilesScreen(
     var epubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedEpubFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
 
-    // Image PDF pack flow
-    var imagePdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    // Image pack flow (PDF / EPUB / CBZ)
+    var imagePackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
-
-    // Image EPUB pack flow
-    var imageEpubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
-    var selectedImageFilesForEpub by remember { mutableStateOf<List<PutioFile>?>(null) }
+    var selectedImageFilesFormat by remember { mutableStateOf(ImageOutputFormat.PDF) }
 
     // CBR PDF pack flow
     var cbrPdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
@@ -612,92 +610,50 @@ fun FilesScreen(
         )
     }
 
-    if (imagePdfPackTriggerFile != null && selectedImageFiles == null && mergeAssemblyPayload == null) {
+    if (imagePackTriggerFile != null && selectedImageFiles == null && mergeAssemblyPayload == null) {
         // CONTRACT: stub convention — must use displayName; filter to image siblings in current folder
-        val imageFiles = remember(imagePdfPackTriggerFile) {
+        val imageFiles = remember(imagePackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isImage(it.displayName) }
                 ?: emptyList()
         }
-        ImagePdfPackSheet(
+        val defaultFormat = remember(imageFiles) { defaultImageOutputFormat(imageFiles.map { it.displayName }) }
+        ImagePackSheet(
             imageFiles = imageFiles,
+            defaultFormat = defaultFormat,
             onDismiss = {
-                imagePdfPackTriggerFile = null
-                if (assembleIntoPackType == "IMAGE_PDF_PACK") {
+                imagePackTriggerFile = null
+                if (assembleIntoPackType == "IMAGE_PACK") {
                     selectedFileForAssembly = null
                     assembleIntoPackType = null
                 }
             },
-            onConfirm = { files ->
-                if (assembleIntoPackType == "IMAGE_PDF_PACK") {
-                    mergeAssemblyPayload = MergeAssemblyPayload("IMAGE_PDF_PACK", "Book.pdf", "${files.size} images", files = files)
+            onConfirm = { files, format ->
+                if (assembleIntoPackType == "IMAGE_PACK") {
+                    mergeAssemblyPayload = MergeAssemblyPayload(format.itemType, format.outputFileName, "${files.size} images", files = files)
                 } else {
                     selectedImageFiles = files
+                    selectedImageFilesFormat = format
                 }
-                imagePdfPackTriggerFile = null
+                imagePackTriggerFile = null
             },
         )
     }
 
     if (selectedImageFiles != null) {
         val imageFiles = selectedImageFiles!!
+        val format = selectedImageFilesFormat
         val (initialTitle, initialAuthor) = remember(imageFiles) {
             MetadataUtils.extractMetadata(imageFiles.first().displayName)
         }
         CalibreConfirmationSheet(
-            displayName = "${imageFiles.size} images → PDF",
+            displayName = "${imageFiles.size} images → ${format.outputFileName}",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedImageFiles = null },
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles("IMAGE_PDF_PACK", "Book.pdf", imageFiles, title, author, uuid, tags, isProtected, assembleBook)
+                viewModel.sendMergeFiles(format.itemType, format.outputFileName, imageFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedImageFiles = null
-            },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
-            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            transferRefs = completedTransfersWithUuid,
-        )
-    }
-
-    if (imageEpubPackTriggerFile != null && selectedImageFilesForEpub == null && mergeAssemblyPayload == null) {
-        val imageFiles = remember(imageEpubPackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isImage(it.displayName) }
-                ?: emptyList()
-        }
-        ImagePdfPackSheet(
-            imageFiles = imageFiles,
-            onDismiss = {
-                imageEpubPackTriggerFile = null
-                if (assembleIntoPackType == "IMAGE_EPUB_PACK") {
-                    selectedFileForAssembly = null
-                    assembleIntoPackType = null
-                }
-            },
-            onConfirm = { files ->
-                if (assembleIntoPackType == "IMAGE_EPUB_PACK") {
-                    mergeAssemblyPayload = MergeAssemblyPayload("IMAGE_EPUB_PACK", "Book.epub", "${files.size} images", files = files)
-                } else {
-                    selectedImageFilesForEpub = files
-                }
-                imageEpubPackTriggerFile = null
-            },
-        )
-    }
-
-    if (selectedImageFilesForEpub != null) {
-        val imageFiles = selectedImageFilesForEpub!!
-        val (initialTitle, initialAuthor) = remember(imageFiles) {
-            MetadataUtils.extractMetadata(imageFiles.first().displayName)
-        }
-        CalibreConfirmationSheet(
-            displayName = "${imageFiles.size} images → EPUB",
-            initialTitle = initialTitle,
-            initialAuthor = initialAuthor,
-            onDismiss = { selectedImageFilesForEpub = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles("IMAGE_EPUB_PACK", "Book.epub", imageFiles, title, author, uuid, tags, isProtected, assembleBook)
-                selectedImageFilesForEpub = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -707,6 +663,18 @@ fun FilesScreen(
 
     // Merge framework (folder trigger) — see CONTRACTS.md "Merge framework"
     val activeMergeContentType by viewModel.activeMergeContentType.collectAsState()
+    var mergeImageFormat by remember { mutableStateOf(ImageOutputFormat.PDF) }
+
+    // When an image folder scan completes, default to CBZ if any GIFs detected, else PDF.
+    LaunchedEffect(mergePickerState) {
+        if (activeMergeContentType == MergeContentType.IMAGES) {
+            mergeImageFormat = when (val s = mergePickerState) {
+                is MergePickerState.ReadyFlat -> defaultImageOutputFormat(s.files.map { it.file.displayName })
+                is MergePickerState.ReadyGrouped -> defaultImageOutputFormat(s.groups.flatMap { it.files }.map { it.file.displayName })
+                else -> mergeImageFormat
+            }
+        }
+    }
 
     mergeProcessChoice?.let { choice ->
         if (choice.contentType == null) {
@@ -724,6 +692,27 @@ fun FilesScreen(
         }
     }
 
+    val imageFormatPicker: (@Composable () -> Unit)? = if (activeMergeContentType == MergeContentType.IMAGES) ({
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Output format",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            ImageOutputFormat.entries.forEach { fmt ->
+                FilterChip(
+                    selected = mergeImageFormat == fmt,
+                    onClick = { mergeImageFormat = fmt },
+                    label = { Text(fmt.label) },
+                    modifier = Modifier.padding(start = 4.dp),
+                )
+            }
+        }
+    }) else null
+
     mergePickerState?.let { pickerState ->
         if (selectedMergeFlatFiles == null && selectedMergeGroups == null) {
             MergePackSheet(
@@ -737,6 +726,7 @@ fun FilesScreen(
                     selectedMergeGroups = groups
                     viewModel.dismissMergePicker()
                 },
+                extraControls = imageFormatPicker,
             )
         }
     }
@@ -758,14 +748,16 @@ fun FilesScreen(
             dismissButton = {
                 TextButton(onClick = {
                     val contentType = activeMergeContentType ?: MergeContentType.IMAGES
+                    val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
+                    val effectiveOutputFileName = if (contentType == MergeContentType.IMAGES) mergeImageFormat.outputFileName else contentType.outputFileName
                     val flatFiles = selectedMergeFlatFiles
                     val groups = selectedMergeGroups
                     val anchorFile = flatFiles?.firstOrNull()?.file ?: groups?.firstOrNull()?.files?.firstOrNull()?.file
                     if (anchorFile != null) {
-                        val displayName = if (flatFiles != null) "${flatFiles.size} ${contentType.label.lowercase()} → ${contentType.outputFileName}"
-                            else "${groups!!.size} chapters → ${contentType.outputFileName}"
+                        val displayName = if (flatFiles != null) "${flatFiles.size} ${contentType.label.lowercase()} → $effectiveOutputFileName"
+                            else "${groups!!.size} chapters → $effectiveOutputFileName"
                         mergeAssemblyPayload = MergeAssemblyPayload(
-                            contentType.itemType, contentType.outputFileName, displayName,
+                            effectiveItemType, effectiveOutputFileName, displayName,
                             files = flatFiles?.map { it.file }, groups = groups,
                         )
                         selectedFileForAssembly = anchorFile to true
@@ -781,16 +773,18 @@ fun FilesScreen(
     if (selectedMergeFlatFiles != null && (mergeWantsNewBook == true || pendingAssemblies.isEmpty())) {
         val candidates = selectedMergeFlatFiles!!
         val contentType = activeMergeContentType ?: MergeContentType.IMAGES
+        val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
+        val effectiveOutputFileName = if (contentType == MergeContentType.IMAGES) mergeImageFormat.outputFileName else contentType.outputFileName
         val (initialTitle, initialAuthor) = remember(candidates) {
             MetadataUtils.extractMetadata(candidates.first().file.displayName)
         }
         CalibreConfirmationSheet(
-            displayName = "${candidates.size} ${contentType.label.lowercase()} → ${contentType.outputFileName}",
+            displayName = "${candidates.size} ${contentType.label.lowercase()} → $effectiveOutputFileName",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeFlatFiles = null; mergeWantsNewBook = null },
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles(contentType.itemType, contentType.outputFileName, candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
+                viewModel.sendMergeFiles(effectiveItemType, effectiveOutputFileName, candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeFlatFiles = null
                 mergeWantsNewBook = null
             },
@@ -803,16 +797,18 @@ fun FilesScreen(
     if (selectedMergeGroups != null && (mergeWantsNewBook == true || pendingAssemblies.isEmpty())) {
         val groups = selectedMergeGroups!!
         val contentType = activeMergeContentType ?: MergeContentType.IMAGES
+        val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
+        val effectiveOutputFileName = if (contentType == MergeContentType.IMAGES) mergeImageFormat.outputFileName else contentType.outputFileName
         val (initialTitle, initialAuthor) = remember(groups) {
             MetadataUtils.extractMetadata(groups.first().label)
         }
         CalibreConfirmationSheet(
-            displayName = "${groups.size} chapters → ${contentType.outputFileName}",
+            displayName = "${groups.size} chapters → $effectiveOutputFileName",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeGroups = null; mergeWantsNewBook = null },
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeGroups(contentType.itemType, contentType.outputFileName, groups, title, author, uuid, tags, isProtected, assembleBook)
+                viewModel.sendMergeGroups(effectiveItemType, effectiveOutputFileName, groups, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeGroups = null
                 mergeWantsNewBook = null
             },
@@ -1565,8 +1561,7 @@ fun FilesScreen(
                                         onLongClick = { selectedFiles = selectedFiles + file },
                                         onPreview = { viewModel.previewFile(it) },
                                         onReplaceCover = { selectedFileForCover = it },
-                                        onSendAsImagePdf = { imagePdfPackTriggerFile = it },
-                                        onSendAsImageEpub = { imageEpubPackTriggerFile = it },
+                                        onSendAsImagePack = { imagePackTriggerFile = it },
                                         onSendToCalibre = { selectedFileForCalibre = it },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                         onAssembleToCalibre = { target, isPack ->
@@ -1584,8 +1579,7 @@ fun FilesScreen(
                                             when (type) {
                                                 "PDF_PACK" -> pdfPackTriggerFile = target
                                                 "EPUB_PACK" -> epubPackTriggerFile = target
-                                                "IMAGE_PDF_PACK" -> imagePdfPackTriggerFile = target
-                                                "IMAGE_EPUB_PACK" -> imageEpubPackTriggerFile = target
+                                                "IMAGE_PACK" -> imagePackTriggerFile = target
                                                 "CBR_PDF_PACK" -> cbrPdfPackTriggerFile = target
                                             }
                                         },

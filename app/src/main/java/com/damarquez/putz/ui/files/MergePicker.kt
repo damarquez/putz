@@ -51,6 +51,16 @@ fun MergeContentType.matchesName(name: String): Boolean = when (this) {
 
 fun MergeContentType.matches(file: PutioFile): Boolean = matchesName(file.displayName)
 
+enum class ImageOutputFormat(val itemType: String, val outputFileName: String, val label: String) {
+    PDF("IMAGE_PDF_PACK", "Book.pdf", "PDF"),
+    EPUB("IMAGE_EPUB_PACK", "Book.epub", "EPUB"),
+    CBZ("IMAGE_CBZ_PACK", "Book.cbz", "CBZ"),
+}
+
+fun defaultImageOutputFormat(fileNames: Iterable<String>): ImageOutputFormat =
+    if (fileNames.any { it.endsWith(".gif", ignoreCase = true) }) ImageOutputFormat.CBZ
+    else ImageOutputFormat.PDF
+
 sealed class MergePickerState {
     data class Loading(val folderName: String) : MergePickerState()
     data class Error(val folderName: String, val message: String) : MergePickerState()

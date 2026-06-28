@@ -76,8 +76,7 @@ fun FileItem(
     onLongClick: () -> Unit,
     onPreview: (PutioFile) -> Unit,
     onReplaceCover: (PutioFile) -> Unit,
-    onSendAsImagePdf: (PutioFile) -> Unit,
-    onSendAsImageEpub: (PutioFile) -> Unit,
+    onSendAsImagePack: (PutioFile) -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
@@ -431,36 +430,20 @@ fun FileItem(
                                 )
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge → PDF") },
+                                    text = { Text("Merge images…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
-                                        onSendAsImagePdf(file)
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Merge → EPUB") },
-                                    enabled = isGoogleSignedIn,
-                                    onClick = {
-                                        showMenu = false
-                                        onSendAsImageEpub(file)
+                                        onSendAsImagePack(file)
                                     },
                                 )
                                 if (hasPendingAssemblies) {
                                     DropdownMenuItem(
-                                        text = { Text("Assemble into fused image PDF") },
+                                        text = { Text("Assemble images into book…") },
                                         enabled = isGoogleSignedIn,
                                         onClick = {
                                             showMenu = false
-                                            onAssembleIntoPack(file, "IMAGE_PDF_PACK")
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Assemble into fused image EPUB") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleIntoPack(file, "IMAGE_EPUB_PACK")
+                                            onAssembleIntoPack(file, "IMAGE_PACK")
                                         },
                                     )
                                 }
