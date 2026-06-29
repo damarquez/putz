@@ -2,7 +2,7 @@ package com.damarquez.putz.util
 
 // CONTRACT: stub convention, Putz file state — all isX(fileName) callers must pass file.displayName, not file.name
 object MetadataUtils {
-    private val EBOOK_EXTENSIONS = setOf("epub", "mobi", "pdf", "azw3", "fb2", "cbz", "cbr", "rar", "zip", "7z", "prc", "rtf", "doc", "docx", "odt", "txt", "htm", "html", "djvu")
+    private val EBOOK_EXTENSIONS = setOf("epub", "mobi", "pdf", "azw3", "azw", "fb2", "cbz", "cbr", "rar", "zip", "7z", "prc", "rtf", "doc", "docx", "odt", "txt", "htm", "html", "djvu")
     private val ARCHIVE_EXTENSIONS = setOf("rar", "zip", "7z")
     private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a", "flac")
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "heic", "heif")
