@@ -402,10 +402,7 @@ fun FilesScreen(
             },
             onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _, _, _ ->
                 if (isMergePayload && payload != null) {
-                    // isAltVersion -> "_bkp" filename only applies to PACK today, matching the
-                    // pre-consolidation appendAudiobookPackToAssembly (appendPdfPackToAssembly
-                    // never exposed this toggle).
-                    val fileName = if (isAltVersion && payload.type == "PACK") "Audiobook.m4b_bkp" else payload.fileName
+                    val fileName = applyAltVersion(payload.fileName, isAltVersion)
                     viewModel.appendMergeToAssembly(
                         targetAssemblyForFile!!.putioFileId, payload.type, fileName,
                         files = payload.files, groups = payload.groups,
@@ -554,8 +551,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPdfFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles("PDF_PACK", "Book.pdf", pdfFiles, title, author, uuid, tags, isProtected, assembleBook)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedPdfFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -600,8 +597,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedEpubFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles("EPUB_PACK", "Book.epub", epubFiles, title, author, uuid, tags, isProtected, assembleBook)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedEpubFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -651,8 +648,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedImageFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles(format.itemType, format.outputFileName, imageFiles, title, author, uuid, tags, isProtected, assembleBook)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedImageFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -783,8 +780,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeFlatFiles = null; mergeWantsNewBook = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles(effectiveItemType, effectiveOutputFileName, candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeFlatFiles = null
                 mergeWantsNewBook = null
             },
@@ -807,8 +804,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeGroups = null; mergeWantsNewBook = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeGroups(effectiveItemType, effectiveOutputFileName, groups, title, author, uuid, tags, isProtected, assembleBook)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeGroups = null
                 mergeWantsNewBook = null
             },
@@ -855,8 +852,8 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedCbrFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendMergeFiles("CBR_PDF_PACK", "Book.pdf", cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedCbrFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -1653,6 +1650,9 @@ private fun NoResultsView(query: String, modifier: Modifier = Modifier) {
         }
     }
 }
+
+private fun applyAltVersion(fileName: String, isAltVersion: Boolean) =
+    if (isAltVersion) "${fileName}_bkp" else fileName
 
 private fun formatDiskSize(bytes: Long): String = when {
     bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)

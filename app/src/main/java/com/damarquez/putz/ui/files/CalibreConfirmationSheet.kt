@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PersonSearch
@@ -49,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -126,6 +128,7 @@ fun CalibreConfirmationSheet(
     var isAltVersion by remember { mutableStateOf(false) }
     var isProtected by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val titleAuthorLocked = isReplaceCover
     val requiresUuidMatch = isReplaceCover
 
@@ -336,6 +339,24 @@ fun CalibreConfirmationSheet(
                         placeholder = "Directly target an existing book",
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     )
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(
+                        onClick = {
+                            val pasted = clipboardManager.getText()?.text.orEmpty().trim()
+                            if (pasted.isNotEmpty()) {
+                                uuid = pasted
+                                uuidFromTransfer = false
+                                selectedTransferRef = null
+                            }
+                        },
+                        enabled = !uuidFromTransfer,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentPaste,
+                            contentDescription = "Paste UUID from clipboard",
+                            tint = if (!uuidFromTransfer) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                        )
+                    }
                     if (transferRefs.isNotEmpty()) {
                         Spacer(Modifier.width(4.dp))
                         IconButton(onClick = { showTransferPicker = true }) {
