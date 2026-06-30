@@ -72,11 +72,13 @@ private fun singleFileLabel(fileName: String): String =
 /** Per-item edit state: ordered file list + which files are checked (by stable key).
  *  Uses [fileKey] rather than putio_file_id so archive-sourced pack items — where every
  *  AudiobookFile shares the same putio_file_id (the archive's ID) — work correctly.
- *  Keys survive reordering because they are derived from file content, not position. */
+ *  Keys survive reordering because they are derived from file content, not position.
+ *  [isIncluded] controls whether the whole format is kept in the saved transfer. */
 private data class ItemEditState(
     val item: CalibreBatchItem,
     val orderedFiles: List<AudiobookFile>,
     val checkedKeys: Set<String>,
+    val isIncluded: Boolean = true,
 )
 
 /** Stable unique key for one file within a pack, safe for LazyColumn and checked-state tracking.
@@ -93,6 +95,7 @@ private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
             item = item,
             orderedFiles = files,
             checkedKeys = files.map { fileKey(it) }.toSet(),
+            isIncluded = true,
         )
     }
 
@@ -132,6 +135,7 @@ internal fun TransferBrowserSheet(
     var collapseNames by rememberSaveable { mutableStateOf(true) }
 
     fun buildSaveItems(): List<CalibreBatchItem> = editStates.mapNotNull { state ->
+        if (!state.isIncluded) return@mapNotNull null
         val protectedValue = if (editProtected) true else null
         val files = state.item.files
         if (files == null) {
@@ -345,16 +349,28 @@ internal fun TransferBrowserSheet(
                 item(key = "edit_header_$itemIndex") {
                     val selectedCount = state.checkedKeys.size
                     val totalCount = files?.size ?: 1
+                    val includedCount = editStates.count { it.isIncluded }
+                    val isLastIncluded = state.isIncluded && includedCount == 1
+                    val dimColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                            .padding(start = 4.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
                     ) {
+                        Checkbox(
+                            checked = state.isIncluded,
+                            onCheckedChange = { checked ->
+                                editStates = editStates.toMutableList().also {
+                                    it[itemIndex] = state.copy(isIncluded = checked)
+                                }
+                            },
+                            enabled = !isLastIncluded,
+                        )
                         Icon(
                             Icons.Default.Description,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = if (state.isIncluded) MaterialTheme.colorScheme.primary else dimColor,
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(Modifier.width(10.dp))
@@ -362,6 +378,7 @@ internal fun TransferBrowserSheet(
                             Text(
                                 text = formatLabelFor(state.item),
                                 style = MaterialTheme.typography.bodyMedium,
+                                color = if (state.isIncluded) Color.Unspecified else dimColor,
                             )
                             Text(
                                 text = if (files != null)
@@ -369,15 +386,16 @@ internal fun TransferBrowserSheet(
                                 else
                                     MetadataUtils.stripStubExtension(state.item.fileName),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (files != null && selectedCount == 0)
-                                    MaterialTheme.colorScheme.error
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = when {
+                                    !state.isIncluded -> dimColor
+                                    files != null && selectedCount == 0 -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        if (files != null) {
+                        if (files != null && state.isIncluded) {
                             IconButton(
                                 onClick = {
                                     expandedInEdit = if (expanded)
@@ -395,7 +413,7 @@ internal fun TransferBrowserSheet(
                     }
                 }
 
-                if (files != null && expanded) {
+                if (files != null && expanded && state.isIncluded) {
                     // Collapse-names toggle + select-all
                     item(key = "edit_controls_$itemIndex") {
                         Row(
