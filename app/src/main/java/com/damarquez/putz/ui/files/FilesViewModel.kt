@@ -1363,6 +1363,7 @@ class FilesViewModel @Inject constructor(
             for (group in groups) {
                 val resolved = mutableListOf<AudiobookFile>()
                 for (candidate in group.files) {
+                    calibreRepository.updatePrepareProgress((done + 1) to allFiles.size)
                     val r = resolveForMerge(candidate.file, putioToken, progressKey, done + 1, allFiles.size, clearProgressOnSuccess = false) ?: return null
                     done++
                     resolved.add(r)
@@ -1379,6 +1380,7 @@ class FilesViewModel @Inject constructor(
         val resolved = mutableListOf<AudiobookFile>()
         val newIds = mutableListOf<Long>()
         for ((index, file) in list.withIndex()) {
+            calibreRepository.updatePrepareProgress((index + 1) to list.size)
             val r = resolveForMerge(file, putioToken, progressKey, index + 1, list.size, clearProgressOnSuccess = false) ?: return null
             resolved.add(r)
             newIds.add(r.putio_file_id)
