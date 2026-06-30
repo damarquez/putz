@@ -416,11 +416,15 @@ fun FilesScreen(
             null -> ""
         }
         val isArchiveFormat = pd is PendingDestination.Single && MetadataUtils.isArchive(pd.file.displayName)
+        val formatSlotState = if (pd is PendingDestination.Single)
+            assembly.singleFormatSlotState(pd.file.displayName)
+        else FormatSlotState.Available
         AssemblyAppendSheet(
             formatDisplayName = formatDisplayName,
             assembly = assembly,
             assemblyIsProtected = assembly.assemblyIsProtected(),
             isArchive = isArchiveFormat,
+            formatSlotState = formatSlotState,
             onDismiss = { destinationAssembly = null; pendingDestination = null },
             onConfirm = { isAltVersion, archiveMode, override ->
                 if (pd == null) return@AssemblyAppendSheet

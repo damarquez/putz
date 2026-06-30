@@ -480,6 +480,7 @@ class ArchiveViewModel @Inject constructor(
         assembleBook: Boolean = false,
         assemblyFileId: Long? = null,
         calibreBookUuid: String? = null,
+        isAltVersion: Boolean = false,
         overrideTitle: String? = null,
         overrideAuthor: String? = null,
         overrideUuid: String? = null,
@@ -575,10 +576,15 @@ class ArchiveViewModel @Inject constructor(
                 calibreRepository.updateUploadProgress(tempId, null)
 
                 if (assemblyFileId != null) {
+                    val targetFileName = if (isAltVersion) {
+                        val ext = entry.name.substringAfterLast('.', "")
+                        if (ext.isNotEmpty()) entry.name.substringBeforeLast('.') + "." + ext + "_bkp"
+                        else entry.name
+                    } else entry.name
                     val newItem = CalibreBatchItem(
                         type = "SINGLE",
                         putio_file_id = uploadedId,
-                        fileName = entry.name,
+                        fileName = targetFileName,
                         download_url = downloadUrl,
                     )
                     val added = calibreRepository.appendToAssembly(
@@ -588,7 +594,7 @@ class ArchiveViewModel @Inject constructor(
                     )
                     calibreRepository.removeTransfer(tempId)
                     _snackbarMessage.value = if (added) "Added to assembly"
-                        else "\"${entry.name}\" is already in this assembly"
+                        else "\"$targetFileName\" is already in this assembly"
                 } else if (assembleBook) {
                     calibreRepository.removeTransfer(tempId)
                     calibreRepository.addTransfer(

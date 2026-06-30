@@ -1003,33 +1003,19 @@ class CalibreRepository @Inject constructor(
         // Inherit encryption flag from first item (post-override) so all formats are consistently protected.
         val inheritedProtected = overrideProtected ?: currentItems.firstOrNull()?.protected
 
-        // Auto-apply _bkp when the incoming SINGLE item's format is already taken in the assembly.
-        // Reject if both the base slot and the _bkp slot are already occupied.
-        //
-        // TODO: this format-collision/auto-_bkp check only runs for type == "SINGLE". A second
-        // PACK/PDF_PACK/EPUB_PACK/CBR_PDF_PACK/etc. item with the same output format (e.g. two
-        // "Assemble into fused PDF" calls with different files) is currently accepted here with
-        // no warning, but the daemon's _item_format_key dedup in process_book_batch
-        // (putz_manager.py) silently drops every item after the first one with the same output
-        // format when the assembly is finally dispatched — so the append looks successful here
-        // but the second PDF/M4B/etc. selection is lost. Generalize this check to all item types
-        // (same one-base + one-_bkp rule, keyed by output format) so it's rejected/flagged here
-        // instead of silently dropped later. ".pdf_bkp" is a distinct format from ".pdf" and
-        // should keep being allowed alongside one ".pdf".
+        // Reject if the incoming SINGLE item's format slot is already taken.
+        // The UI (AssemblyAppendSheet) prevents this by disabling the button unless the user
+        // explicitly toggles alt version — at which point the ViewModel applies _bkp before
+        // calling here. This check is a safety net so duplicates can never sneak through.
         var effectiveItem = newItem
         if (newItem.type == "SINGLE") {
-            val ext = newItem.fileName.substringAfterLast('.', "")
-            if (ext.isNotEmpty() && !ext.uppercase().endsWith("_BKP")) {
+            val ext = newItem.fileName.substringAfterLast('.', "").uppercase()
+            if (ext.isNotEmpty()) {
                 val existingFormats = currentItems
                     .filter { it.type == "SINGLE" }
                     .map { it.fileName.substringAfterLast('.', "").uppercase() }
                     .toSet()
-                if (ext.uppercase() in existingFormats) {
-                    if ((ext.uppercase() + "_BKP") in existingFormats) return false
-                    effectiveItem = newItem.copy(
-                        fileName = newItem.fileName.substringBeforeLast('.') + "." + ext + "_bkp"
-                    )
-                }
+                if (ext in existingFormats) return false
             }
         }
 

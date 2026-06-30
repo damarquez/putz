@@ -58,6 +58,7 @@ fun AssemblyAppendSheet(
     assembly: CalibreTransferEntity,
     assemblyIsProtected: Boolean,
     isArchive: Boolean = false,
+    formatSlotState: FormatSlotState = FormatSlotState.Available,
     onDismiss: () -> Unit,
     onConfirm: (isAltVersion: Boolean, archiveMode: String?, override: AssemblyOverride?) -> Unit,
 ) {
@@ -241,7 +242,31 @@ fun AssemblyAppendSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(checked = isAltVersion, onCheckedChange = { isAltVersion = it })
+                    Switch(
+                        checked = isAltVersion,
+                        onCheckedChange = { isAltVersion = it },
+                        enabled = formatSlotState != FormatSlotState.BothOccupied,
+                    )
+                }
+
+                when (formatSlotState) {
+                    FormatSlotState.BaseOccupied -> {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "This format is already in the assembly. Enable alt version to add a backup copy.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    FormatSlotState.BothOccupied -> {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Both the regular and backup slots for this format are already in the assembly.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    else -> {}
                 }
 
                 if (isArchive) {
@@ -280,7 +305,12 @@ fun AssemblyAppendSheet(
                         onConfirm(isAltVersion, if (isArchive) archiveMode else null, override)
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !overrideEnabled || overrideTitle.isNotBlank(),
+                    enabled = when {
+                        formatSlotState == FormatSlotState.BothOccupied -> false
+                        formatSlotState == FormatSlotState.BaseOccupied && !isAltVersion -> false
+                        overrideEnabled && overrideTitle.isBlank() -> false
+                        else -> true
+                    },
                 ) {
                     Text("Add format")
                 }
@@ -294,6 +324,40 @@ fun AssemblyAppendSheet(
             }
         },
     )
+}
+
+enum class FormatSlotState {
+    /** Format not yet present in the assembly — proceed normally. */
+    Available,
+    /** Base format slot is taken; user must enable alt version to add a _bkp copy. */
+    BaseOccupied,
+    /** Both base and _bkp slots are taken; this format cannot be added at all. */
+    BothOccupied,
+}
+
+/**
+ * Checks whether the extension of [incomingFileName] already occupies a SINGLE-type format slot
+ * in this assembly's batchData.
+ */
+fun CalibreTransferEntity.singleFormatSlotState(incomingFileName: String): FormatSlotState {
+    val ext = incomingFileName.substringAfterLast('.', "").uppercase()
+    if (ext.isEmpty() || ext.endsWith("_BKP")) return FormatSlotState.Available
+    val data = batchData ?: return FormatSlotState.Available
+    return try {
+        val arr = org.json.JSONArray(data)
+        val existingFormats = (0 until arr.length())
+            .map { arr.getJSONObject(it) }
+            .filter { it.optString("type") == "SINGLE" }
+            .map { it.optString("fileName", "").substringAfterLast('.', "").uppercase() }
+            .toSet()
+        when {
+            ext !in existingFormats -> FormatSlotState.Available
+            (ext + "_BKP") in existingFormats -> FormatSlotState.BothOccupied
+            else -> FormatSlotState.BaseOccupied
+        }
+    } catch (_: Exception) {
+        FormatSlotState.Available
+    }
 }
 
 /** Parses the `protected` flag from the first item in an assembled transfer's batchData.

@@ -91,8 +91,10 @@ import com.damarquez.putz.ui.files.MergeContentTypeChoiceDialog
 import com.damarquez.putz.ui.files.MergePackSheet
 import com.damarquez.putz.ui.files.MergeProcessChoiceDialog
 import com.damarquez.putz.ui.files.AssemblyAppendSheet
+import com.damarquez.putz.ui.files.FormatSlotState
 import com.damarquez.putz.ui.files.assemblyIsProtected
 import com.damarquez.putz.ui.files.matchesName
+import com.damarquez.putz.ui.files.singleFormatSlotState
 import com.damarquez.putz.ui.theme.LocalAppStyling
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -631,8 +633,9 @@ fun ArchiveScreen(
             assembly = assembly,
             assemblyIsProtected = assembly.assemblyIsProtected(),
             isArchive = false,
+            formatSlotState = assembly.singleFormatSlotState(entry.name),
             onDismiss = { targetAssembly = null; entryForAssembly = null },
-            onConfirm = { _, _, override ->
+            onConfirm = { isAltVersion, _, override ->
                 viewModel.sendEntryToCalibre(
                     entry,
                     title = assembly.title,
@@ -640,6 +643,7 @@ fun ArchiveScreen(
                     assembleBook = true,
                     assemblyFileId = assembly.putioFileId,
                     calibreBookUuid = assembly.calibreBookUuid,
+                    isAltVersion = isAltVersion,
                     overrideTitle = override?.title,
                     overrideAuthor = override?.author,
                     overrideUuid = override?.uuid,
