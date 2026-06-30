@@ -15,6 +15,7 @@ import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.ArchiveRepository
 import com.damarquez.putz.data.repository.AudiobookFile
 import com.damarquez.putz.data.repository.CalibreBatchItem
+import com.damarquez.putz.data.repository.PackGroup
 import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
@@ -808,6 +809,72 @@ class ArchiveViewModel @Inject constructor(
                 isProtected = isProtected,
             )
             _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
+        }
+    }
+
+    /** Append the currently-pending archive merge into an existing assembly instead of creating
+     *  a new request. Mirrors [sendArchiveMerge] but calls [CalibreRepository.mergeIntoAssemblyItem]
+     *  instead of [CalibreRepository.addMergeTransfer]. Local-archive sources are not supported
+     *  (they require uploading to put.io first; use [sendArchiveMerge] with assembleBook=true instead). */
+    fun appendArchiveMerge(
+        assemblyFileId: Long,
+        files: List<MergeCandidateFile>?,
+        groups: List<MergeCandidateGroup>?,
+        overrideTitle: String? = null,
+        overrideAuthor: String? = null,
+        overrideUuid: String? = null,
+        overrideTags: String? = null,
+        overrideProtected: Boolean? = null,
+    ) {
+        val contentType = activeArchiveMergeContentType ?: return
+        viewModelScope.launch {
+            calibreRepository.markAssemblyAppendPending(assemblyFileId)
+            try {
+                if (source is ArchiveSource.Local) {
+                    _snackbarMessage.value = "Assembly append not supported for local archives"
+                    return@launch
+                }
+                val resolved = resolveArchiveForMerge() ?: return@launch
+
+                fun toAudiobookFile(candidate: MergeCandidateFile) = AudiobookFile(
+                    putio_file_id = resolved.fileId,
+                    fileName = candidate.file.name,
+                    download_url = resolved.downloadUrl,
+                    smb_path = resolved.smbPath,
+                    use_local = if (resolved.useLocal) true else null,
+                    local_path = resolved.localPath,
+                    archive_entry = candidate.file.lanPath!!,
+                    archive_file_name = archiveName,
+                )
+
+                val (newItem, newIds) = when {
+                    groups != null -> {
+                        val resolvedGroups = groups.map { g -> PackGroup(g.label, g.files.map { toAudiobookFile(it) }) }
+                        CalibreBatchItem(
+                            type = contentType.itemType, putio_file_id = resolved.fileId,
+                            fileName = contentType.outputFileName, groups = resolvedGroups,
+                        ) to groups.flatMap { g -> g.files.map { resolved.fileId } }
+                    }
+                    files != null -> {
+                        val resolvedFiles = files.map { toAudiobookFile(it) }
+                        CalibreBatchItem(
+                            type = contentType.itemType, putio_file_id = resolved.fileId,
+                            fileName = contentType.outputFileName, files = resolvedFiles,
+                        ) to files.map { resolved.fileId }
+                    }
+                    else -> return@launch
+                }
+
+                val added = calibreRepository.mergeIntoAssemblyItem(
+                    assemblyFileId, newItem, newIds,
+                    overrideTitle = overrideTitle, overrideAuthor = overrideAuthor,
+                    overrideUuid = overrideUuid, overrideTags = overrideTags,
+                    overrideProtected = overrideProtected,
+                )
+                _snackbarMessage.value = if (added) "Added to assembly" else "Format already in this assembly"
+            } finally {
+                calibreRepository.clearAssemblyAppendPending(assemblyFileId)
+            }
         }
     }
 

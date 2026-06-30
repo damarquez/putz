@@ -69,12 +69,22 @@ private fun singleFileLabel(fileName: String): String =
         .takeIf { it.isNotEmpty() && it.length <= 5 && !it.contains(' ') }
         ?.uppercase() ?: "FILE"
 
-/** Per-item edit state: ordered file list + which file IDs are checked. */
+/** Per-item edit state: ordered file list + which files are checked (by stable key).
+ *  Uses [fileKey] rather than putio_file_id so archive-sourced pack items — where every
+ *  AudiobookFile shares the same putio_file_id (the archive's ID) — work correctly.
+ *  Keys survive reordering because they are derived from file content, not position. */
 private data class ItemEditState(
     val item: CalibreBatchItem,
     val orderedFiles: List<AudiobookFile>,
-    val checkedIds: Set<Long>,
+    val checkedKeys: Set<String>,
 )
+
+/** Stable unique key for one file within a pack, safe for LazyColumn and checked-state tracking.
+ *  Regular files: putio_file_id is unique per file.
+ *  Archive-entry files: archive_entry path is unique within the pack; putio_file_id is the
+ *  same for every entry (the archive's own ID) and cannot be used alone. */
+private fun fileKey(file: AudiobookFile): String =
+    file.archive_entry ?: file.putio_file_id.toString()
 
 private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
     items.map { item ->
@@ -82,7 +92,7 @@ private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
         ItemEditState(
             item = item,
             orderedFiles = files,
-            checkedIds = files.map { it.putio_file_id }.toSet(),
+            checkedKeys = files.map { fileKey(it) }.toSet(),
         )
     }
 
@@ -127,7 +137,7 @@ internal fun TransferBrowserSheet(
         if (files == null) {
             state.item.copy(protected = protectedValue)
         } else {
-            val remaining = state.orderedFiles.filter { it.putio_file_id in state.checkedIds }
+            val remaining = state.orderedFiles.filter { fileKey(it) in state.checkedKeys }
             if (remaining.isEmpty()) null
             else state.item.copy(files = remaining, protected = protectedValue)
         }
@@ -333,7 +343,7 @@ internal fun TransferBrowserSheet(
                 val expanded = itemIndex in expandedInEdit
 
                 item(key = "edit_header_$itemIndex") {
-                    val selectedCount = state.checkedIds.size
+                    val selectedCount = state.checkedKeys.size
                     val totalCount = files?.size ?: 1
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -355,7 +365,7 @@ internal fun TransferBrowserSheet(
                             )
                             Text(
                                 text = if (files != null)
-                                    "$selectedCount / $totalCount files selected"
+                                    "$selectedCount / $totalCount selected"
                                 else
                                     MetadataUtils.stripStubExtension(state.item.fileName),
                                 style = MaterialTheme.typography.labelSmall,
@@ -395,26 +405,25 @@ internal fun TransferBrowserSheet(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "${state.checkedIds.size} of ${state.orderedFiles.size} selected",
+                                text = "${state.checkedKeys.size} of ${state.orderedFiles.size} selected",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.weight(1f),
                             )
                             TextButton(
                                 onClick = {
-                                    val allIds = state.orderedFiles.map { it.putio_file_id }.toSet()
                                     editStates = editStates.toMutableList().also {
                                         it[itemIndex] = state.copy(
-                                            checkedIds = if (state.checkedIds.size == state.orderedFiles.size)
+                                            checkedKeys = if (state.checkedKeys.size == state.orderedFiles.size)
                                                 emptySet()
                                             else
-                                                allIds,
+                                                state.orderedFiles.map { f -> fileKey(f) }.toSet(),
                                         )
                                     }
                                 },
                             ) {
                                 Text(
-                                    if (state.checkedIds.size == state.orderedFiles.size)
+                                    if (state.checkedKeys.size == state.orderedFiles.size)
                                         "Deselect all"
                                     else
                                         "Select all",
@@ -441,9 +450,10 @@ internal fun TransferBrowserSheet(
 
                     itemsIndexed(
                         items = state.orderedFiles,
-                        key = { _, f -> "edit_file_${itemIndex}_${f.putio_file_id}" },
+                        key = { _, f -> "edit_file_${itemIndex}_${fileKey(f)}" },
                     ) { fileIndex, file ->
                         val displayName = MetadataUtils.stripStubExtension(file.fileName)
+                        val key = fileKey(file)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -451,14 +461,14 @@ internal fun TransferBrowserSheet(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(
-                                checked = file.putio_file_id in state.checkedIds,
+                                checked = key in state.checkedKeys,
                                 onCheckedChange = { checked ->
                                     editStates = editStates.toMutableList().also {
                                         it[itemIndex] = state.copy(
-                                            checkedIds = if (checked)
-                                                state.checkedIds + file.putio_file_id
+                                            checkedKeys = if (checked)
+                                                state.checkedKeys + key
                                             else
-                                                state.checkedIds - file.putio_file_id,
+                                                state.checkedKeys - key,
                                         )
                                     }
                                 },

@@ -85,6 +85,7 @@ import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergeContentTypeChoiceDialog
 import com.damarquez.putz.ui.files.MergePackSheet
 import com.damarquez.putz.ui.files.MergeProcessChoiceDialog
+import com.damarquez.putz.ui.files.AssemblyAppendSheet
 import com.damarquez.putz.ui.files.assemblyIsProtected
 import com.damarquez.putz.ui.files.matchesName
 import com.damarquez.putz.ui.theme.LocalAppStyling
@@ -107,8 +108,31 @@ fun ArchiveScreen(
     // Merge framework — see CONTRACTS.md "Merge framework" / archive-sourced files
     val archiveMergeChoice by viewModel.archiveMergeChoice.collectAsState()
     val archiveMergePickerState by viewModel.archiveMergePickerState.collectAsState()
+    // Phase 1 result — held here until user picks a destination (new request or existing assembly)
+    var pendingArchiveMergeFlat by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
+    var pendingArchiveMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
+    var archiveMergeDestinationAssembly by remember { mutableStateOf<CalibreTransferEntity?>(null) }
+    // Phase 2 — new-request path: forward to CalibreConfirmationSheet
     var selectedArchiveMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedArchiveMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
+
+    // Auto-forward when there are no assemblies to choose from
+    LaunchedEffect(pendingArchiveMergeFlat) {
+        val files = pendingArchiveMergeFlat ?: return@LaunchedEffect
+        if (archiveMergeDestinationAssembly != null) return@LaunchedEffect
+        if (pendingAssemblies.isEmpty()) {
+            selectedArchiveMergeFlatFiles = files
+            pendingArchiveMergeFlat = null
+        }
+    }
+    LaunchedEffect(pendingArchiveMergeGroups) {
+        val groups = pendingArchiveMergeGroups ?: return@LaunchedEffect
+        if (archiveMergeDestinationAssembly != null) return@LaunchedEffect
+        if (pendingAssemblies.isEmpty()) {
+            selectedArchiveMergeGroups = groups
+            pendingArchiveMergeGroups = null
+        }
+    }
 
     // Calibre send state
     var entryForCalibre by remember { mutableStateOf<ArchiveEntry?>(null) }
@@ -369,20 +393,91 @@ fun ArchiveScreen(
 
     // Merge framework (file + directory trigger) — picker/reorder sheet
     archiveMergePickerState?.let { pickerState ->
-        if (selectedArchiveMergeFlatFiles == null && selectedArchiveMergeGroups == null) {
+        if (selectedArchiveMergeFlatFiles == null && selectedArchiveMergeGroups == null
+            && pendingArchiveMergeFlat == null && pendingArchiveMergeGroups == null) {
             MergePackSheet(
                 state = pickerState,
                 onDismiss = { viewModel.dismissArchiveMergePicker() },
                 onConfirmFlat = { files ->
-                    selectedArchiveMergeFlatFiles = files
+                    pendingArchiveMergeFlat = files
                     viewModel.dismissArchiveMergePicker()
                 },
                 onConfirmGrouped = { groups ->
-                    selectedArchiveMergeGroups = groups
+                    pendingArchiveMergeGroups = groups
                     viewModel.dismissArchiveMergePicker()
                 },
             )
         }
+    }
+
+    // Destination chooser — shown when merge files are selected and assemblies exist
+    val hasPendingArchiveMerge = pendingArchiveMergeFlat != null || pendingArchiveMergeGroups != null
+    if (hasPendingArchiveMerge && archiveMergeDestinationAssembly == null && pendingAssemblies.isNotEmpty()) {
+        fun dispatchToNew() {
+            selectedArchiveMergeFlatFiles = pendingArchiveMergeFlat
+            selectedArchiveMergeGroups = pendingArchiveMergeGroups
+            pendingArchiveMergeFlat = null
+            pendingArchiveMergeGroups = null
+        }
+        AlertDialog(
+            onDismissRequest = { pendingArchiveMergeFlat = null; pendingArchiveMergeGroups = null },
+            title = { Text("Add to...") },
+            text = {
+                LazyColumn {
+                    item {
+                        ListItem(
+                            headlineContent = { Text("New request") },
+                            modifier = Modifier.clickable { dispatchToNew() },
+                        )
+                    }
+                    items(pendingAssemblies) { assembly ->
+                        ListItem(
+                            headlineContent = { Text(assembly.title) },
+                            supportingContent = { Text(assembly.author) },
+                            modifier = Modifier.clickable {
+                                archiveMergeDestinationAssembly = assembly
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { pendingArchiveMergeFlat = null; pendingArchiveMergeGroups = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Assembly-append sheet for merge → existing assembly path
+    if (archiveMergeDestinationAssembly != null) {
+        val assembly = archiveMergeDestinationAssembly!!
+        val mergeDisplayName = when {
+            pendingArchiveMergeFlat != null -> "${pendingArchiveMergeFlat!!.size} files"
+            pendingArchiveMergeGroups != null -> "${pendingArchiveMergeGroups!!.size} chapters"
+            else -> ""
+        }
+        AssemblyAppendSheet(
+            formatDisplayName = mergeDisplayName,
+            assembly = assembly,
+            assemblyIsProtected = assembly.assemblyIsProtected(),
+            isArchive = false,
+            onDismiss = { archiveMergeDestinationAssembly = null; pendingArchiveMergeFlat = null; pendingArchiveMergeGroups = null },
+            onConfirm = { _, _, override ->
+                viewModel.appendArchiveMerge(
+                    assemblyFileId = assembly.putioFileId,
+                    files = pendingArchiveMergeFlat,
+                    groups = pendingArchiveMergeGroups,
+                    overrideTitle = override?.title,
+                    overrideAuthor = override?.author,
+                    overrideUuid = override?.uuid,
+                    overrideTags = override?.tags,
+                    overrideProtected = override?.isProtected,
+                )
+                archiveMergeDestinationAssembly = null
+                pendingArchiveMergeFlat = null
+                pendingArchiveMergeGroups = null
+            },
+        )
     }
 
     if (selectedArchiveMergeFlatFiles != null) {

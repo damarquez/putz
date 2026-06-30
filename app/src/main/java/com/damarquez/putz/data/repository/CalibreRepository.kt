@@ -933,6 +933,13 @@ class CalibreRepository @Inject constructor(
         // v1: only flat (ungrouped) packs can be combined this way.
         if (matched.groups != null || newItem.groups != null) return false
 
+        // If the incoming item targets a different output slot (e.g. "Book.pdf_bkp" vs the
+        // existing "Book.pdf"), treat it as a separate item rather than folding files in —
+        // otherwise the _bkp fileName is silently discarded and the user gets one big pack
+        // instead of two separate format slots.
+        if (matched.type == newItem.type && matched.fileName != newItem.fileName)
+            return appendToAssembly(assemblyFileId, newItem, newFileIds, overrideTitle, overrideAuthor, overrideUuid, overrideTags, overrideProtected)
+
         val currentItems = transfer.batchData?.let {
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: emptyList()
