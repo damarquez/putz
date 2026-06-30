@@ -77,7 +77,6 @@ fun CalibreConfirmationSheet(
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     isArchive: Boolean = false,
-    forceAssemble: Boolean = false,
     isReplaceCover: Boolean = false,
     isUpdateComments: Boolean = false,
     initialUuid: String = "",
@@ -124,7 +123,7 @@ fun CalibreConfirmationSheet(
     var showTransferPicker by remember { mutableStateOf(false) }
 
     var archiveMode by remember { mutableStateOf("default") }
-    var assembleBook by remember { mutableStateOf(forceAssemble) }
+    var assembleBook by remember { mutableStateOf(false) }
     var isAltVersion by remember { mutableStateOf(false) }
     var isProtected by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -558,7 +557,7 @@ fun CalibreConfirmationSheet(
                     )
                 }
 
-                if (!forceAssemble && !isReplaceCover && !isUpdateComments) {
+                if (!isReplaceCover && !isUpdateComments) {
                     Spacer(Modifier.height(20.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -570,7 +569,7 @@ fun CalibreConfirmationSheet(
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Text(
-                                text = "Rename extension to '_bkp'",
+                                text = "Append _bkp to extension (e.g. pdf → pdf_bkp)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -588,11 +587,11 @@ fun CalibreConfirmationSheet(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Assemble book",
+                                text = "Hold for more formats",
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Text(
-                                text = "Add to list but don't send immediately",
+                                text = "Don't dispatch yet — queue more formats first",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -610,11 +609,11 @@ fun CalibreConfirmationSheet(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Encrypt format",
+                                text = "Encrypt book",
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Text(
-                                text = "Daemon encrypts file before adding to Calibre",
+                                text = "Daemon encrypts all formats before adding to Calibre",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -677,7 +676,7 @@ fun CalibreConfirmationSheet(
                             isReplaceCover -> "Replace Cover"
                             isUpdateComments && includeComments -> "Update Comments"
                             isUpdateComments -> "Update Tags"
-                            assembleBook -> "Assemble Book"
+                            assembleBook -> "Confirm & Hold"
                             else -> "Confirm & Send"
                         }
                     )

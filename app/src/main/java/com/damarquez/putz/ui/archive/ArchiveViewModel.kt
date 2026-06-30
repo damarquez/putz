@@ -416,6 +416,11 @@ class ArchiveViewModel @Inject constructor(
         assembleBook: Boolean = false,
         assemblyFileId: Long? = null,
         calibreBookUuid: String? = null,
+        overrideTitle: String? = null,
+        overrideAuthor: String? = null,
+        overrideUuid: String? = null,
+        overrideTags: String? = null,
+        overrideProtected: Boolean? = null,
     ) {
         val useDaemonLocal = source is ArchiveSource.Lan ||
             (source is ArchiveSource.Putio && putioIsSynced)
@@ -433,7 +438,7 @@ class ArchiveViewModel @Inject constructor(
             }
 
             if (useDaemonLocal) {
-                sendEntryToCalibreViaDaemon(entry, title, author, assembleBook, assemblyFileId, calibreBookUuid, googleAccount)
+                sendEntryToCalibreViaDaemon(entry, title, author, assembleBook, assemblyFileId, calibreBookUuid, googleAccount, overrideTitle, overrideAuthor, overrideUuid, overrideTags, overrideProtected)
                 return@launch
             }
 
@@ -513,13 +518,11 @@ class ArchiveViewModel @Inject constructor(
                     )
                     val added = calibreRepository.appendToAssembly(
                         assemblyFileId = assemblyFileId,
-                        title = title,
-                        author = author,
                         newItem = newItem,
                         newFileIds = listOf(uploadedId),
                     )
                     calibreRepository.removeTransfer(tempId)
-                    _snackbarMessage.value = if (added) "Added to assembly: $title"
+                    _snackbarMessage.value = if (added) "Added to assembly"
                         else "\"${entry.name}\" is already in this assembly"
                 } else if (assembleBook) {
                     calibreRepository.removeTransfer(tempId)
@@ -562,6 +565,11 @@ class ArchiveViewModel @Inject constructor(
         assemblyFileId: Long?,
         calibreBookUuid: String?,
         googleAccount: String,
+        overrideTitle: String? = null,
+        overrideAuthor: String? = null,
+        overrideUuid: String? = null,
+        overrideTags: String? = null,
+        overrideProtected: Boolean? = null,
     ) {
         try {
             _calibreSendStatus.value = CalibreSendStatus.Working("Sending to Calibre…")
@@ -596,12 +604,15 @@ class ArchiveViewModel @Inject constructor(
                 )
                 val added = calibreRepository.appendToAssembly(
                     assemblyFileId = assemblyFileId,
-                    title = title,
-                    author = author,
                     newItem = newItem,
                     newFileIds = listOf(fileId),
+                    overrideTitle = overrideTitle,
+                    overrideAuthor = overrideAuthor,
+                    overrideUuid = overrideUuid,
+                    overrideTags = overrideTags,
+                    overrideProtected = overrideProtected,
                 )
-                _snackbarMessage.value = if (added) "Added to assembly: $title"
+                _snackbarMessage.value = if (added) "Added to assembly"
                     else "\"${entry.name}\" is already in this assembly"
             } else {
                 calibreRepository.addTransfer(

@@ -920,10 +920,15 @@ class CalibreRepository @Inject constructor(
         assemblyFileId: Long,
         newItem: CalibreBatchItem,
         newFileIds: List<Long>,
+        overrideTitle: String? = null,
+        overrideAuthor: String? = null,
+        overrideUuid: String? = null,
+        overrideTags: String? = null,
+        overrideProtected: Boolean? = null,
     ): Boolean {
         val transfer = calibreTransferDao.getTransferById(assemblyFileId) ?: return false
         val matched = compatibleAssemblyItem(transfer, newItem.type)
-            ?: return appendToAssembly(assemblyFileId, transfer.title, transfer.author, newItem, newFileIds)
+            ?: return appendToAssembly(assemblyFileId, newItem, newFileIds, overrideTitle, overrideAuthor, overrideUuid, overrideTags, overrideProtected)
 
         // v1: only flat (ungrouped) packs can be combined this way.
         if (matched.groups != null || newItem.groups != null) return false
@@ -955,6 +960,10 @@ class CalibreRepository @Inject constructor(
         val updatedIds = (transfer.parsedFileIds() + newFileIds).distinct()
 
         calibreTransferDao.updateTransfer(transfer.copy(
+            title = overrideTitle ?: transfer.title,
+            author = overrideAuthor ?: transfer.author,
+            calibreBookUuid = if (overrideTitle != null) overrideUuid else transfer.calibreBookUuid,
+            tags = if (overrideTitle != null) overrideTags?.takeIf { it.isNotBlank() } else transfer.tags,
             batchData = json.encodeToString(updatedItems),
             allPutioFileIds = updatedIds.joinToString(","),
             lastUpdatedAt = System.currentTimeMillis(),
@@ -965,18 +974,27 @@ class CalibreRepository @Inject constructor(
 
     suspend fun appendToAssembly(
         assemblyFileId: Long,
-        title: String,
-        author: String,
         newItem: CalibreBatchItem,
         newFileIds: List<Long>,
+        overrideTitle: String? = null,
+        overrideAuthor: String? = null,
+        overrideUuid: String? = null,
+        overrideTags: String? = null,
+        overrideProtected: Boolean? = null,
     ): Boolean {
         val transfer = calibreTransferDao.getTransferById(assemblyFileId) ?: return false
-        val currentItems = transfer.batchData?.let {
+        // If overriding protected, update all existing items to match before appending.
+        val baseItems = transfer.batchData?.let {
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: emptyList()
+        val currentItems = if (overrideProtected != null) {
+            baseItems.map { it.copy(protected = overrideProtected) }
+        } else {
+            baseItems
+        }
 
-        // Inherit encryption flag from the assembly's first item so all formats are consistently protected.
-        val inheritedProtected = currentItems.firstOrNull()?.protected
+        // Inherit encryption flag from first item (post-override) so all formats are consistently protected.
+        val inheritedProtected = overrideProtected ?: currentItems.firstOrNull()?.protected
 
         // Auto-apply _bkp when the incoming SINGLE item's format is already taken in the assembly.
         // Reject if both the base slot and the _bkp slot are already occupied.
@@ -1022,8 +1040,10 @@ class CalibreRepository @Inject constructor(
         val updatedIds = (transfer.parsedFileIds() + newFileIds).distinct()
 
         calibreTransferDao.updateTransfer(transfer.copy(
-            title = title,
-            author = author,
+            title = overrideTitle ?: transfer.title,
+            author = overrideAuthor ?: transfer.author,
+            calibreBookUuid = if (overrideTitle != null) overrideUuid else transfer.calibreBookUuid,
+            tags = if (overrideTitle != null) overrideTags?.takeIf { it.isNotBlank() } else transfer.tags,
             batchData = json.encodeToString(updatedItems),
             allPutioFileIds = updatedIds.joinToString(","),
             lastUpdatedAt = System.currentTimeMillis(),

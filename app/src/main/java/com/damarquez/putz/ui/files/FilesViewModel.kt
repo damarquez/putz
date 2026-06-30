@@ -1023,7 +1023,17 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun appendToAssembly(assemblyFileId: Long, file: PutioFile, title: String, author: String, archiveMode: String? = null, isAltVersion: Boolean = false) {
+    fun appendToAssembly(
+        assemblyFileId: Long,
+        file: PutioFile,
+        archiveMode: String? = null,
+        isAltVersion: Boolean = false,
+        overrideTitle: String? = null,
+        overrideAuthor: String? = null,
+        overrideUuid: String? = null,
+        overrideTags: String? = null,
+        overrideProtected: Boolean? = null,
+    ) {
         viewModelScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
             try {
@@ -1045,12 +1055,15 @@ class FilesViewModel @Inject constructor(
                 )
                 val added = calibreRepository.appendToAssembly(
                     assemblyFileId = assemblyFileId,
-                    title = title,
-                    author = author,
                     newItem = newItem,
                     newFileIds = listOf(file.syncedFileId),
+                    overrideTitle = overrideTitle,
+                    overrideAuthor = overrideAuthor,
+                    overrideUuid = overrideUuid,
+                    overrideTags = overrideTags,
+                    overrideProtected = overrideProtected,
                 )
-                _snackbarMessage.value = if (added) "File added to assembly: $title"
+                _snackbarMessage.value = if (added) "File added to assembly"
                     else "\"$targetFileName\" is already in this assembly"
                 return@launch
             }
@@ -1074,12 +1087,15 @@ class FilesViewModel @Inject constructor(
                 )
                 val added = calibreRepository.appendToAssembly(
                     assemblyFileId = assemblyFileId,
-                    title = title,
-                    author = author,
                     newItem = newItem,
                     newFileIds = listOf(file.id),
+                    overrideTitle = overrideTitle,
+                    overrideAuthor = overrideAuthor,
+                    overrideUuid = overrideUuid,
+                    overrideTags = overrideTags,
+                    overrideProtected = overrideProtected,
                 )
-                _snackbarMessage.value = if (added) "File added to assembly: $title"
+                _snackbarMessage.value = if (added) "File added to assembly"
                     else "\"$targetFileName\" is already in this assembly"
                 return@launch
             }
@@ -1113,12 +1129,15 @@ class FilesViewModel @Inject constructor(
 
             val added = calibreRepository.appendToAssembly(
                 assemblyFileId = assemblyFileId,
-                title = title,
-                author = author,
                 newItem = newItem,
-                newFileIds = listOf(targetFileId)
+                newFileIds = listOf(targetFileId),
+                overrideTitle = overrideTitle,
+                overrideAuthor = overrideAuthor,
+                overrideUuid = overrideUuid,
+                overrideTags = overrideTags,
+                overrideProtected = overrideProtected,
             )
-            _snackbarMessage.value = if (added) "File added to assembly: $title"
+            _snackbarMessage.value = if (added) "File added to assembly"
                 else "\"$targetFileName\" is already in this assembly"
             } finally {
                 calibreRepository.clearAssemblyAppendPending(assemblyFileId)
@@ -1376,11 +1395,12 @@ class FilesViewModel @Inject constructor(
     fun compatibleAssemblyItem(assembly: com.damarquez.putz.data.local.CalibreTransferEntity, payloadType: String) =
         calibreRepository.compatibleAssemblyItem(assembly, payloadType)
 
-    // Always folds into the assembly's existing title/author/tags — never the sheet's typed
-    // values, since this batch is just adding more files to an existing book, not retitling it.
     fun appendMergeToAssembly(
         assemblyFileId: Long, type: String, fileName: String,
         files: List<PutioFile>? = null, groups: List<MergeCandidateGroup>? = null,
+        overrideTitle: String? = null, overrideAuthor: String? = null,
+        overrideUuid: String? = null, overrideTags: String? = null,
+        overrideProtected: Boolean? = null,
     ) {
         viewModelScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
@@ -1388,7 +1408,12 @@ class FilesViewModel @Inject constructor(
                 val putioToken = settingsRepository.authTokenFlow.first()
                 val (newItem, newIds) = buildResolvedMergeItem(type, fileName, putioToken, assemblyFileId, files, groups)
                     ?: return@launch
-                val added = calibreRepository.mergeIntoAssemblyItem(assemblyFileId, newItem, newIds)
+                val added = calibreRepository.mergeIntoAssemblyItem(
+                    assemblyFileId, newItem, newIds,
+                    overrideTitle = overrideTitle, overrideAuthor = overrideAuthor,
+                    overrideUuid = overrideUuid, overrideTags = overrideTags,
+                    overrideProtected = overrideProtected,
+                )
                 _snackbarMessage.value = if (added) "Added to assembly" else "\"$fileName\" is already in this assembly"
             } finally {
                 calibreRepository.clearAssemblyAppendPending(assemblyFileId)

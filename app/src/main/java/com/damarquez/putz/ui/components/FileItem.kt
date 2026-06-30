@@ -79,9 +79,7 @@ fun FileItem(
     onSendAsImagePack: (PutioFile) -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
-    onAssembleToCalibre: (PutioFile, isPack: Boolean) -> Unit,
     onSendAsJoinedPdf: (PutioFile) -> Unit,
-    onAssembleIntoPack: (PutioFile, type: String) -> Unit,
     onSendAsJoinedEpub: (PutioFile) -> Unit,
     onSendAsCbrPdf: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
@@ -98,7 +96,6 @@ fun FileItem(
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isGoogleSignedIn: Boolean = false,
-    hasPendingAssemblies: Boolean = false,
     isHighlighted: Boolean = false,
     isFolderAllSynced: Boolean = false,
     isInSearchResults: Boolean = false,
@@ -408,16 +405,6 @@ fun FileItem(
                                         onSendToCalibre(file)
                                     },
                                 )
-                                if (hasPendingAssemblies) {
-                                    DropdownMenuItem(
-                                        text = { Text("Assemble into book") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleToCalibre(file, false)
-                                        },
-                                    )
-                                }
                             }
                             if (isImage) {
                                 DropdownMenuItem(
@@ -430,107 +417,57 @@ fun FileItem(
                                 )
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge images…") },
+                                    text = { Text("Fuse images…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onSendAsImagePack(file)
                                     },
                                 )
-                                if (hasPendingAssemblies) {
-                                    DropdownMenuItem(
-                                        text = { Text("Assemble images into book…") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleIntoPack(file, "IMAGE_PACK")
-                                        },
-                                    )
-                                }
                             }
                             if (isMultiTrackAudio) {
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge") },
+                                    text = { Text("Fuse into M4B…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onSendAsAudiobookPack(file)
                                     },
                                 )
-                                if (hasPendingAssemblies) {
-                                    DropdownMenuItem(
-                                        text = { Text("Assemble into M4B") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleToCalibre(file, true)
-                                        },
-                                    )
-                                }
                             }
                             if (isPdf) {
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge") },
+                                    text = { Text("Fuse PDFs…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onSendAsJoinedPdf(file)
                                     },
                                 )
-                                if (hasPendingAssemblies) {
-                                    DropdownMenuItem(
-                                        text = { Text("Assemble into fused PDF") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleIntoPack(file, "PDF_PACK")
-                                        },
-                                    )
-                                }
                             }
                             if (isEpub) {
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge") },
+                                    text = { Text("Fuse EPUBs…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onSendAsJoinedEpub(file)
                                     },
                                 )
-                                if (hasPendingAssemblies) {
-                                    DropdownMenuItem(
-                                        text = { Text("Assemble into fused EPUB") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleIntoPack(file, "EPUB_PACK")
-                                        },
-                                    )
-                                }
                             }
                             if (isComicArchive) {
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge") },
+                                    text = { Text("Convert CBRs to PDF…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
                                         onSendAsCbrPdf(file)
                                     },
                                 )
-                                if (hasPendingAssemblies) {
-                                    DropdownMenuItem(
-                                        text = { Text("Assemble into fused CBR PDF") },
-                                        enabled = isGoogleSignedIn,
-                                        onClick = {
-                                            showMenu = false
-                                            onAssembleIntoPack(file, "CBR_PDF_PACK")
-                                        },
-                                    )
-                                }
                             }
                             if (isVideo && file.isSynced) {
                                 DropdownMenuItem(
@@ -584,7 +521,7 @@ fun FileItem(
                                 )
                                 DropdownMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Merge") },
+                                    text = { Text("Fuse folder…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false

@@ -296,10 +296,6 @@ fun FilesScreen(
     var pdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedPdfFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
 
-    // Non-null while a pack sheet (PDF/EPUB/Image/CBR) was opened via "Assemble into fused X"
-    // rather than plain "Merge" — its onConfirm should park a MergeAssemblyPayload for the
-    // existing-assembly picker instead of starting a brand-new transfer. Value is the pack type.
-    var assembleIntoPackType by remember { mutableStateOf<String?>(null) }
 
     // EPUB pack flow
     var epubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
@@ -317,108 +313,153 @@ fun FilesScreen(
     // Merge framework flow (folder trigger) — see CONTRACTS.md "Merge framework"
     var selectedMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
-    var mergeWantsNewBook by remember { mutableStateOf<Boolean?>(null) } // null = undecided (only asked when pendingAssemblies is non-empty)
     val mergeProcessChoice by viewModel.mergeProcessChoice.collectAsState()
     val mergePickerState by viewModel.mergePickerState.collectAsState()
 
-    // Assembly flow ("append into an existing pending book" — mechanism #2). SINGLE/ebook
-    // appends use selectedFileForAssembly directly; any merge-engine append (PACK/PDF_PACK/
-    // IMAGE_PDF_PACK/CBR_PDF_PACK) goes through mergeAssemblyPayload + appendMergeToAssembly.
     val pendingAssemblies by viewModel.pendingAssemblies.collectAsState()
-    var selectedFileForAssembly by remember { mutableStateOf<Pair<PutioFile, Boolean>?>(null) } // File, isMergePayload
-    var targetAssemblyForFile by remember { mutableStateOf<com.damarquez.putz.data.local.CalibreTransferEntity?>(null) }
-    var mergeAssemblyPayload by remember { mutableStateOf<MergeAssemblyPayload?>(null) }
+    var pendingDestination by remember { mutableStateOf<PendingDestination?>(null) }
+    var destinationAssembly by remember { mutableStateOf<com.damarquez.putz.data.local.CalibreTransferEntity?>(null) }
 
-    if (selectedFileForAssembly != null && targetAssemblyForFile == null) {
-        val isMergePayload = selectedFileForAssembly!!.second
-        val payload = mergeAssemblyPayload
-        val canShowPicker = if (isMergePayload) payload != null else true
-        if (canShowPicker) {
-            // For a merge payload, only offer assemblies that already have a compatible item
-            // (same pack type, or a lone SINGLE of the matching extension that can be promoted)
-            // — and preview that item's files so the user can tell candidates apart before picking.
-            val candidates = if (isMergePayload && payload != null) {
-                pendingAssemblies.mapNotNull { assembly ->
-                    viewModel.compatibleAssemblyItem(assembly, payload.type)?.let { item -> assembly to item }
+    // Auto-forward when no pending assemblies to choose from
+    LaunchedEffect(pendingDestination) {
+        val pd = pendingDestination ?: return@LaunchedEffect
+        if (destinationAssembly != null) return@LaunchedEffect
+        if (pendingAssemblies.isEmpty()) {
+            when (pd) {
+                is PendingDestination.Single -> selectedFileForCalibre = pd.file
+                is PendingDestination.Pack -> when (pd.type) {
+                    "PACK" -> selectedPackFiles = pd.files
+                    "PDF_PACK" -> selectedPdfFiles = pd.files
+                    "EPUB_PACK" -> selectedEpubFiles = pd.files
+                    "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
+                    else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
                 }
-            } else {
-                pendingAssemblies.map { it to null }
+                is PendingDestination.MergeFlat -> selectedMergeFlatFiles = pd.files
+                is PendingDestination.MergeGrouped -> selectedMergeGroups = pd.groups
             }
-            AlertDialog(
-                onDismissRequest = {
-                    selectedFileForAssembly = null
-                    mergeAssemblyPayload = null
-                },
-                title = { Text("Pick Assembly") },
-                text = {
-                    Column {
-                        if (isMergePayload && candidates.isEmpty()) {
-                            Text("No compatible assembly found.")
-                        } else {
-                            candidates.forEach { (assembly, item) ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
-                                            Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            if (item != null) {
-                                                Text(
-                                                    text = item.files?.joinToString { it.fileName } ?: item.fileName,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                        }
-                                    },
-                                    onClick = { targetAssemblyForFile = assembly }
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = {
-                        selectedFileForAssembly = null
-                        mergeAssemblyPayload = null
-                    }) { Text("Cancel") }
-                }
-            )
+            pendingDestination = null
         }
     }
-    if (targetAssemblyForFile != null) {
-        val (file, isMergePayload) = selectedFileForAssembly!!
-        val payload = mergeAssemblyPayload
-        CalibreConfirmationSheet(
-            displayName = if (isMergePayload) payload?.displayName ?: "" else file.displayName,
-            initialTitle = targetAssemblyForFile!!.title,
-            initialAuthor = targetAssemblyForFile!!.author,
-            onDismiss = {
-                targetAssemblyForFile = null
-                selectedFileForAssembly = null
-                mergeAssemblyPayload = null
-            },
-            onConfirm = { title, author, archiveMode, _, isAltVersion, _, _, _, _, _ ->
-                if (isMergePayload && payload != null) {
-                    val fileName = applyAltVersion(payload.fileName, isAltVersion)
-                    viewModel.appendMergeToAssembly(
-                        targetAssemblyForFile!!.putioFileId, payload.type, fileName,
-                        files = payload.files, groups = payload.groups,
-                    )
-                } else {
-                    viewModel.appendToAssembly(targetAssemblyForFile!!.putioFileId, file, title, author, archiveMode, isAltVersion)
+
+    // Destination chooser: pick new request or an existing assembly
+    if (pendingDestination != null && destinationAssembly == null && pendingAssemblies.isNotEmpty()) {
+        val pd = pendingDestination!!
+        val candidates = pendingAssemblies
+        fun dispatchToNew() {
+            when (pd) {
+                is PendingDestination.Single -> selectedFileForCalibre = pd.file
+                is PendingDestination.Pack -> when (pd.type) {
+                    "PACK" -> selectedPackFiles = pd.files
+                    "PDF_PACK" -> selectedPdfFiles = pd.files
+                    "EPUB_PACK" -> selectedEpubFiles = pd.files
+                    "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
+                    else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
                 }
-                targetAssemblyForFile = null
-                selectedFileForAssembly = null
-                mergeAssemblyPayload = null
+                is PendingDestination.MergeFlat -> selectedMergeFlatFiles = pd.files
+                is PendingDestination.MergeGrouped -> selectedMergeGroups = pd.groups
+            }
+            pendingDestination = null
+        }
+        AlertDialog(
+            onDismissRequest = { pendingDestination = null },
+            title = { Text("Add to...") },
+            text = {
+                Column {
+                    DropdownMenuItem(
+                        text = { Text("New request", style = MaterialTheme.typography.bodyLarge) },
+                        onClick = { dispatchToNew() },
+                    )
+                    if (candidates.isNotEmpty()) {
+                        HorizontalDivider()
+                        candidates.forEach { assembly ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
+                                        Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = { destinationAssembly = assembly },
+                            )
+                        }
+                    }
+                }
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
-            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            isArchive = !isMergePayload && MetadataUtils.isArchive(file.displayName),
-            forceAssemble = true,
-            transferRefs = completedTransfersWithUuid,
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { pendingDestination = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // AssemblyAppendSheet — shown after the user picks an existing assembly
+    if (destinationAssembly != null) {
+        val assembly = destinationAssembly!!
+        val pd = pendingDestination
+        val formatDisplayName = when (pd) {
+            is PendingDestination.Single -> pd.file.displayName
+            is PendingDestination.Pack -> pd.displayName
+            is PendingDestination.MergeFlat -> {
+                val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
+                "${pd.files.size} ${pd.contentType.label.lowercase()} → $outFile"
+            }
+            is PendingDestination.MergeGrouped -> {
+                val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
+                "${pd.groups.size} chapters → $outFile"
+            }
+            null -> ""
+        }
+        val isArchiveFormat = pd is PendingDestination.Single && MetadataUtils.isArchive(pd.file.displayName)
+        AssemblyAppendSheet(
+            formatDisplayName = formatDisplayName,
+            assembly = assembly,
+            assemblyIsProtected = assembly.assemblyIsProtected(),
+            isArchive = isArchiveFormat,
+            onDismiss = { destinationAssembly = null; pendingDestination = null },
+            onConfirm = { isAltVersion, archiveMode, override ->
+                if (pd == null) return@AssemblyAppendSheet
+                val overrideTitle = override?.title
+                val overrideAuthor = override?.author
+                val overrideUuid = override?.uuid
+                val overrideTags = override?.tags
+                val overrideProtected = override?.isProtected
+                when (pd) {
+                    is PendingDestination.Single -> viewModel.appendToAssembly(
+                        assembly.putioFileId, pd.file, archiveMode, isAltVersion,
+                        overrideTitle, overrideAuthor, overrideUuid, overrideTags, overrideProtected,
+                    )
+                    is PendingDestination.Pack -> {
+                        val fileName = applyAltVersion(pd.outputFileName, isAltVersion)
+                        viewModel.appendMergeToAssembly(
+                            assembly.putioFileId, pd.type, fileName, files = pd.files,
+                            overrideTitle = overrideTitle, overrideAuthor = overrideAuthor,
+                            overrideUuid = overrideUuid, overrideTags = overrideTags, overrideProtected = overrideProtected,
+                        )
+                    }
+                    is PendingDestination.MergeFlat -> {
+                        val itemType = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.itemType else pd.contentType.itemType
+                        val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
+                        viewModel.appendMergeToAssembly(
+                            assembly.putioFileId, itemType, applyAltVersion(outFile, isAltVersion),
+                            files = pd.files.map { it.file },
+                            overrideTitle = overrideTitle, overrideAuthor = overrideAuthor,
+                            overrideUuid = overrideUuid, overrideTags = overrideTags, overrideProtected = overrideProtected,
+                        )
+                    }
+                    is PendingDestination.MergeGrouped -> {
+                        val itemType = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.itemType else pd.contentType.itemType
+                        val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
+                        viewModel.appendMergeToAssembly(
+                            assembly.putioFileId, itemType, applyAltVersion(outFile, isAltVersion),
+                            groups = pd.groups,
+                            overrideTitle = overrideTitle, overrideAuthor = overrideAuthor,
+                            overrideUuid = overrideUuid, overrideTags = overrideTags, overrideProtected = overrideProtected,
+                        )
+                    }
+                }
+                destinationAssembly = null
+                pendingDestination = null
+            },
         )
     }
 
@@ -469,7 +510,7 @@ fun FilesScreen(
         )
     }
 
-    if (audiobookPackTriggerFile != null && selectedPackFiles == null && mergeAssemblyPayload == null) {
+    if (audiobookPackTriggerFile != null && selectedPackFiles == null && pendingDestination == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
         val audioFiles = remember(audiobookPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
@@ -478,22 +519,15 @@ fun FilesScreen(
         }
         AudiobookPackSheet(
             audioFiles = audioFiles,
-            onDismiss = {
-                audiobookPackTriggerFile = null
-                selectedFileForAssembly = null
-            },
+            onDismiss = { audiobookPackTriggerFile = null },
             onConfirm = { files ->
-                if (selectedFileForAssembly?.second == true) {
-                    mergeAssemblyPayload = MergeAssemblyPayload("PACK", "Audiobook.m4b", "${files.size} audio files", files = files)
-                } else {
-                    selectedPackFiles = files
-                }
+                pendingDestination = PendingDestination.Pack("PACK", files, "Audiobook.m4b", "${files.size} audio files")
                 audiobookPackTriggerFile = null
             },
         )
     }
 
-    if (pdfPackTriggerFile != null && selectedPdfFiles == null && mergeAssemblyPayload == null) {
+    if (pdfPackTriggerFile != null && selectedPdfFiles == null && pendingDestination == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
         val pdfFiles = remember(pdfPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
@@ -502,19 +536,9 @@ fun FilesScreen(
         }
         PdfPackSheet(
             pdfFiles = pdfFiles,
-            onDismiss = {
-                pdfPackTriggerFile = null
-                if (assembleIntoPackType == "PDF_PACK") {
-                    selectedFileForAssembly = null
-                    assembleIntoPackType = null
-                }
-            },
+            onDismiss = { pdfPackTriggerFile = null },
             onConfirm = { files ->
-                if (assembleIntoPackType == "PDF_PACK") {
-                    mergeAssemblyPayload = MergeAssemblyPayload("PDF_PACK", "Book.pdf", "${files.size} PDF files", files = files)
-                } else {
-                    selectedPdfFiles = files
-                }
+                pendingDestination = PendingDestination.Pack("PDF_PACK", files, "Book.pdf", "${files.size} PDF files")
                 pdfPackTriggerFile = null
             },
         )
@@ -561,7 +585,7 @@ fun FilesScreen(
         )
     }
 
-    if (epubPackTriggerFile != null && selectedEpubFiles == null && mergeAssemblyPayload == null) {
+    if (epubPackTriggerFile != null && selectedEpubFiles == null && pendingDestination == null) {
         val epubFiles = remember(epubPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
                 ?.filter { MetadataUtils.isEpub(it.displayName) }
@@ -569,19 +593,9 @@ fun FilesScreen(
         }
         EpubPackSheet(
             epubFiles = epubFiles,
-            onDismiss = {
-                epubPackTriggerFile = null
-                if (assembleIntoPackType == "EPUB_PACK") {
-                    selectedFileForAssembly = null
-                    assembleIntoPackType = null
-                }
-            },
+            onDismiss = { epubPackTriggerFile = null },
             onConfirm = { files ->
-                if (assembleIntoPackType == "EPUB_PACK") {
-                    mergeAssemblyPayload = MergeAssemblyPayload("EPUB_PACK", "Book.epub", "${files.size} EPUB files", files = files)
-                } else {
-                    selectedEpubFiles = files
-                }
+                pendingDestination = PendingDestination.Pack("EPUB_PACK", files, "Book.epub", "${files.size} EPUB files")
                 epubPackTriggerFile = null
             },
         )
@@ -607,7 +621,7 @@ fun FilesScreen(
         )
     }
 
-    if (imagePackTriggerFile != null && selectedImageFiles == null && mergeAssemblyPayload == null) {
+    if (imagePackTriggerFile != null && selectedImageFiles == null && pendingDestination == null) {
         // CONTRACT: stub convention — must use displayName; filter to image siblings in current folder
         val imageFiles = remember(imagePackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
@@ -618,20 +632,9 @@ fun FilesScreen(
         ImagePackSheet(
             imageFiles = imageFiles,
             defaultFormat = defaultFormat,
-            onDismiss = {
-                imagePackTriggerFile = null
-                if (assembleIntoPackType == "IMAGE_PACK") {
-                    selectedFileForAssembly = null
-                    assembleIntoPackType = null
-                }
-            },
+            onDismiss = { imagePackTriggerFile = null },
             onConfirm = { files, format ->
-                if (assembleIntoPackType == "IMAGE_PACK") {
-                    mergeAssemblyPayload = MergeAssemblyPayload(format.itemType, format.outputFileName, "${files.size} images", files = files)
-                } else {
-                    selectedImageFiles = files
-                    selectedImageFilesFormat = format
-                }
+                pendingDestination = PendingDestination.Pack(format.itemType, files, format.outputFileName, "${files.size} images", format)
                 imagePackTriggerFile = null
             },
         )
@@ -716,11 +719,13 @@ fun FilesScreen(
                 state = pickerState,
                 onDismiss = { viewModel.dismissMergePicker() },
                 onConfirmFlat = { files ->
-                    selectedMergeFlatFiles = files
+                    val ct = activeMergeContentType ?: MergeContentType.IMAGES
+                    pendingDestination = PendingDestination.MergeFlat(ct, mergeImageFormat, files)
                     viewModel.dismissMergePicker()
                 },
                 onConfirmGrouped = { groups ->
-                    selectedMergeGroups = groups
+                    val ct = activeMergeContentType ?: MergeContentType.IMAGES
+                    pendingDestination = PendingDestination.MergeGrouped(ct, mergeImageFormat, groups)
                     viewModel.dismissMergePicker()
                 },
                 extraControls = imageFormatPicker,
@@ -728,46 +733,7 @@ fun FilesScreen(
         }
     }
 
-    // When there's at least one pending assembly, ask "new book or add to an existing one"
-    // before going further — same choice the old per-engine "Assemble into X" menu items
-    // offered, now available for any merge engine's folder trigger.
-    if ((selectedMergeFlatFiles != null || selectedMergeGroups != null) && mergeWantsNewBook == null && pendingAssemblies.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = {
-                selectedMergeFlatFiles = null
-                selectedMergeGroups = null
-            },
-            title = { Text("New book or existing assembly?") },
-            text = { Text("Merge now into a new book, or add it as a format to a book that's already being assembled?") },
-            confirmButton = {
-                TextButton(onClick = { mergeWantsNewBook = true }) { Text("New book") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    val contentType = activeMergeContentType ?: MergeContentType.IMAGES
-                    val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
-                    val effectiveOutputFileName = if (contentType == MergeContentType.IMAGES) mergeImageFormat.outputFileName else contentType.outputFileName
-                    val flatFiles = selectedMergeFlatFiles
-                    val groups = selectedMergeGroups
-                    val anchorFile = flatFiles?.firstOrNull()?.file ?: groups?.firstOrNull()?.files?.firstOrNull()?.file
-                    if (anchorFile != null) {
-                        val displayName = if (flatFiles != null) "${flatFiles.size} ${contentType.label.lowercase()} → $effectiveOutputFileName"
-                            else "${groups!!.size} chapters → $effectiveOutputFileName"
-                        mergeAssemblyPayload = MergeAssemblyPayload(
-                            effectiveItemType, effectiveOutputFileName, displayName,
-                            files = flatFiles?.map { it.file }, groups = groups,
-                        )
-                        selectedFileForAssembly = anchorFile to true
-                    }
-                    selectedMergeFlatFiles = null
-                    selectedMergeGroups = null
-                    mergeWantsNewBook = null
-                }) { Text("Existing assembly") }
-            },
-        )
-    }
-
-    if (selectedMergeFlatFiles != null && (mergeWantsNewBook == true || pendingAssemblies.isEmpty())) {
+    if (selectedMergeFlatFiles != null) {
         val candidates = selectedMergeFlatFiles!!
         val contentType = activeMergeContentType ?: MergeContentType.IMAGES
         val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
@@ -779,11 +745,10 @@ fun FilesScreen(
             displayName = "${candidates.size} ${contentType.label.lowercase()} → $effectiveOutputFileName",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
-            onDismiss = { selectedMergeFlatFiles = null; mergeWantsNewBook = null },
+            onDismiss = { selectedMergeFlatFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
                 viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeFlatFiles = null
-                mergeWantsNewBook = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -791,7 +756,7 @@ fun FilesScreen(
         )
     }
 
-    if (selectedMergeGroups != null && (mergeWantsNewBook == true || pendingAssemblies.isEmpty())) {
+    if (selectedMergeGroups != null) {
         val groups = selectedMergeGroups!!
         val contentType = activeMergeContentType ?: MergeContentType.IMAGES
         val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
@@ -803,11 +768,10 @@ fun FilesScreen(
             displayName = "${groups.size} chapters → $effectiveOutputFileName",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
-            onDismiss = { selectedMergeGroups = null; mergeWantsNewBook = null },
+            onDismiss = { selectedMergeGroups = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
                 viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeGroups = null
-                mergeWantsNewBook = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -815,7 +779,7 @@ fun FilesScreen(
         )
     }
 
-    if (cbrPdfPackTriggerFile != null && selectedCbrFiles == null && mergeAssemblyPayload == null) {
+    if (cbrPdfPackTriggerFile != null && selectedCbrFiles == null && pendingDestination == null) {
         // CONTRACT: stub convention — must use displayName; filter to CBR siblings in current folder
         val cbrFiles = remember(cbrPdfPackTriggerFile) {
             (uiState as? FilesUiState.Success)?.files
@@ -824,19 +788,9 @@ fun FilesScreen(
         }
         CbrPdfPackSheet(
             cbrFiles = cbrFiles,
-            onDismiss = {
-                cbrPdfPackTriggerFile = null
-                if (assembleIntoPackType == "CBR_PDF_PACK") {
-                    selectedFileForAssembly = null
-                    assembleIntoPackType = null
-                }
-            },
+            onDismiss = { cbrPdfPackTriggerFile = null },
             onConfirm = { files ->
-                if (assembleIntoPackType == "CBR_PDF_PACK") {
-                    mergeAssemblyPayload = MergeAssemblyPayload("CBR_PDF_PACK", "Book.pdf", "${files.size} CBR files", files = files)
-                } else {
-                    selectedCbrFiles = files
-                }
+                pendingDestination = PendingDestination.Pack("CBR_PDF_PACK", files, "Book.pdf", "${files.size} CBR files")
                 cbrPdfPackTriggerFile = null
             },
         )
@@ -1559,27 +1513,11 @@ fun FilesScreen(
                                         onPreview = { viewModel.previewFile(it) },
                                         onReplaceCover = { selectedFileForCover = it },
                                         onSendAsImagePack = { imagePackTriggerFile = it },
-                                        onSendToCalibre = { selectedFileForCalibre = it },
+                                        onSendToCalibre = { pendingDestination = PendingDestination.Single(it) },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
-                                        onAssembleToCalibre = { target, isPack ->
-                                            selectedFileForAssembly = target to isPack
-                                            if (isPack) {
-                                                audiobookPackTriggerFile = target
-                                            }
-                                        },
                                         onSendAsJoinedPdf = { pdfPackTriggerFile = it },
                                         onSendAsJoinedEpub = { epubPackTriggerFile = it },
                                         onSendAsCbrPdf = { cbrPdfPackTriggerFile = it },
-                                        onAssembleIntoPack = { target, type ->
-                                            selectedFileForAssembly = target to true
-                                            assembleIntoPackType = type
-                                            when (type) {
-                                                "PDF_PACK" -> pdfPackTriggerFile = target
-                                                "EPUB_PACK" -> epubPackTriggerFile = target
-                                                "IMAGE_PACK" -> imagePackTriggerFile = target
-                                                "CBR_PDF_PACK" -> cbrPdfPackTriggerFile = target
-                                            }
-                                        },
                                         onSendToPlex = {
                                             plexSelectedDestPath = ""
                                             selectedFileForPlex = it
@@ -1614,7 +1552,6 @@ fun FilesScreen(
                                         isSelectionMode = isSelectionMode,
                                         isGoogleSignedIn = isGoogleSignedIn,
                                         isHighlighted = file.id == currentHighlightId,
-                                        hasPendingAssemblies = pendingAssemblies.isNotEmpty(),
                                         isFolderAllSynced = file.isFolder && file.id in allSyncedFolderIds,
                                         isInSearchResults = isSearchMode,
                                         onOpenParentFolder = { viewModel.openParentFolder(file) },
@@ -1653,6 +1590,27 @@ private fun NoResultsView(query: String, modifier: Modifier = Modifier) {
 
 private fun applyAltVersion(fileName: String, isAltVersion: Boolean) =
     if (isAltVersion) "${fileName}_bkp" else fileName
+
+private sealed class PendingDestination {
+    data class Single(val file: com.damarquez.putz.data.model.PutioFile) : PendingDestination()
+    data class Pack(
+        val type: String,
+        val files: List<com.damarquez.putz.data.model.PutioFile>,
+        val outputFileName: String,
+        val displayName: String,
+        val imageFormat: ImageOutputFormat = ImageOutputFormat.PDF,
+    ) : PendingDestination()
+    data class MergeFlat(
+        val contentType: MergeContentType,
+        val imageFormat: ImageOutputFormat,
+        val files: List<MergeCandidateFile>,
+    ) : PendingDestination()
+    data class MergeGrouped(
+        val contentType: MergeContentType,
+        val imageFormat: ImageOutputFormat,
+        val groups: List<MergeCandidateGroup>,
+    ) : PendingDestination()
+}
 
 private fun formatDiskSize(bytes: Long): String = when {
     bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)

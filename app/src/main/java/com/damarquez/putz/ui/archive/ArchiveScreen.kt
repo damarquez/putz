@@ -85,6 +85,7 @@ import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergeContentTypeChoiceDialog
 import com.damarquez.putz.ui.files.MergePackSheet
 import com.damarquez.putz.ui.files.MergeProcessChoiceDialog
+import com.damarquez.putz.ui.files.assemblyIsProtected
 import com.damarquez.putz.ui.files.matchesName
 import com.damarquez.putz.ui.theme.LocalAppStyling
 
@@ -454,13 +455,12 @@ fun ArchiveScreen(
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
                 onDismiss = { entryForAssembly = null },
-                onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
-                    viewModel.sendEntryToCalibre(entry, title, author, assembleBook = true, assemblyFileId = null, calibreBookUuid = uuid)
+                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _ ->
+                    viewModel.sendEntryToCalibre(entry, title, author, assembleBook = assembleBook, assemblyFileId = null, calibreBookUuid = uuid)
                     entryForAssembly = null
                 },
                 checkExists = { title, author -> viewModel.checkBookExists(title, author) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-                forceAssemble = true,
             )
         } else {
             AlertDialog(
@@ -494,19 +494,29 @@ fun ArchiveScreen(
     if (targetAssembly != null && entryForAssembly != null) {
         val entry = entryForAssembly!!
         val assembly = targetAssembly!!
-        CalibreConfirmationSheet(
-            displayName = entry.name,
-            initialTitle = assembly.title,
-            initialAuthor = assembly.author,
+        com.damarquez.putz.ui.files.AssemblyAppendSheet(
+            formatDisplayName = entry.name,
+            assembly = assembly,
+            assemblyIsProtected = assembly.assemblyIsProtected(),
+            isArchive = false,
             onDismiss = { targetAssembly = null; entryForAssembly = null },
-            onConfirm = { title, author, _, _, _, _, uuid, _, _, _ ->
-                viewModel.sendEntryToCalibre(entry, title, author, assembleBook = true, assemblyFileId = assembly.putioFileId, calibreBookUuid = uuid)
+            onConfirm = { _, _, override ->
+                viewModel.sendEntryToCalibre(
+                    entry,
+                    title = assembly.title,
+                    author = assembly.author,
+                    assembleBook = true,
+                    assemblyFileId = assembly.putioFileId,
+                    calibreBookUuid = assembly.calibreBookUuid,
+                    overrideTitle = override?.title,
+                    overrideAuthor = override?.author,
+                    overrideUuid = override?.uuid,
+                    overrideTags = override?.tags,
+                    overrideProtected = override?.isProtected,
+                )
                 targetAssembly = null
                 entryForAssembly = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
-            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            forceAssemble = true,
         )
     }
 
