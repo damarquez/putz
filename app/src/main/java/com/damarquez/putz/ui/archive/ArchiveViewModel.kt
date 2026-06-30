@@ -4,6 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.content.Context
+import android.content.Intent
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.data.model.ArchiveDestination
@@ -28,11 +31,16 @@ import com.damarquez.putz.ui.files.MergePickerState
 import com.damarquez.putz.ui.files.MergeProcessMode
 import com.damarquez.putz.ui.files.matchesName
 import com.damarquez.putz.ui.navigation.Screen
+import com.damarquez.putz.ui.viewer.ViewerKind
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
@@ -41,6 +49,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 private const val CALIBRE_PUTIO_MAX_ENTRY_BYTES = 50L * 1024 * 1024
@@ -153,6 +162,20 @@ class ArchiveViewModel @Inject constructor(
 
     val uploadProgress: StateFlow<Map<Long, String>> = calibreRepository.uploadProgress
 
+    data class ViewerEvent(val kind: ViewerKind, val title: String, val filePath: String)
+
+    private val _viewerEvent = MutableSharedFlow<ViewerEvent>()
+    val viewerEvent: SharedFlow<ViewerEvent> = _viewerEvent.asSharedFlow()
+
+    private val _previewIntent = MutableSharedFlow<Intent>()
+    val previewIntent: SharedFlow<Intent> = _previewIntent.asSharedFlow()
+
+    private val _isPreviewLoading = MutableStateFlow(false)
+    val isPreviewLoading: StateFlow<Boolean> = _isPreviewLoading.asStateFlow()
+
+    // Set by selectSingleEntryForExtract; checked and cleared inside extract()
+    private var singleExtractEntry: ArchiveEntry? = null
+
     // Merge framework — see CONTRACTS.md "Merge framework" / archive-sourced files.
     // Mirrors FilesViewModel's mergeProcessChoice/mergePickerState pattern, but scans the
     // already-loaded allEntries list locally instead of making API calls.
@@ -237,9 +260,19 @@ class ArchiveViewModel @Inject constructor(
         _uiState.value = s.copy(selectedEntries = emptySet())
     }
 
+    fun selectSingleEntryForExtract(entry: ArchiveEntry) {
+        singleExtractEntry = entry
+    }
+
     fun extract(destination: ArchiveDestination) {
         val s = _uiState.value as? ArchiveUiState.Success ?: return
-        val toExtract = if (s.selectedEntries.isEmpty()) s.visibleEntries else s.selectedEntries.toList()
+        val single = singleExtractEntry
+        singleExtractEntry = null
+        val toExtract = when {
+            single != null -> listOf(single)
+            s.selectedEntries.isNotEmpty() -> s.selectedEntries.toList()
+            else -> s.visibleEntries
+        }
         archiveRepository.extractEntries(resolvedSource, toExtract, destination, s.currentDir)
             .onEach { progress ->
                 _uiState.value = s.copy(
@@ -399,6 +432,36 @@ class ArchiveViewModel @Inject constructor(
 
     fun dismissSnackbar() { _snackbarMessage.value = null }
     fun dismissCalibreSendStatus() { _calibreSendStatus.value = null }
+
+    fun previewEntry(entry: ArchiveEntry) {
+        viewModelScope.launch {
+            _isPreviewLoading.value = true
+            try {
+                val tempFile = withContext(Dispatchers.IO) {
+                    archiveRepository.extractEntryToTempFile(resolvedSource, entry, context.cacheDir)
+                }
+                val viewerKind = withContext(Dispatchers.IO) { ViewerKind.forFile(tempFile) }
+                    ?: ViewerKind.forFileName(entry.name)
+                if (viewerKind != null) {
+                    _viewerEvent.emit(ViewerEvent(viewerKind, entry.name, tempFile.absolutePath))
+                } else {
+                    val extension = MimeTypeMap.getFileExtensionFromUrl(entry.name)
+                    val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+                    val fileUri = FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", tempFile)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(fileUri, mimeType)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    _previewIntent.emit(intent)
+                }
+            } catch (e: Exception) {
+                _snackbarMessage.value = "Preview error: ${e.message}"
+            } finally {
+                _isPreviewLoading.value = false
+            }
+        }
+    }
 
     suspend fun checkBookExists(title: String, author: String): Long? {
         val dbFile = java.io.File(context.filesDir, "metadata.db")

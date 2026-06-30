@@ -384,6 +384,9 @@ fun AppNavGraph(
             ) {
                 ArchiveScreen(
                     onNavigateUp = { navController.navigateUp() },
+                    onNavigateToViewer = { kind, title, filePath ->
+                        navController.navigate(Screen.Viewer.createRoute(kind.name, title, filePath))
+                    },
                     viewModel = hiltViewModel(),
                 )
             }

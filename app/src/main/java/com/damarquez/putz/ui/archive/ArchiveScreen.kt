@@ -1,5 +1,7 @@
 package com.damarquez.putz.ui.archive
 
+import android.app.SearchManager
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -77,8 +79,11 @@ import androidx.compose.ui.unit.sp
 import com.damarquez.putz.data.model.ArchiveDestination
 import com.damarquez.putz.data.model.ArchiveEntry
 import com.damarquez.putz.data.model.ExtractionProgress
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileIconProvider
+import com.damarquez.putz.ui.viewer.ViewerKind
 import com.damarquez.putz.ui.files.MergeCandidateFile
 import com.damarquez.putz.ui.files.MergeCandidateGroup
 import com.damarquez.putz.ui.files.MergeContentType
@@ -94,6 +99,7 @@ import com.damarquez.putz.ui.theme.LocalAppStyling
 @Composable
 fun ArchiveScreen(
     onNavigateUp: () -> Unit,
+    onNavigateToViewer: (kind: ViewerKind, title: String, filePath: String) -> Unit,
     viewModel: ArchiveViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -139,11 +145,22 @@ fun ArchiveScreen(
     var entryForAssembly by remember { mutableStateOf<ArchiveEntry?>(null) }
     var targetAssembly by remember { mutableStateOf<CalibreTransferEntity?>(null) }
 
+    val isPreviewLoading by viewModel.isPreviewLoading.collectAsState()
+
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(snackbarMessage) {
         if (snackbarMessage != null) {
             snackbarHostState.showSnackbar(snackbarMessage!!)
             viewModel.dismissSnackbar()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.previewIntent.collect { intent -> context.startActivity(intent) }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.viewerEvent.collect { event ->
+            onNavigateToViewer(event.kind, event.title, event.filePath)
         }
     }
 
@@ -277,6 +294,11 @@ fun ArchiveScreen(
                                         }
                                     },
                                     onLongClick = { viewModel.toggleSelection(entry) },
+                                    onPreview = if (!entry.isDirectory) ({ viewModel.previewEntry(entry) }) else null,
+                                    onDownload = if (!entry.isDirectory) ({
+                                        viewModel.selectSingleEntryForExtract(entry)
+                                        showDestinationPicker = true
+                                    }) else null,
                                     onSendToCalibre = if (!entry.isDirectory) ({ entryForCalibre = entry }) else null,
                                     onAssembleBook = if (!entry.isDirectory) ({ entryForAssembly = entry }) else null,
                                     onMerge = when {
@@ -372,6 +394,21 @@ fun ArchiveScreen(
                 }
             }
         }
+    }
+
+    if (isPreviewLoading) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = { Text("Preparing preview") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Extracting…")
+                }
+            },
+        )
     }
 
     // Merge framework (directory trigger) — see CONTRACTS.md "Merge framework"
@@ -843,12 +880,16 @@ private fun ArchiveEntryItem(
     isSelectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPreview: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
     onSendToCalibre: (() -> Unit)? = null,
     onAssembleBook: (() -> Unit)? = null,
     onMerge: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val styling = LocalAppStyling.current
     val cornerRadius = styling.cornerRadiusDp.dp
     val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -927,7 +968,7 @@ private fun ArchiveEntryItem(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
-        } else if (!isSelectionMode && (onSendToCalibre != null || onAssembleBook != null || onMerge != null)) {
+        } else if (!isSelectionMode) {
             Box {
                 IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -937,6 +978,20 @@ private fun ArchiveEntryItem(
                     )
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    if (onPreview != null) {
+                        DropdownMenuItem(
+                            text = { Text("Preview") },
+                            onClick = { menuExpanded = false; onPreview() },
+                        )
+                        HorizontalDivider()
+                    }
+                    if (onDownload != null) {
+                        DropdownMenuItem(
+                            text = { Text("Download") },
+                            onClick = { menuExpanded = false; onDownload() },
+                        )
+                        HorizontalDivider()
+                    }
                     if (onSendToCalibre != null) {
                         DropdownMenuItem(
                             text = { Text("Send to Calibre") },
@@ -956,6 +1011,28 @@ private fun ArchiveEntryItem(
                             onClick = { menuExpanded = false; onMerge() },
                         )
                     }
+                    if (onSendToCalibre != null || onAssembleBook != null || onMerge != null) {
+                        HorizontalDivider()
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Copy name") },
+                        onClick = {
+                            menuExpanded = false
+                            clipboard.setText(AnnotatedString(entry.name))
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Search web") },
+                        onClick = {
+                            menuExpanded = false
+                            val query = MetadataUtils.webSearchQuery(entry.name)
+                            val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                                putExtra(SearchManager.QUERY, query)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        },
+                    )
                 }
             }
         }
