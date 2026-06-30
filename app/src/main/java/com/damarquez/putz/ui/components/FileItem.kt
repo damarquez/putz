@@ -83,6 +83,7 @@ fun FileItem(
     onSendAsJoinedEpub: (PutioFile) -> Unit,
     onSendAsJoinedMobi: (PutioFile) -> Unit,
     onSendAsCbrPdf: (PutioFile) -> Unit,
+    onSendAsCbrCbz: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
@@ -479,6 +480,15 @@ fun FileItem(
                                     onClick = {
                                         showMenu = false
                                         onSendAsCbrPdf(file)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Convert CBRs to CBZ…") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsCbrCbz(file)
                                     },
                                 )
                             }

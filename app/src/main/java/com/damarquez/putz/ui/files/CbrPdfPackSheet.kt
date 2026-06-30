@@ -38,6 +38,7 @@ fun CbrPdfPackSheet(
     cbrFiles: List<PutioFile>,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
+    outputLabel: String = "PDF",
 ) {
     var caseSensitiveSort by remember(cbrFiles) { mutableStateOf(false) }
     var orderedFiles by remember(cbrFiles, caseSensitiveSort) {
@@ -67,7 +68,7 @@ fun CbrPdfPackSheet(
                     .padding(bottom = 32.dp),
             ) {
                 Text(
-                    text = "Select CBR files for PDF",
+                    text = "Select CBR files for $outputLabel",
                     style = MaterialTheme.typography.titleLarge,
                 )
 

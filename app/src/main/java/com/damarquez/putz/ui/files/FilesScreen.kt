@@ -314,6 +314,10 @@ fun FilesScreen(
     var cbrPdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedCbrFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
 
+    // CBR CBZ pack flow
+    var cbrCbzPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedCbrCbzFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+
     // Merge framework flow (folder trigger) — see CONTRACTS.md "Merge framework"
     var selectedMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
@@ -337,6 +341,7 @@ fun FilesScreen(
                     "EPUB_PACK" -> selectedEpubFiles = pd.files
                     "MOBI_PACK" -> selectedMobiFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
+                    "CBR_CBZ_PACK" -> selectedCbrCbzFiles = pd.files
                     else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
                 }
                 is PendingDestination.MergeFlat -> selectedMergeFlatFiles = pd.files
@@ -359,6 +364,7 @@ fun FilesScreen(
                     "EPUB_PACK" -> selectedEpubFiles = pd.files
                     "MOBI_PACK" -> selectedMobiFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
+                    "CBR_CBZ_PACK" -> selectedCbrCbzFiles = pd.files
                     else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
                 }
                 is PendingDestination.MergeFlat -> selectedMergeFlatFiles = pd.files
@@ -855,6 +861,43 @@ fun FilesScreen(
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
                 viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedCbrFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (cbrCbzPackTriggerFile != null && selectedCbrCbzFiles == null && pendingDestination == null) {
+        val cbrFiles = remember(cbrCbzPackTriggerFile) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isComicArchive(it.displayName) }
+                ?: emptyList()
+        }
+        CbrPdfPackSheet(
+            cbrFiles = cbrFiles,
+            outputLabel = "CBZ",
+            onDismiss = { cbrCbzPackTriggerFile = null },
+            onConfirm = { files ->
+                pendingDestination = PendingDestination.Pack("CBR_CBZ_PACK", files, "Book.cbz", "${files.size} CBR files")
+                cbrCbzPackTriggerFile = null
+            },
+        )
+    }
+
+    if (selectedCbrCbzFiles != null) {
+        val cbrFiles = selectedCbrCbzFiles!!
+        val (initialTitle, initialAuthor) = remember(cbrFiles) {
+            MetadataUtils.extractMetadata(cbrFiles.first().displayName)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${cbrFiles.size} CBR files → CBZ",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedCbrCbzFiles = null },
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedCbrCbzFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1565,6 +1608,7 @@ fun FilesScreen(
                                         onSendAsJoinedEpub = { epubPackTriggerFile = it },
                                         onSendAsJoinedMobi = { mobiPackTriggerFile = it },
                                         onSendAsCbrPdf = { cbrPdfPackTriggerFile = it },
+                                        onSendAsCbrCbz = { cbrCbzPackTriggerFile = it },
                                         onSendToPlex = {
                                             plexSelectedDestPath = ""
                                             selectedFileForPlex = it
