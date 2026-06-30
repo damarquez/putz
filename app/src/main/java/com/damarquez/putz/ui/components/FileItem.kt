@@ -560,7 +560,21 @@ fun FileItem(
                             text = { Text("Copy name") },
                             onClick = {
                                 showMenu = false
-                                clipboard.setText(AnnotatedString(file.name))
+                                val nameToCopy = if (file.isFolder) {
+                                    file.name
+                                } else {
+                                    val name = file.name
+                                    val skIdx = name.indexOf(".sk_synced")
+                                    if (skIdx >= 0) {
+                                        val beforeStub = name.substring(0, skIdx)
+                                        val dotIdx = beforeStub.lastIndexOf('.')
+                                        if (dotIdx >= 0) beforeStub.substring(0, dotIdx) else beforeStub
+                                    } else {
+                                        val dotIdx = name.lastIndexOf('.')
+                                        if (dotIdx >= 0) name.substring(0, dotIdx) else name
+                                    }
+                                }
+                                clipboard.setText(AnnotatedString(nameToCopy))
                             },
                         )
                         if (!file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden) {
