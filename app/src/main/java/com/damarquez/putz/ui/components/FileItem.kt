@@ -81,6 +81,7 @@ fun FileItem(
     onSendAsAudiobookPack: (PutioFile) -> Unit,
     onSendAsJoinedPdf: (PutioFile) -> Unit,
     onSendAsJoinedEpub: (PutioFile) -> Unit,
+    onSendAsJoinedMobi: (PutioFile) -> Unit,
     onSendAsCbrPdf: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
@@ -111,6 +112,7 @@ fun FileItem(
     val isMultiTrackAudio = MetadataUtils.isMultiTrackAudio(file.displayName)
     val isPdf = MetadataUtils.isPdf(file.displayName)
     val isEpub = MetadataUtils.isEpub(file.displayName)
+    val isMobi = MetadataUtils.isMobi(file.displayName)
     val isVideo = fileType == PutioFileType.VIDEO || MetadataUtils.isVideo(file.displayName)
     val isAudio = MetadataUtils.isAudio(file.displayName)
     val isSubtitle = file.displayName.endsWith(".srt", ignoreCase = true) ||
@@ -455,6 +457,17 @@ fun FileItem(
                                     onClick = {
                                         showMenu = false
                                         onSendAsJoinedEpub(file)
+                                    },
+                                )
+                            }
+                            if (isMobi) {
+                                DropdownMenuItem(
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Fuse MOBIs…") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsJoinedMobi(file)
                                     },
                                 )
                             }

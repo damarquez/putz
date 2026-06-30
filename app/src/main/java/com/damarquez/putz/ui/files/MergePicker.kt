@@ -37,6 +37,7 @@ enum class MergeContentType(val itemType: String, val outputFileName: String, va
     CBR("CBR_PDF_PACK", "Book.pdf", "Comic archives (CBR)"),
     AUDIO("PACK", "Audiobook.m4b", "Audio"),
     EPUBS("EPUB_PACK", "Book.epub", "EPUBs"),
+    MOBIS("MOBI_PACK", "Book.mobi", "MOBIs"),
 }
 
 // Name-based core so non-PutioFile sources (e.g. archive entries) can match without
@@ -47,6 +48,7 @@ fun MergeContentType.matchesName(name: String): Boolean = when (this) {
     MergeContentType.CBR -> MetadataUtils.isComicArchive(name)
     MergeContentType.AUDIO -> MetadataUtils.isMultiTrackAudio(name)
     MergeContentType.EPUBS -> MetadataUtils.isEpub(name)
+    MergeContentType.MOBIS -> MetadataUtils.isMobi(name)
 }
 
 fun MergeContentType.matches(file: PutioFile): Boolean = matchesName(file.displayName)

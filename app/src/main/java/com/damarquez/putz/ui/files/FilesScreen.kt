@@ -301,6 +301,10 @@ fun FilesScreen(
     var epubPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedEpubFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
 
+    // MOBI pack flow
+    var mobiPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedMobiFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+
     // Image pack flow (PDF / EPUB / CBZ)
     var imagePackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
@@ -331,6 +335,7 @@ fun FilesScreen(
                     "PACK" -> selectedPackFiles = pd.files
                     "PDF_PACK" -> selectedPdfFiles = pd.files
                     "EPUB_PACK" -> selectedEpubFiles = pd.files
+                    "MOBI_PACK" -> selectedMobiFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
                     else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
                 }
@@ -352,6 +357,7 @@ fun FilesScreen(
                     "PACK" -> selectedPackFiles = pd.files
                     "PDF_PACK" -> selectedPdfFiles = pd.files
                     "EPUB_PACK" -> selectedEpubFiles = pd.files
+                    "MOBI_PACK" -> selectedMobiFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
                     else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
                 }
@@ -614,6 +620,42 @@ fun FilesScreen(
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
                 viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedEpubFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+        )
+    }
+
+    if (mobiPackTriggerFile != null && selectedMobiFiles == null && pendingDestination == null) {
+        val mobiFiles = remember(mobiPackTriggerFile) {
+            (uiState as? FilesUiState.Success)?.files
+                ?.filter { MetadataUtils.isMobi(it.displayName) }
+                ?: emptyList()
+        }
+        MobiPackSheet(
+            mobiFiles = mobiFiles,
+            onDismiss = { mobiPackTriggerFile = null },
+            onConfirm = { files ->
+                pendingDestination = PendingDestination.Pack("MOBI_PACK", files, "Book.mobi", "${files.size} MOBI files")
+                mobiPackTriggerFile = null
+            },
+        )
+    }
+
+    if (selectedMobiFiles != null) {
+        val mobiFiles = selectedMobiFiles!!
+        val (initialTitle, initialAuthor) = remember(mobiFiles) {
+            MetadataUtils.extractMetadata(mobiFiles.first().name)
+        }
+        CalibreConfirmationSheet(
+            displayName = "${mobiFiles.size} MOBI files",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedMobiFiles = null },
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+                viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedMobiFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1517,6 +1559,7 @@ fun FilesScreen(
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },
                                         onSendAsJoinedPdf = { pdfPackTriggerFile = it },
                                         onSendAsJoinedEpub = { epubPackTriggerFile = it },
+                                        onSendAsJoinedMobi = { mobiPackTriggerFile = it },
                                         onSendAsCbrPdf = { cbrPdfPackTriggerFile = it },
                                         onSendToPlex = {
                                             plexSelectedDestPath = ""
