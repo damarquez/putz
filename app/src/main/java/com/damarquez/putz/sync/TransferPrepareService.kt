@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 
 /**
@@ -49,7 +50,7 @@ class TransferPrepareService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("Preparing files..."))
 
         serviceScope.launch {
-            calibreRepository.prepareProgress.collectLatest { progress ->
+            calibreRepository.prepareProgress.sample(500L).collectLatest { progress ->
                 val text = if (progress != null) "Resolving file ${progress.first}/${progress.second}" else "Sending to Calibre..."
                 getNotificationManager().notify(NOTIFICATION_ID, buildNotification(text))
             }

@@ -845,7 +845,7 @@ class FilesViewModel @Inject constructor(
     }
 
     fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null) {
-        viewModelScope.launch {
+        trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1020,7 +1020,7 @@ class FilesViewModel @Inject constructor(
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
             }
-        }
+        } }
     }
 
     fun appendToAssembly(
@@ -1402,7 +1402,7 @@ class FilesViewModel @Inject constructor(
         overrideUuid: String? = null, overrideTags: String? = null,
         overrideProtected: Boolean? = null,
     ) {
-        viewModelScope.launch {
+        trackTransferPreparation { viewModelScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
             try {
                 val putioToken = settingsRepository.authTokenFlow.first()
@@ -1418,7 +1418,7 @@ class FilesViewModel @Inject constructor(
             } finally {
                 calibreRepository.clearAssemblyAppendPending(assemblyFileId)
             }
-        }
+        } }
     }
 
     // Pending folder merge trigger, walking through "what content type" then "what process"

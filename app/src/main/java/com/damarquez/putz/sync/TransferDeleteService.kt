@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 
 /**
@@ -48,7 +49,7 @@ class TransferDeleteService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("Preparing to delete transfers..."))
 
         serviceScope.launch {
-            calibreRepository.deleteProgress.collectLatest { progress ->
+            calibreRepository.deleteProgress.sample(500L).collectLatest { progress ->
                 if (progress != null) {
                     getNotificationManager().notify(NOTIFICATION_ID, buildNotification(progress.message))
                 }

@@ -510,6 +510,7 @@ class ArchiveViewModel @Inject constructor(
             val tempId = System.currentTimeMillis()
             var tempFile: java.io.File? = null
 
+            com.damarquez.putz.sync.TransferPrepareService.start(context)
             try {
                 _calibreSendStatus.value = CalibreSendStatus.Working("Extracting…")
                 calibreRepository.updateUploadProgress(tempId, "Extracting…")
@@ -616,6 +617,7 @@ class ArchiveViewModel @Inject constructor(
                 _snackbarMessage.value = "Failed: $msg"
                 _calibreSendStatus.value = CalibreSendStatus.Error(msg)
             } finally {
+                com.damarquez.putz.sync.TransferPrepareService.stop(context)
                 tempFile?.delete()
             }
         }
@@ -978,48 +980,53 @@ class ArchiveViewModel @Inject constructor(
             return
         }
 
-        val uploaded = mutableMapOf<String, AudiobookFile>() // keyed by entry path
-        for ((index, candidate) in flatCandidates.withIndex()) {
-            val entryPath = candidate.file.lanPath!!
-            val entry = entryByPath[entryPath] ?: continue
-            calibreRepository.updatePrepareProgress((index + 1) to flatCandidates.size)
-            val tempFile = try {
-                archiveRepository.extractEntryToTempFile(source, entry, context.cacheDir)
-            } catch (e: Exception) {
-                _snackbarMessage.value = "Failed to extract ${entry.name}: ${e.message}"
-                return
-            }
-            try {
-                val uploadResult = filesRepository.uploadFileFromStream(
-                    putioToken, tempFolderId, entry.name, tempFile.inputStream(), tempFile.length(),
-                ) { _, _ -> }
-                if (uploadResult !is NetworkResult.Success) {
-                    _snackbarMessage.value = "Upload failed for ${entry.name}"
+        com.damarquez.putz.sync.TransferPrepareService.start(context)
+        try {
+            val uploaded = mutableMapOf<String, AudiobookFile>() // keyed by entry path
+            for ((index, candidate) in flatCandidates.withIndex()) {
+                val entryPath = candidate.file.lanPath!!
+                val entry = entryByPath[entryPath] ?: continue
+                calibreRepository.updatePrepareProgress((index + 1) to flatCandidates.size)
+                val tempFile = try {
+                    archiveRepository.extractEntryToTempFile(source, entry, context.cacheDir)
+                } catch (e: Exception) {
+                    _snackbarMessage.value = "Failed to extract ${entry.name}: ${e.message}"
                     return
                 }
-                val downloadUrl = filesRepository.getDownloadUrl(putioToken, uploadResult.data.id)
-                uploaded[entryPath] = AudiobookFile(uploadResult.data.id, entry.name, download_url = downloadUrl)
-            } finally {
-                tempFile.delete()
+                try {
+                    val uploadResult = filesRepository.uploadFileFromStream(
+                        putioToken, tempFolderId, entry.name, tempFile.inputStream(), tempFile.length(),
+                    ) { _, _ -> }
+                    if (uploadResult !is NetworkResult.Success) {
+                        _snackbarMessage.value = "Upload failed for ${entry.name}"
+                        return
+                    }
+                    val downloadUrl = filesRepository.getDownloadUrl(putioToken, uploadResult.data.id)
+                    uploaded[entryPath] = AudiobookFile(uploadResult.data.id, entry.name, download_url = downloadUrl)
+                } finally {
+                    tempFile.delete()
+                }
             }
-        }
-        calibreRepository.updatePrepareProgress(null)
 
-        val dummyArchiveFile = PutioFile(id = System.currentTimeMillis(), name = archiveName)
-        calibreRepository.addMergeTransfer(
-            type = contentType.itemType,
-            fileName = contentType.outputFileName,
-            files = files?.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } },
-            groups = groups?.map { g -> g.label to g.files.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } } },
-            title = title,
-            author = author,
-            googleAccount = googleAccount,
-            assembleBook = assembleBook,
-            calibreBookUuid = calibreBookUuid,
-            tags = tags,
-            isProtected = isProtected,
-        )
-        _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
+            val dummyArchiveFile = PutioFile(id = System.currentTimeMillis(), name = archiveName)
+            calibreRepository.addMergeTransfer(
+                type = contentType.itemType,
+                fileName = contentType.outputFileName,
+                files = files?.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } },
+                groups = groups?.map { g -> g.label to g.files.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } } },
+                title = title,
+                author = author,
+                googleAccount = googleAccount,
+                assembleBook = assembleBook,
+                calibreBookUuid = calibreBookUuid,
+                tags = tags,
+                isProtected = isProtected,
+            )
+            _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
+        } finally {
+            calibreRepository.updatePrepareProgress(null)
+            com.damarquez.putz.sync.TransferPrepareService.stop(context)
+        }
     }
 
     private fun buildUncPath(host: String, shareName: String, path: String): String {
