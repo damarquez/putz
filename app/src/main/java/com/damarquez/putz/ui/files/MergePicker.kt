@@ -75,6 +75,7 @@ fun MergeContentType.outputFormatOptions(): List<MergeOutputFormat> = when (this
         MergeOutputFormat("IMAGE_CBZ_PACK", "Book.cbz", "CBZ"),
         MergeOutputFormat("IMAGE_PDF_PACK", "Book.pdf", "PDF"),
         MergeOutputFormat("IMAGE_EPUB_PACK", "Book.epub", "EPUB"),
+        MergeOutputFormat("IMAGE_CBR_PACK", "Book.cbr", "CBR"),
     )
     MergeContentType.CBR -> listOf(
         MergeOutputFormat("CBR_CBZ_PACK", "Book.cbz", "CBZ"),
