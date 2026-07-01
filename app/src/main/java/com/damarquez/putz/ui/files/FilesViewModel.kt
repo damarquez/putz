@@ -1424,20 +1424,30 @@ class FilesViewModel @Inject constructor(
     }
 
     // Pending folder merge trigger, walking through "what content type" then "what process"
-    // (flatten vs. subfolders-as-chapters) before the recursive scan starts.
-    private val _mergeProcessChoice = MutableStateFlow<MergeProcessChoice?>(null)
-    val mergeProcessChoice: StateFlow<MergeProcessChoice?> = _mergeProcessChoice.asStateFlow()
+    // (flatten vs. subfolders-as-chapters) before the picker sheet shows. The whole folder tree
+    // is scanned once, up front, so the content-type dialog can show per-type counts.
+    private val _mergeChoiceState = MutableStateFlow<MergeChoiceState?>(null)
+    val mergeChoiceState: StateFlow<MergeChoiceState?> = _mergeChoiceState.asStateFlow()
 
     fun openMergeProcessChoice(folder: PutioFile) {
-        _mergeProcessChoice.value = MergeProcessChoice(folder)
+        _mergeChoiceState.value = MergeChoiceState.Scanning(folder.name)
+        viewModelScope.launch {
+            try {
+                val scan = scanMergeFolder(folder)
+                _mergeChoiceState.value = MergeChoiceState.Ready(folder.name, scan)
+            } catch (e: Exception) {
+                _mergeChoiceState.value = MergeChoiceState.Error(folder.name, e.message ?: "Failed to scan folder")
+            }
+        }
     }
 
     fun chooseMergeContentType(type: MergeContentType) {
-        _mergeProcessChoice.value = _mergeProcessChoice.value?.copy(contentType = type)
+        val ready = _mergeChoiceState.value as? MergeChoiceState.Ready ?: return
+        _mergeChoiceState.value = ready.copy(contentType = type)
     }
 
     fun dismissMergeProcessChoice() {
-        _mergeProcessChoice.value = null
+        _mergeChoiceState.value = null
     }
 
     private val _mergePickerState = MutableStateFlow<MergePickerState?>(null)
@@ -1450,31 +1460,22 @@ class FilesViewModel @Inject constructor(
     val activeMergeContentType: StateFlow<MergeContentType?> = _activeMergeContentType.asStateFlow()
 
     fun startMergeFolderScan(mode: MergeProcessMode) {
-        val choice = _mergeProcessChoice.value ?: return
-        val folder = choice.folder
-        val contentType = choice.contentType ?: return
-        _mergeProcessChoice.value = null
+        val ready = _mergeChoiceState.value as? MergeChoiceState.Ready ?: return
+        val contentType = ready.contentType ?: return
+        _mergeChoiceState.value = null
         _activeMergeContentType.value = contentType
-        viewModelScope.launch {
-            _mergePickerState.value = MergePickerState.Loading(folder.name)
-            try {
-                when (mode) {
-                    MergeProcessMode.FLATTEN -> {
-                        val files = fetchMergeFilesRecursively(folder) { contentType.matches(it) }
-                        _mergePickerState.value = if (files.isEmpty())
-                            MergePickerState.Error(folder.name, "No ${contentType.label.lowercase()} found in this folder")
-                        else MergePickerState.ReadyFlat(folder.name, files)
-                    }
-                    MergeProcessMode.SUBFOLDERS_AS_CHAPTERS -> {
-                        val groups = fetchMergeSubfolderGroups(folder) { contentType.matches(it) }
-                        _mergePickerState.value = if (groups.isEmpty())
-                            MergePickerState.Error(folder.name, "No subfolders with ${contentType.label.lowercase()} found in this folder")
-                        else MergePickerState.ReadyGrouped(folder.name, groups)
-                    }
-                }
-            } catch (e: Exception) {
-                val name = (_mergePickerState.value as? MergePickerState.Loading)?.folderName ?: folder.name
-                _mergePickerState.value = MergePickerState.Error(name, e.message ?: "Failed to scan folder")
+        when (mode) {
+            MergeProcessMode.FLATTEN -> {
+                val files = ready.scan.flatCandidates(contentType)
+                _mergePickerState.value = if (files.isEmpty())
+                    MergePickerState.Error(ready.folderName, "No ${contentType.label.lowercase()} found in this folder")
+                else MergePickerState.ReadyFlat(ready.folderName, files)
+            }
+            MergeProcessMode.SUBFOLDERS_AS_CHAPTERS -> {
+                val groups = ready.scan.groupedCandidates(contentType)
+                _mergePickerState.value = if (groups.isEmpty())
+                    MergePickerState.Error(ready.folderName, "No subfolders with ${contentType.label.lowercase()} found in this folder")
+                else MergePickerState.ReadyGrouped(ready.folderName, groups)
             }
         }
     }
@@ -1483,11 +1484,13 @@ class FilesViewModel @Inject constructor(
         _mergePickerState.value = null
     }
 
-    // Generic version of fetchAudioFilesRecursively, parameterized by content-type predicate
-    // instead of being audio-specific, for the merge framework's "flatten" process mode.
-    private suspend fun fetchMergeFilesRecursively(folder: PutioFile, matches: (PutioFile) -> Boolean): List<MergeCandidateFile> {
+    // Full (untyped) recursive scan of a merge folder trigger — classifies every file by
+    // content type (rather than filtering by one) so the content-type dialog can show counts,
+    // and its result is reused by startMergeFolderScan so the tree is only walked once.
+    private suspend fun scanMergeFolder(folder: PutioFile): FolderScanResult {
         val token = settingsRepository.authTokenFlow.first()
-        val result = mutableListOf<MergeCandidateFile>()
+        val result = mutableListOf<ScannedMergeFile>()
+        var subfolderCount = 0
         val queue = ArrayDeque<Pair<PutioFile, String>>()
         queue.add(folder to "")
         while (queue.isNotEmpty()) {
@@ -1500,34 +1503,15 @@ class FilesViewModel @Inject constructor(
             for (child in children) {
                 val childPath = if (prefix.isEmpty()) child.displayName else "$prefix/${child.displayName}"
                 if (child.isFolder) {
+                    subfolderCount++
                     queue.add(child to childPath)
-                } else if (matches(child)) {
-                    result.add(MergeCandidateFile(child, childPath))
+                } else {
+                    val contentType = MergeContentType.entries.firstOrNull { it.matches(child) }
+                    result.add(ScannedMergeFile(child, childPath, contentType))
                 }
             }
         }
-        result.sortBy { it.relativePath }
-        return result
-    }
-
-    // One level of subfolders, each recursively scanned for matching files — the merge
-    // framework's "subfolders as chapters" process mode.
-    private suspend fun fetchMergeSubfolderGroups(folder: PutioFile, matches: (PutioFile) -> Boolean): List<MergeCandidateGroup> {
-        val token = settingsRepository.authTokenFlow.first()
-        val children = when {
-            folder.isLocal -> folder.localUri?.let { localFilesRepository.listLocalFolder(it).first() } ?: emptyList()
-            folder.isLan -> folder.lanConnectionId?.let { lanFilesRepository.listDirectory(it, folder.lanPath ?: "", includeAllFiles = true).last() } ?: emptyList()
-            else -> filesRepository.listFiles(token, folder.id).dataOrNull()?.first ?: emptyList()
-        }
-        val subfolders = children.filter { it.isFolder }.sortedBy { it.name }
-        val groups = mutableListOf<MergeCandidateGroup>()
-        for (subfolder in subfolders) {
-            val files = fetchMergeFilesRecursively(subfolder, matches)
-            if (files.isNotEmpty()) {
-                groups.add(MergeCandidateGroup(subfolder.name, files))
-            }
-        }
-        return groups
+        return FolderScanResult(result, subfolderCount)
     }
 
     fun openPutioArchive(file: PutioFile) {

@@ -33,28 +33,75 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
+/** Shown while a folder/archive-dir merge trigger's full-tree tally scan is in flight
+ * (put.io-backed folders only — see [MergeChoiceState.Scanning]). */
+@Composable
+fun MergeScanningDialog(folderName: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Scanning \"$folderName\"…") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CircularProgressIndicator()
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Shown when a folder/archive-dir merge trigger's tally scan fails. */
+@Composable
+fun MergeScanErrorDialog(folderName: String, message: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Merge \"$folderName\"") },
+        text = { Text(message) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
 /**
  * "What content type" choice for a folder merge trigger — which engine to run, since a
  * folder may contain more than one mergeable file type. Shown before the process-mode
- * question (flatten vs. subfolders-as-chapters). Uses a plain column of options (rather
- * than AlertDialog's 2-slot confirm/dismiss buttons) so it scales past two engines.
+ * question (flatten vs. subfolders-as-chapters), after [scan] has already tallied the whole
+ * tree — only content types with at least one match are offered, each with its count. Uses a
+ * plain column of options (rather than AlertDialog's 2-slot confirm/dismiss buttons) so it
+ * scales past two engines.
  */
 @Composable
 fun MergeContentTypeChoiceDialog(
     folderName: String,
+    scan: FolderScanResult,
     onDismiss: () -> Unit,
     onChoose: (MergeContentType) -> Unit,
 ) {
+    val available = MergeContentType.entries.filter { scan.countFor(it) > 0 }
+    val summary = buildString {
+        append(scan.extensionTally().joinToString(", ") { (ext, count) -> "${ext.ifEmpty { "?" }} ($count)" })
+        if (scan.subfolderCount > 0) append(", in ${scan.subfolderCount} subfolder${if (scan.subfolderCount == 1) "" else "s"}")
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Merge \"$folderName\"") },
         text = {
             Column {
-                Text("What should be merged?")
-                Spacer(Modifier.height(8.dp))
-                for (type in MergeContentType.entries) {
-                    TextButton(onClick = { onChoose(type) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(type.label, modifier = Modifier.fillMaxWidth())
+                if (summary.isNotEmpty()) {
+                    Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                }
+                if (available.isEmpty()) {
+                    Text("No mergeable files found in this folder.")
+                } else {
+                    Text("What should be merged?")
+                    Spacer(Modifier.height(8.dp))
+                    for (type in available) {
+                        TextButton(onClick = { onChoose(type) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("${type.label} (${scan.countFor(type)})", modifier = Modifier.fillMaxWidth())
+                        }
                     }
                 }
             }

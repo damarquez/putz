@@ -87,12 +87,15 @@ import com.damarquez.putz.ui.components.FileIconProvider
 import com.damarquez.putz.ui.viewer.ViewerKind
 import com.damarquez.putz.ui.files.MergeCandidateFile
 import com.damarquez.putz.ui.files.MergeCandidateGroup
+import com.damarquez.putz.ui.files.MergeChoiceState
 import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergeContentTypeChoiceDialog
 import com.damarquez.putz.ui.files.MergeOutputFormat
 import com.damarquez.putz.ui.files.MergePackSheet
 import com.damarquez.putz.ui.files.MergePickerState
 import com.damarquez.putz.ui.files.MergeProcessChoiceDialog
+import com.damarquez.putz.ui.files.MergeScanErrorDialog
+import com.damarquez.putz.ui.files.MergeScanningDialog
 import com.damarquez.putz.ui.files.outputFormatOptions
 import com.damarquez.putz.ui.files.defaultOutputFormat
 import com.damarquez.putz.ui.files.AssemblyAppendSheet
@@ -119,7 +122,7 @@ fun ArchiveScreen(
     var showDestinationPicker by remember { mutableStateOf(false) }
 
     // Merge framework — see CONTRACTS.md "Merge framework" / archive-sourced files
-    val archiveMergeChoice by viewModel.archiveMergeChoice.collectAsState()
+    val archiveMergeChoiceState by viewModel.archiveMergeChoiceState.collectAsState()
     val archiveMergePickerState by viewModel.archiveMergePickerState.collectAsState()
     val activeArchiveMergeContentType by viewModel.activeArchiveMergeContentType.collectAsState()
     // Phase 1 result — held here until user picks a destination (new request or existing assembly)
@@ -458,20 +461,26 @@ fun ArchiveScreen(
     }
 
     // Merge framework (directory trigger) — see CONTRACTS.md "Merge framework"
-    archiveMergeChoice?.let { choice ->
-        if (choice.contentType == null) {
-            MergeContentTypeChoiceDialog(
-                folderName = choice.dirName,
-                onDismiss = { viewModel.dismissArchiveMergeChoice() },
-                onChoose = { type -> viewModel.chooseArchiveMergeContentType(type) },
-            )
-        } else {
-            MergeProcessChoiceDialog(
-                folderName = choice.dirName,
-                onDismiss = { viewModel.dismissArchiveMergeChoice() },
-                onChoose = { mode -> viewModel.startArchiveMergeFolderScan(mode) },
-            )
+    when (val state = archiveMergeChoiceState) {
+        is MergeChoiceState.Scanning -> MergeScanningDialog(state.folderName) { viewModel.dismissArchiveMergeChoice() }
+        is MergeChoiceState.Error -> MergeScanErrorDialog(state.folderName, state.message) { viewModel.dismissArchiveMergeChoice() }
+        is MergeChoiceState.Ready -> {
+            if (state.contentType == null) {
+                MergeContentTypeChoiceDialog(
+                    folderName = state.folderName,
+                    scan = state.scan,
+                    onDismiss = { viewModel.dismissArchiveMergeChoice() },
+                    onChoose = { type -> viewModel.chooseArchiveMergeContentType(type) },
+                )
+            } else {
+                MergeProcessChoiceDialog(
+                    folderName = state.folderName,
+                    onDismiss = { viewModel.dismissArchiveMergeChoice() },
+                    onChoose = { mode -> viewModel.startArchiveMergeFolderScan(mode) },
+                )
+            }
         }
+        null -> {}
     }
 
     // Merge framework (file + directory trigger) — picker/reorder sheet

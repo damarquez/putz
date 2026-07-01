@@ -34,7 +34,7 @@ enum class MergeProcessMode {
 enum class MergeContentType(val itemType: String, val outputFileName: String, val label: String) {
     IMAGES("IMAGE_PDF_PACK", "Book.pdf", "Images"),
     PDFS("PDF_PACK", "Book.pdf", "PDFs"),
-    CBR("CBR_PDF_PACK", "Book.pdf", "Comic archives (CBR)"),
+    CBR("CBR_PDF_PACK", "Book.pdf", "Comic archives (CBR/CBZ)"),
     AUDIO("PACK", "Audiobook.m4b", "Audio"),
     EPUBS("EPUB_PACK", "Book.epub", "EPUBs"),
     MOBIS("MOBI_PACK", "Book.mobi", "MOBIs"),
@@ -104,13 +104,65 @@ sealed class MergePickerState {
 }
 
 /**
- * Pending folder/archive merge trigger, walking through "what content type" then "what
- * process" before scanning starts. contentType is null until the first question is answered.
+ * One file found during a full (untyped) recursive scan of a merge folder/archive-dir trigger,
+ * classified by content type (null if it doesn't match any mergeable type) so the "what should
+ * be merged?" dialog can show per-type counts before the user picks.
  */
-data class MergeProcessChoice(
-    val folder: PutioFile,
-    val contentType: MergeContentType? = null,
+data class ScannedMergeFile(
+    val file: PutioFile,
+    val relativePath: String,
+    val contentType: MergeContentType?,
 )
+
+/** Result of a single recursive folder/archive-dir walk — backs both the tally shown in
+ * [MergeContentTypeChoiceDialog] and the final flat/grouped candidate list once a content type
+ * and process mode are chosen, so the tree only needs to be walked once. */
+data class FolderScanResult(
+    val files: List<ScannedMergeFile>,
+    val subfolderCount: Int,
+) {
+    /** Extension -> count, most common first, for a "jpg (10), cbz (1), pdf (7)" summary line. */
+    fun extensionTally(): List<Pair<String, Int>> =
+        files.groupingBy { it.file.displayName.substringAfterLast('.', "").lowercase() }
+            .eachCount().toList().sortedByDescending { it.second }
+
+    fun countFor(type: MergeContentType): Int = files.count { it.contentType == type }
+
+    fun flatCandidates(type: MergeContentType): List<MergeCandidateFile> =
+        files.filter { it.contentType == type }
+            .map { MergeCandidateFile(it.file, it.relativePath) }
+            .sortedBy { it.relativePath }
+
+    /** Root-level files are excluded (no chapter to put them in); one level of chaptering by
+     * the first path segment, deeper nesting preserved within each chapter — same semantics as
+     * the "subfolders as chapters" process mode always had. */
+    fun groupedCandidates(type: MergeContentType): List<MergeCandidateGroup> =
+        files.filter { it.contentType == type && it.relativePath.contains('/') }
+            .groupBy { it.relativePath.substringBefore('/') }
+            .toList().sortedBy { it.first }
+            .map { (chapter, items) ->
+                MergeCandidateGroup(
+                    chapter,
+                    items.map { MergeCandidateFile(it.file, it.relativePath.substringAfter('/')) }.sortedBy { it.relativePath },
+                )
+            }
+}
+
+/**
+ * Pending folder/archive merge trigger, walking through "what content type" then "what
+ * process" before the picker sheet shows. [Ready.contentType] is null until the first question
+ * is answered; [Ready.scan] is the full-tree scan run once up front, reused for both the tally
+ * shown here and the final candidate list once a process mode is picked.
+ */
+sealed class MergeChoiceState {
+    data class Scanning(val folderName: String) : MergeChoiceState()
+    data class Error(val folderName: String, val message: String) : MergeChoiceState()
+    data class Ready(
+        val folderName: String,
+        val scan: FolderScanResult,
+        val contentType: MergeContentType? = null,
+    ) : MergeChoiceState()
+}
 
 /**
  * A resolved merge selection (from any file/folder trigger) waiting to be appended into an

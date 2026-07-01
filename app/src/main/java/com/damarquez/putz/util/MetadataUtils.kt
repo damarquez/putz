@@ -55,10 +55,10 @@ object MetadataUtils {
         return ext in ARCHIVE_EXTENSIONS
     }
 
-    /** True for CBR comic archives that can be unpacked into a chaptered PDF. */
+    /** True for CBR/CBZ comic archives that can be unpacked into a chaptered PDF/CBZ. */
     fun isComicArchive(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
-        return ext == "cbr"
+        return ext == "cbr" || ext == "cbz"
     }
 
     fun isEbook(fileName: String): Boolean {

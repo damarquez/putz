@@ -24,12 +24,16 @@ import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.data.repository.LanFilesRepository
 import com.damarquez.putz.settings.SettingsRepository
+import com.damarquez.putz.ui.files.FolderScanResult
 import com.damarquez.putz.ui.files.MergeCandidateFile
 import com.damarquez.putz.ui.files.MergeCandidateGroup
+import com.damarquez.putz.ui.files.MergeChoiceState
 import com.damarquez.putz.ui.files.MergeOutputFormat
 import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergePickerState
 import com.damarquez.putz.ui.files.MergeProcessMode
+import com.damarquez.putz.ui.files.ScannedMergeFile
+import com.damarquez.putz.ui.files.matches
 import com.damarquez.putz.ui.files.matchesName
 import com.damarquez.putz.ui.files.outputFormatOptions
 import com.damarquez.putz.ui.navigation.Screen
@@ -79,16 +83,6 @@ data class LanPickerState(
     val isLoading: Boolean = true,
 )
 
-/**
- * Pending directory-trigger merge choice (walking through "what content type" then "what
- * process" before scanning starts) for a directory inside this archive — see
- * FilesViewModel.MergeProcessChoice for the put.io-folder equivalent.
- */
-data class ArchiveMergeChoice(
-    val dirPath: String,
-    val dirName: String,
-    val contentType: MergeContentType? = null,
-)
 
 sealed class ArchiveUiState {
     data object Loading : ArchiveUiState()
@@ -179,10 +173,11 @@ class ArchiveViewModel @Inject constructor(
     private var singleExtractEntry: ArchiveEntry? = null
 
     // Merge framework — see CONTRACTS.md "Merge framework" / archive-sourced files.
-    // Mirrors FilesViewModel's mergeProcessChoice/mergePickerState pattern, but scans the
-    // already-loaded allEntries list locally instead of making API calls.
-    private val _archiveMergeChoice = MutableStateFlow<ArchiveMergeChoice?>(null)
-    val archiveMergeChoice: StateFlow<ArchiveMergeChoice?> = _archiveMergeChoice.asStateFlow()
+    // Mirrors FilesViewModel's mergeChoiceState/mergePickerState pattern, but scans the
+    // already-loaded allEntries list synchronously instead of making API calls (so Ready is
+    // reached directly — Scanning is never emitted on this path).
+    private val _archiveMergeChoiceState = MutableStateFlow<MergeChoiceState?>(null)
+    val archiveMergeChoiceState: StateFlow<MergeChoiceState?> = _archiveMergeChoiceState.asStateFlow()
 
     private val _archiveMergePickerState = MutableStateFlow<MergePickerState?>(null)
     val archiveMergePickerState: StateFlow<MergePickerState?> = _archiveMergePickerState.asStateFlow()
@@ -818,14 +813,6 @@ class ArchiveViewModel @Inject constructor(
             .map { MergeCandidateFile(it.asMergeCandidatePutioFile(), it.path.removePrefix(prefix)) }
     }
 
-    private fun scanArchiveGrouped(rootDir: String, allEntries: List<ArchiveEntry>, matches: (ArchiveEntry) -> Boolean): List<MergeCandidateGroup> {
-        val subdirs = directChildren(rootDir, allEntries).filter { it.isDirectory }.sortedBy { it.name.lowercase() }
-        return subdirs.mapNotNull { dir ->
-            val files = scanArchiveFlat(dir.path, allEntries, matches)
-            if (files.isEmpty()) null else MergeCandidateGroup(dir.name, files)
-        }
-    }
-
     /** File-trigger entry point: pick siblings of the same content type in the current directory. */
     fun openArchiveFileMerge(entry: ArchiveEntry) {
         val contentType = MergeContentType.entries.firstOrNull { it.matchesName(entry.name) } ?: return
@@ -837,37 +824,46 @@ class ArchiveViewModel @Inject constructor(
         )
     }
 
-    /** Directory-trigger entry point: ask content type, then flatten vs. subfolders-as-chapters. */
+    /** Directory-trigger entry point: ask content type, then flatten vs. subfolders-as-chapters.
+     * allEntries is always fully in memory already, so the full-tree tally is synchronous —
+     * this goes straight to Ready, no Scanning state. */
     fun openArchiveMergeChoice(dir: ArchiveEntry) {
-        _archiveMergeChoice.value = ArchiveMergeChoice(dirPath = dir.path, dirName = dir.name)
+        val s = _uiState.value as? ArchiveUiState.Success ?: return
+        val allFiles = scanArchiveFlat(dir.path, s.allEntries) { true }
+        val scanned = allFiles.map {
+            ScannedMergeFile(it.file, it.relativePath, MergeContentType.entries.firstOrNull { ct -> ct.matches(it.file) })
+        }
+        val prefix = if (dir.path.isEmpty()) "" else "${dir.path}/"
+        val subfolderCount = s.allEntries.count { it.isDirectory && it.path.startsWith(prefix) && it.path != dir.path }
+        _archiveMergeChoiceState.value = MergeChoiceState.Ready(dir.name, FolderScanResult(scanned, subfolderCount))
     }
 
     fun chooseArchiveMergeContentType(type: MergeContentType) {
-        _archiveMergeChoice.value = _archiveMergeChoice.value?.copy(contentType = type)
+        val ready = _archiveMergeChoiceState.value as? MergeChoiceState.Ready ?: return
+        _archiveMergeChoiceState.value = ready.copy(contentType = type)
     }
 
     fun dismissArchiveMergeChoice() {
-        _archiveMergeChoice.value = null
+        _archiveMergeChoiceState.value = null
     }
 
     fun startArchiveMergeFolderScan(mode: MergeProcessMode) {
-        val choice = _archiveMergeChoice.value ?: return
-        val contentType = choice.contentType ?: return
-        val s = _uiState.value as? ArchiveUiState.Success ?: return
-        _archiveMergeChoice.value = null
+        val ready = _archiveMergeChoiceState.value as? MergeChoiceState.Ready ?: return
+        val contentType = ready.contentType ?: return
+        _archiveMergeChoiceState.value = null
         _activeArchiveMergeContentType.value = contentType
         when (mode) {
             MergeProcessMode.FLATTEN -> {
-                val files = scanArchiveFlat(choice.dirPath, s.allEntries) { contentType.matchesName(it.name) }
+                val files = ready.scan.flatCandidates(contentType)
                 _archiveMergePickerState.value = if (files.isEmpty())
-                    MergePickerState.Error(choice.dirName, "No ${contentType.label.lowercase()} found in this folder")
-                else MergePickerState.ReadyFlat(choice.dirName, files)
+                    MergePickerState.Error(ready.folderName, "No ${contentType.label.lowercase()} found in this folder")
+                else MergePickerState.ReadyFlat(ready.folderName, files)
             }
             MergeProcessMode.SUBFOLDERS_AS_CHAPTERS -> {
-                val groups = scanArchiveGrouped(choice.dirPath, s.allEntries) { contentType.matchesName(it.name) }
+                val groups = ready.scan.groupedCandidates(contentType)
                 _archiveMergePickerState.value = if (groups.isEmpty())
-                    MergePickerState.Error(choice.dirName, "No subfolders with ${contentType.label.lowercase()} found in this folder")
-                else MergePickerState.ReadyGrouped(choice.dirName, groups)
+                    MergePickerState.Error(ready.folderName, "No subfolders with ${contentType.label.lowercase()} found in this folder")
+                else MergePickerState.ReadyGrouped(ready.folderName, groups)
             }
         }
     }

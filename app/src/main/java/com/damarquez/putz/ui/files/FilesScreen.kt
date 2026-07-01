@@ -321,7 +321,7 @@ fun FilesScreen(
     // Merge framework flow (folder trigger) — see CONTRACTS.md "Merge framework"
     var selectedMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
-    val mergeProcessChoice by viewModel.mergeProcessChoice.collectAsState()
+    val mergeChoiceState by viewModel.mergeChoiceState.collectAsState()
     val mergePickerState by viewModel.mergePickerState.collectAsState()
 
     val pendingAssemblies by viewModel.pendingAssemblies.collectAsState()
@@ -718,20 +718,26 @@ fun FilesScreen(
         }
     }
 
-    mergeProcessChoice?.let { choice ->
-        if (choice.contentType == null) {
-            MergeContentTypeChoiceDialog(
-                folderName = choice.folder.name,
-                onDismiss = { viewModel.dismissMergeProcessChoice() },
-                onChoose = { type -> viewModel.chooseMergeContentType(type) },
-            )
-        } else {
-            MergeProcessChoiceDialog(
-                folderName = choice.folder.name,
-                onDismiss = { viewModel.dismissMergeProcessChoice() },
-                onChoose = { mode -> viewModel.startMergeFolderScan(mode) },
-            )
+    when (val state = mergeChoiceState) {
+        is MergeChoiceState.Scanning -> MergeScanningDialog(state.folderName) { viewModel.dismissMergeProcessChoice() }
+        is MergeChoiceState.Error -> MergeScanErrorDialog(state.folderName, state.message) { viewModel.dismissMergeProcessChoice() }
+        is MergeChoiceState.Ready -> {
+            if (state.contentType == null) {
+                MergeContentTypeChoiceDialog(
+                    folderName = state.folderName,
+                    scan = state.scan,
+                    onDismiss = { viewModel.dismissMergeProcessChoice() },
+                    onChoose = { type -> viewModel.chooseMergeContentType(type) },
+                )
+            } else {
+                MergeProcessChoiceDialog(
+                    folderName = state.folderName,
+                    onDismiss = { viewModel.dismissMergeProcessChoice() },
+                    onChoose = { mode -> viewModel.startMergeFolderScan(mode) },
+                )
+            }
         }
+        null -> {}
     }
 
     val outputFormatPicker: (@Composable () -> Unit)? = activeMergeContentType?.let { ct ->
