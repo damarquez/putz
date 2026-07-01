@@ -129,6 +129,11 @@ data class FolderScanResult(
 
     fun countFor(type: MergeContentType): Int = files.count { it.contentType == type }
 
+    /** Whether "subfolders as chapters" would produce more than just a single root chapter for
+     * this type — if not, that process-mode question is moot and can be skipped entirely. */
+    fun hasSubfoldersFor(type: MergeContentType): Boolean =
+        files.any { it.contentType == type && it.relativePath.contains('/') }
+
     fun flatCandidates(type: MergeContentType): List<MergeCandidateFile> =
         files.filter { it.contentType == type }
             .map { MergeCandidateFile(it.file, it.relativePath) }

@@ -841,6 +841,10 @@ class ArchiveViewModel @Inject constructor(
     fun chooseArchiveMergeContentType(type: MergeContentType) {
         val ready = _archiveMergeChoiceState.value as? MergeChoiceState.Ready ?: return
         _archiveMergeChoiceState.value = ready.copy(contentType = type)
+        // No subfolders contain this type — "flatten vs. chapters" is moot, skip straight to it.
+        if (!ready.scan.hasSubfoldersFor(type)) {
+            startArchiveMergeFolderScan(MergeProcessMode.FLATTEN)
+        }
     }
 
     fun dismissArchiveMergeChoice() {

@@ -1445,6 +1445,10 @@ class FilesViewModel @Inject constructor(
     fun chooseMergeContentType(type: MergeContentType) {
         val ready = _mergeChoiceState.value as? MergeChoiceState.Ready ?: return
         _mergeChoiceState.value = ready.copy(contentType = type)
+        // No subfolders contain this type — "flatten vs. chapters" is moot, skip straight to it.
+        if (!ready.scan.hasSubfoldersFor(type)) {
+            startMergeFolderScan(MergeProcessMode.FLATTEN)
+        }
     }
 
     fun dismissMergeProcessChoice() {
