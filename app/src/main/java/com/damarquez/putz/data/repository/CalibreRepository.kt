@@ -55,6 +55,13 @@ data class CalibreBatchItem(
     val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
     val archive_entry: String? = null, // For ARCHIVE_ENTRY: path of the entry within the archive file
     val protected: Boolean? = null,  // When true the daemon encrypts the file before adding to Calibre
+    // CONTRACT: source-batch grouping — each AudiobookFile.sourceBatch tags which assembly
+    // append contributed it. Null = legacy (treat as batch 1). When multiple distinct batches
+    // are present the daemon creates one chapter/folder/section per batch in the merged output;
+    // single-batch items are flattened to the same output as pre-batch requests.
+    // User-edited labels for each batch index (key = batch index as string in JSON); absent
+    // entries default to "Part N" at build time.
+    val sourceBatchLabels: Map<Int, String>? = null,
 )
 // CONTRACT: ADD_BOOK_BATCH, probe pattern
 @Serializable
@@ -88,6 +95,10 @@ data class AudiobookFile(
     // this is the forward-compatible hook for a future "merge from inside an archive" UI.
     val archive_entry: String? = null,
     val archive_file_name: String? = null,
+    // CONTRACT: source-batch grouping — tags which assembly append this file came from.
+    // Null = legacy file (treated as batch 1 everywhere). Set by addMergeTransfer (batch 1)
+    // and mergeIntoAssemblyItem (batch N+1) — never by resolveForMerge.
+    val sourceBatch: Int? = null,
 )
 
 // CONTRACT: ADD_BOOK_BATCH — merge framework (see CONTRACTS.md "Merge framework")
@@ -765,7 +776,10 @@ class CalibreRepository @Inject constructor(
             type = type,
             putio_file_id = primaryFileId,
             fileName = fileName,
-            files = files?.map { (_, f) -> f },
+            // Tag every file with sourceBatch = 1 so the daemon (and future appends) can
+            // detect multi-source assemblies. Groups path is excluded — it uses the groups
+            // mechanism for chapter structure, not sourceBatch.
+            files = files?.map { (_, f) -> f.copy(sourceBatch = 1) },
             groups = groups?.map { (label, groupFiles) -> PackGroup(label, groupFiles.map { (_, f) -> f }) },
             protected = if (isProtected) true else null,
         )
@@ -843,7 +857,7 @@ class CalibreRepository @Inject constructor(
             type = placeholderItem?.type ?: "PACK",
             putio_file_id = newPrimaryId,
             fileName = placeholderItem?.fileName ?: transfer.fileName,
-            files = resolvedFiles
+            files = resolvedFiles.map { it.copy(sourceBatch = 1) },
         ))
 
         val appId = settingsRepository.getOrCreateAppId()
@@ -875,6 +889,7 @@ class CalibreRepository @Inject constructor(
     // CONTRACT: merge framework — pack-shaped item types whose `files`/`groups` hold the
     // homogeneous source files being joined, as opposed to SINGLE/ARCHIVE/ARCHIVE_ENTRY items.
     private val PACK_TYPES = setOf("PACK", "PDF_PACK", "EPUB_PACK", "IMAGE_PDF_PACK", "IMAGE_EPUB_PACK", "IMAGE_CBZ_PACK", "CBR_PDF_PACK", "CBR_CBZ_PACK")
+    private val CBZ_TYPES = setOf("IMAGE_CBZ_PACK", "CBR_CBZ_PACK")
 
     // Only PDF_PACK/EPUB_PACK can absorb a lone SINGLE item of the matching extension into the
     // pack as its first file: a finished .pdf/.epub is valid raw input for "join PDFs/EPUBs".
@@ -902,6 +917,10 @@ class CalibreRepository @Inject constructor(
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: return null
         items.firstOrNull { it.type == payloadType }?.let { return it }
+        // Cross-CBZ compatibility: IMAGE_CBZ_PACK and CBR_CBZ_PACK can be merged together.
+        if (payloadType in CBZ_TYPES) {
+            items.firstOrNull { it.type in CBZ_TYPES }?.let { return it }
+        }
         val ext = PROMOTABLE_SINGLE_EXTENSION[payloadType] ?: return null
         return items.firstOrNull { it.type == "SINGLE" && it.outputExtension() == ext }
     }
@@ -944,23 +963,38 @@ class CalibreRepository @Inject constructor(
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (e: Exception) { null }
         } ?: emptyList()
 
-        val existingFileNames = currentItems.flatMap { it.sourceFileNames() }.toSet()
-        if (newItem.sourceFileNames().any { it in existingFileNames }) return false
+        // Determine the next batch index: max existing sourceBatch (null = legacy → 1) + 1.
+        val existingFiles = matched.files ?: emptyList()
+        val nextBatch = (existingFiles.maxOfOrNull { it.sourceBatch ?: 1 } ?: 1) + 1
+        val taggedNewFiles = (newItem.files ?: emptyList()).map { it.copy(sourceBatch = nextBatch) }
 
-        val mergedItem = if (matched.type == newItem.type) {
-            matched.copy(files = (matched.files ?: emptyList()) + (newItem.files ?: emptyList()))
-        } else {
-            // Promotion: matched is a lone SINGLE of the matching extension — fold it in as the
-            // pack's first file.
-            val promotedFile = AudiobookFile(
-                putio_file_id = matched.putio_file_id,
-                fileName = matched.fileName,
-                download_url = matched.download_url,
-                smb_path = matched.smb_path,
-                use_local = matched.use_local,
-                local_path = matched.local_path,
-            )
-            newItem.copy(files = listOf(promotedFile) + (newItem.files ?: emptyList()))
+        // Collision check: same (sourceBatch, fileName) pair already present. Since nextBatch
+        // is always > any existing batch, this guards against re-adding the same file in a
+        // retry scenario where the batch counter somehow stalls.
+        val existingKeys = existingFiles.map { (it.sourceBatch ?: 1) to it.fileName }.toSet()
+        if (taggedNewFiles.any { (nextBatch to it.fileName) in existingKeys }) return false
+
+        val mergedItem = when {
+            matched.type == newItem.type ->
+                matched.copy(files = existingFiles + taggedNewFiles)
+            matched.type in CBZ_TYPES && newItem.type in CBZ_TYPES ->
+                // Cross-CBZ merge: unify under CBR_CBZ_PACK which handles both plain images
+                // and CBR archives in the same file list.
+                matched.copy(type = "CBR_CBZ_PACK", files = existingFiles + taggedNewFiles)
+            else -> {
+                // Promotion: matched is a lone SINGLE of the matching extension — fold it in
+                // as the pack's first file.
+                val promotedFile = AudiobookFile(
+                    putio_file_id = matched.putio_file_id,
+                    fileName = matched.fileName,
+                    download_url = matched.download_url,
+                    smb_path = matched.smb_path,
+                    use_local = matched.use_local,
+                    local_path = matched.local_path,
+                    sourceBatch = 1,
+                )
+                newItem.copy(files = listOf(promotedFile) + taggedNewFiles)
+            }
         }
 
         val updatedItems = currentItems.map { if (it == matched) mergedItem else it }

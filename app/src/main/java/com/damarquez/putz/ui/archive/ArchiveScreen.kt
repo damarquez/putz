@@ -84,12 +84,14 @@ import androidx.compose.ui.text.AnnotatedString
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileIconProvider
 import com.damarquez.putz.ui.viewer.ViewerKind
+import com.damarquez.putz.ui.files.ImageOutputFormat
 import com.damarquez.putz.ui.files.MergeCandidateFile
 import com.damarquez.putz.ui.files.MergeCandidateGroup
 import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergeContentTypeChoiceDialog
 import com.damarquez.putz.ui.files.MergePackSheet
 import com.damarquez.putz.ui.files.MergeProcessChoiceDialog
+import com.damarquez.putz.ui.files.defaultImageOutputFormat
 import com.damarquez.putz.ui.files.AssemblyAppendSheet
 import com.damarquez.putz.ui.files.FormatSlotState
 import com.damarquez.putz.ui.files.assemblyIsProtected
@@ -123,6 +125,8 @@ fun ArchiveScreen(
     // Phase 2 — new-request path: forward to CalibreConfirmationSheet
     var selectedArchiveMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedArchiveMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
+    // Image-merge format choice (null = not yet chosen, only relevant when content type is IMAGES)
+    var archiveMergeImageFormat by remember { mutableStateOf<ImageOutputFormat?>(null) }
 
     // Auto-forward when there are no assemblies to choose from
     LaunchedEffect(pendingArchiveMergeFlat) {
@@ -521,40 +525,67 @@ fun ArchiveScreen(
 
     if (selectedArchiveMergeFlatFiles != null) {
         val candidates = selectedArchiveMergeFlatFiles!!
-        val (initialTitle, initialAuthor) = remember(candidates) {
-            MetadataUtils.extractMetadata(candidates.first().file.displayName)
+        val isImageMerge = remember(candidates) { candidates.all { MetadataUtils.isImage(it.file.displayName) } }
+        if (isImageMerge && archiveMergeImageFormat == null) {
+            val defaultFmt = remember(candidates) { defaultImageOutputFormat(candidates.map { it.file.displayName }) }
+            ImageOutputFormatPickerDialog(
+                defaultFormat = defaultFmt,
+                onDismiss = { selectedArchiveMergeFlatFiles = null },
+                onPick = { fmt -> archiveMergeImageFormat = fmt },
+            )
+        } else {
+            val format = archiveMergeImageFormat
+            val displayName = if (format != null) "${candidates.size} images → ${format.outputFileName}" else "${candidates.size} files"
+            val (initialTitle, initialAuthor) = remember(candidates) {
+                MetadataUtils.extractMetadata(candidates.first().file.displayName)
+            }
+            CalibreConfirmationSheet(
+                displayName = displayName,
+                initialTitle = initialTitle,
+                initialAuthor = initialAuthor,
+                onDismiss = { selectedArchiveMergeFlatFiles = null; archiveMergeImageFormat = null },
+                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                    viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook, imageFormat = format)
+                    selectedArchiveMergeFlatFiles = null
+                    archiveMergeImageFormat = null
+                },
+                checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+                checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            )
         }
-        CalibreConfirmationSheet(
-            displayName = "${candidates.size} files",
-            initialTitle = initialTitle,
-            initialAuthor = initialAuthor,
-            onDismiss = { selectedArchiveMergeFlatFiles = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook)
-                selectedArchiveMergeFlatFiles = null
-            },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
-            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-        )
     }
 
     if (selectedArchiveMergeGroups != null) {
         val groups = selectedArchiveMergeGroups!!
-        val (initialTitle, initialAuthor) = remember(groups) {
-            MetadataUtils.extractMetadata(groups.first().label)
+        val isImageMerge = remember(groups) { groups.flatMap { it.files }.all { MetadataUtils.isImage(it.file.displayName) } }
+        if (isImageMerge && archiveMergeImageFormat == null) {
+            val allFiles = groups.flatMap { it.files }
+            val defaultFmt = remember(allFiles) { defaultImageOutputFormat(allFiles.map { it.file.displayName }) }
+            ImageOutputFormatPickerDialog(
+                defaultFormat = defaultFmt,
+                onDismiss = { selectedArchiveMergeGroups = null },
+                onPick = { fmt -> archiveMergeImageFormat = fmt },
+            )
+        } else {
+            val format = archiveMergeImageFormat
+            val displayName = if (format != null) "${groups.size} chapters → ${format.outputFileName}" else "${groups.size} chapters"
+            val (initialTitle, initialAuthor) = remember(groups) {
+                MetadataUtils.extractMetadata(groups.first().label)
+            }
+            CalibreConfirmationSheet(
+                displayName = displayName,
+                initialTitle = initialTitle,
+                initialAuthor = initialAuthor,
+                onDismiss = { selectedArchiveMergeGroups = null; archiveMergeImageFormat = null },
+                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
+                    viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook, imageFormat = format)
+                    selectedArchiveMergeGroups = null
+                    archiveMergeImageFormat = null
+                },
+                checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+                checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            )
         }
-        CalibreConfirmationSheet(
-            displayName = "${groups.size} chapters",
-            initialTitle = initialTitle,
-            initialAuthor = initialAuthor,
-            onDismiss = { selectedArchiveMergeGroups = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook)
-                selectedArchiveMergeGroups = null
-            },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
-            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-        )
     }
 
     // Calibre send sheet
@@ -1048,4 +1079,33 @@ private fun formatSize(bytes: Long): String = when {
     bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0)
     bytes >= 1_024L -> "%.0f KB".format(bytes / 1_024.0)
     else -> "$bytes B"
+}
+
+@Composable
+private fun ImageOutputFormatPickerDialog(
+    defaultFormat: ImageOutputFormat,
+    onDismiss: () -> Unit,
+    onPick: (ImageOutputFormat) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Output format") },
+        text = {
+            Column {
+                ImageOutputFormat.entries.forEach { fmt ->
+                    TextButton(
+                        onClick = { onPick(fmt) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = if (fmt == defaultFormat) "${fmt.label} (recommended)" else fmt.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

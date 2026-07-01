@@ -79,6 +79,7 @@ private data class ItemEditState(
     val orderedFiles: List<AudiobookFile>,
     val checkedKeys: Set<String>,
     val isIncluded: Boolean = true,
+    val editedBatchLabels: Map<Int, String> = emptyMap(),
 )
 
 /** Stable unique key for one file within a pack, safe for LazyColumn and checked-state tracking.
@@ -96,6 +97,7 @@ private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
             orderedFiles = files,
             checkedKeys = files.map { fileKey(it) }.toSet(),
             isIncluded = true,
+            editedBatchLabels = item.sourceBatchLabels ?: emptyMap(),
         )
     }
 
@@ -143,7 +145,11 @@ internal fun TransferBrowserSheet(
         } else {
             val remaining = state.orderedFiles.filter { fileKey(it) in state.checkedKeys }
             if (remaining.isEmpty()) null
-            else state.item.copy(files = remaining, protected = protectedValue)
+            else state.item.copy(
+                files = remaining,
+                protected = protectedValue,
+                sourceBatchLabels = state.editedBatchLabels.ifEmpty { null },
+            )
         }
     }
 
@@ -466,94 +472,146 @@ internal fun TransferBrowserSheet(
                         }
                     }
 
-                    itemsIndexed(
-                        items = state.orderedFiles,
-                        key = { _, f -> "edit_file_${itemIndex}_${fileKey(f)}" },
-                    ) { fileIndex, file ->
-                        val displayName = MetadataUtils.stripStubExtension(file.fileName)
-                        val key = fileKey(file)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 36.dp, end = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = key in state.checkedKeys,
-                                onCheckedChange = { checked ->
-                                    editStates = editStates.toMutableList().also {
-                                        it[itemIndex] = state.copy(
-                                            checkedKeys = if (checked)
-                                                state.checkedKeys + key
-                                            else
-                                                state.checkedKeys - key,
-                                        )
-                                    }
-                                },
-                            )
-                            if (collapseNames) {
-                                val prevDisplay = state.orderedFiles.getOrNull(fileIndex - 1)
-                                    ?.let { MetadataUtils.stripStubExtension(it.fileName) }
-                                val nextDisplay = state.orderedFiles.getOrNull(fileIndex + 1)
-                                    ?.let { MetadataUtils.stripStubExtension(it.fileName) }
-                                CollapsedFileNameText(
-                                    name = displayName,
-                                    previousName = prevDisplay,
-                                    nextName = nextDisplay,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f),
+                    val hasBatches = state.orderedFiles.map { it.sourceBatch ?: 1 }.distinct().size > 1
+                    var prevBatchNum: Int? = null
+                    state.orderedFiles.forEachIndexed { fileIndex, file ->
+                        val fileBatch = file.sourceBatch ?: 1
+                        if (hasBatches && fileBatch != prevBatchNum) {
+                            prevBatchNum = fileBatch
+                            val capturedBatch = fileBatch
+                            item(key = "edit_batch_${itemIndex}_$capturedBatch") {
+                                val labelText = state.editedBatchLabels[capturedBatch] ?: "Part $capturedBatch"
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 46.dp, end = 8.dp, top = 6.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    CompactOutlinedTextField(
+                                        value = labelText,
+                                        onValueChange = { newLabel ->
+                                            editStates = editStates.toMutableList().also { states ->
+                                                val newLabels = state.editedBatchLabels.toMutableMap()
+                                                newLabels[capturedBatch] = newLabel
+                                                states[itemIndex] = state.copy(editedBatchLabels = newLabels)
+                                            }
+                                        },
+                                        label = "Part label",
+                                        modifier = Modifier.weight(1f),
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    )
+                                }
+                            }
+                        }
+                        val capturedIndex = fileIndex
+                        val capturedFile = file
+                        item(key = "edit_file_${itemIndex}_${fileKey(file)}") {
+                            val displayName = MetadataUtils.stripStubExtension(capturedFile.fileName)
+                            val key = fileKey(capturedFile)
+                            val batchOfFile = capturedFile.sourceBatch ?: 1
+                            val startPad = if (hasBatches) 56.dp else 36.dp
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = startPad, end = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = key in state.checkedKeys,
+                                    onCheckedChange = { checked ->
+                                        editStates = editStates.toMutableList().also {
+                                            it[itemIndex] = state.copy(
+                                                checkedKeys = if (checked)
+                                                    state.checkedKeys + key
+                                                else
+                                                    state.checkedKeys - key,
+                                            )
+                                        }
+                                    },
                                 )
-                            } else {
-                                Text(
-                                    text = displayName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
+                                if (collapseNames) {
+                                    val prevDisplay = state.orderedFiles.getOrNull(capturedIndex - 1)
+                                        ?.let { MetadataUtils.stripStubExtension(it.fileName) }
+                                    val nextDisplay = state.orderedFiles.getOrNull(capturedIndex + 1)
+                                        ?.let { MetadataUtils.stripStubExtension(it.fileName) }
+                                    CollapsedFileNameText(
+                                        name = displayName,
+                                        previousName = prevDisplay,
+                                        nextName = nextDisplay,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                } else {
+                                    Text(
+                                        text = displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                ReorderArrowButton(
+                                    icon = Icons.Default.ArrowUpward,
+                                    contentDescription = "Move up",
+                                    enabled = capturedIndex > 0 &&
+                                        (!hasBatches || (state.orderedFiles[capturedIndex - 1].sourceBatch ?: 1) == batchOfFile),
+                                    onClick = {
+                                        editStates = editStates.toMutableList().also { states ->
+                                            val newList = state.orderedFiles.toMutableList()
+                                            val tmp = newList[capturedIndex]
+                                            newList[capturedIndex] = newList[capturedIndex - 1]
+                                            newList[capturedIndex - 1] = tmp
+                                            states[itemIndex] = state.copy(orderedFiles = newList)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        editStates = editStates.toMutableList().also { states ->
+                                            val newList = state.orderedFiles.toMutableList()
+                                            if (hasBatches) {
+                                                val batchStart = newList.indexOfFirst { (it.sourceBatch ?: 1) == batchOfFile }
+                                                newList.add(batchStart, newList.removeAt(capturedIndex))
+                                            } else {
+                                                newList.add(0, newList.removeAt(capturedIndex))
+                                            }
+                                            states[itemIndex] = state.copy(orderedFiles = newList)
+                                        }
+                                    },
+                                )
+                                ReorderArrowButton(
+                                    icon = Icons.Default.ArrowDownward,
+                                    contentDescription = "Move down",
+                                    enabled = capturedIndex < state.orderedFiles.lastIndex &&
+                                        (!hasBatches || (state.orderedFiles[capturedIndex + 1].sourceBatch ?: 1) == batchOfFile),
+                                    onClick = {
+                                        editStates = editStates.toMutableList().also { states ->
+                                            val newList = state.orderedFiles.toMutableList()
+                                            val tmp = newList[capturedIndex]
+                                            newList[capturedIndex] = newList[capturedIndex + 1]
+                                            newList[capturedIndex + 1] = tmp
+                                            states[itemIndex] = state.copy(orderedFiles = newList)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        editStates = editStates.toMutableList().also { states ->
+                                            val newList = state.orderedFiles.toMutableList()
+                                            if (hasBatches) {
+                                                val batchEnd = newList.indexOfLast { (it.sourceBatch ?: 1) == batchOfFile }
+                                                newList.add(batchEnd, newList.removeAt(capturedIndex))
+                                            } else {
+                                                newList.add(newList.removeAt(capturedIndex))
+                                            }
+                                            states[itemIndex] = state.copy(orderedFiles = newList)
+                                        }
+                                    },
                                 )
                             }
-                            ReorderArrowButton(
-                                icon = Icons.Default.ArrowUpward,
-                                contentDescription = "Move up",
-                                enabled = fileIndex > 0,
-                                onClick = {
-                                    editStates = editStates.toMutableList().also { states ->
-                                        val newList = state.orderedFiles.toMutableList()
-                                        val tmp = newList[fileIndex]
-                                        newList[fileIndex] = newList[fileIndex - 1]
-                                        newList[fileIndex - 1] = tmp
-                                        states[itemIndex] = state.copy(orderedFiles = newList)
-                                    }
-                                },
-                                onLongClick = {
-                                    editStates = editStates.toMutableList().also { states ->
-                                        val newList = state.orderedFiles.toMutableList()
-                                        newList.add(0, newList.removeAt(fileIndex))
-                                        states[itemIndex] = state.copy(orderedFiles = newList)
-                                    }
-                                },
-                            )
-                            ReorderArrowButton(
-                                icon = Icons.Default.ArrowDownward,
-                                contentDescription = "Move down",
-                                enabled = fileIndex < state.orderedFiles.lastIndex,
-                                onClick = {
-                                    editStates = editStates.toMutableList().also { states ->
-                                        val newList = state.orderedFiles.toMutableList()
-                                        val tmp = newList[fileIndex]
-                                        newList[fileIndex] = newList[fileIndex + 1]
-                                        newList[fileIndex + 1] = tmp
-                                        states[itemIndex] = state.copy(orderedFiles = newList)
-                                    }
-                                },
-                                onLongClick = {
-                                    editStates = editStates.toMutableList().also { states ->
-                                        val newList = state.orderedFiles.toMutableList()
-                                        newList.add(newList.removeAt(fileIndex))
-                                        states[itemIndex] = state.copy(orderedFiles = newList)
-                                    }
-                                },
-                            )
                         }
                     }
                 }
@@ -639,7 +697,16 @@ private fun FormatTreeNode(item: CalibreBatchItem) {
             if (!groups.isNullOrEmpty()) {
                 groups.forEach { group -> GroupTreeNode(group, indent = 1) }
             } else if (!files.isNullOrEmpty()) {
-                files.forEach { file -> FileLeafRow(file, indent = 1) }
+                val batches = files.groupBy { it.sourceBatch ?: 1 }
+                if (batches.size > 1) {
+                    val labels = item.sourceBatchLabels ?: emptyMap()
+                    batches.entries.sortedBy { it.key }.forEach { (batchIdx, batchFiles) ->
+                        val label = labels[batchIdx] ?: "Part $batchIdx"
+                        GroupTreeNode(PackGroup(label = label, files = batchFiles), indent = 1)
+                    }
+                } else {
+                    files.forEach { file -> FileLeafRow(file, indent = 1) }
+                }
             }
         }
     }

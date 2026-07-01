@@ -26,6 +26,7 @@ import com.damarquez.putz.data.repository.LanFilesRepository
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.files.MergeCandidateFile
 import com.damarquez.putz.ui.files.MergeCandidateGroup
+import com.damarquez.putz.ui.files.ImageOutputFormat
 import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergePickerState
 import com.damarquez.putz.ui.files.MergeProcessMode
@@ -838,8 +839,11 @@ class ArchiveViewModel @Inject constructor(
         tags: String? = null,
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
+        imageFormat: ImageOutputFormat? = null,
     ) {
         val contentType = activeArchiveMergeContentType ?: return
+        val effectiveType = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.itemType else contentType.itemType
+        val effectiveFileName = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.outputFileName else contentType.outputFileName
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -848,7 +852,7 @@ class ArchiveViewModel @Inject constructor(
             }
 
             if (source is ArchiveSource.Local) {
-                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount)
+                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount, imageFormat)
                 return@launch
             }
 
@@ -867,8 +871,8 @@ class ArchiveViewModel @Inject constructor(
             )
 
             calibreRepository.addMergeTransfer(
-                type = contentType.itemType,
-                fileName = contentType.outputFileName,
+                type = effectiveType,
+                fileName = effectiveFileName,
                 files = files?.map { dummyArchiveFile to toAudiobookFile(it) },
                 groups = groups?.map { g -> g.label to g.files.map { dummyArchiveFile to toAudiobookFile(it) } },
                 title = title,
@@ -918,19 +922,33 @@ class ArchiveViewModel @Inject constructor(
                     archive_file_name = archiveName,
                 )
 
+                // When appending images to an existing assembly that already contains a CBZ
+                // item, upgrade the type to IMAGE_CBZ_PACK so the merge logic can fold the
+                // images into the right slot instead of creating a stray PDF item.
+                val (effectiveType, effectiveFileName) = if (contentType == MergeContentType.IMAGES) {
+                    val assembly = calibreRepository.getTransfer(assemblyFileId)
+                    if (assembly != null && calibreRepository.compatibleAssemblyItem(assembly, "IMAGE_CBZ_PACK") != null) {
+                        "IMAGE_CBZ_PACK" to "Book.cbz"
+                    } else {
+                        contentType.itemType to contentType.outputFileName
+                    }
+                } else {
+                    contentType.itemType to contentType.outputFileName
+                }
+
                 val (newItem, newIds) = when {
                     groups != null -> {
                         val resolvedGroups = groups.map { g -> PackGroup(g.label, g.files.map { toAudiobookFile(it) }) }
                         CalibreBatchItem(
-                            type = contentType.itemType, putio_file_id = resolved.fileId,
-                            fileName = contentType.outputFileName, groups = resolvedGroups,
+                            type = effectiveType, putio_file_id = resolved.fileId,
+                            fileName = effectiveFileName, groups = resolvedGroups,
                         ) to groups.flatMap { g -> g.files.map { resolved.fileId } }
                     }
                     files != null -> {
                         val resolvedFiles = files.map { toAudiobookFile(it) }
                         CalibreBatchItem(
-                            type = contentType.itemType, putio_file_id = resolved.fileId,
-                            fileName = contentType.outputFileName, files = resolvedFiles,
+                            type = effectiveType, putio_file_id = resolved.fileId,
+                            fileName = effectiveFileName, files = resolvedFiles,
                         ) to files.map { resolved.fileId }
                     }
                     else -> return@launch
@@ -964,7 +982,10 @@ class ArchiveViewModel @Inject constructor(
         isProtected: Boolean,
         assembleBook: Boolean,
         googleAccount: String,
+        imageFormat: ImageOutputFormat? = null,
     ) {
+        val effectiveType = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.itemType else contentType.itemType
+        val effectiveFileName = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.outputFileName else contentType.outputFileName
         val flatCandidates = files ?: groups?.flatMap { it.files } ?: emptyList()
         if (flatCandidates.isEmpty()) {
             _snackbarMessage.value = "No files to merge"
@@ -1016,8 +1037,8 @@ class ArchiveViewModel @Inject constructor(
 
             val dummyArchiveFile = PutioFile(id = System.currentTimeMillis(), name = archiveName)
             calibreRepository.addMergeTransfer(
-                type = contentType.itemType,
-                fileName = contentType.outputFileName,
+                type = effectiveType,
+                fileName = effectiveFileName,
                 files = files?.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } },
                 groups = groups?.map { g -> g.label to g.files.mapNotNull { c -> uploaded[c.file.lanPath]?.let { dummyArchiveFile to it } } },
                 title = title,
