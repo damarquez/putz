@@ -26,11 +26,12 @@ import com.damarquez.putz.data.repository.LanFilesRepository
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.files.MergeCandidateFile
 import com.damarquez.putz.ui.files.MergeCandidateGroup
-import com.damarquez.putz.ui.files.ImageOutputFormat
+import com.damarquez.putz.ui.files.MergeOutputFormat
 import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergePickerState
 import com.damarquez.putz.ui.files.MergeProcessMode
 import com.damarquez.putz.ui.files.matchesName
+import com.damarquez.putz.ui.files.outputFormatOptions
 import com.damarquez.putz.ui.navigation.Screen
 import com.damarquez.putz.ui.viewer.ViewerKind
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -188,7 +189,10 @@ class ArchiveViewModel @Inject constructor(
 
     // The content type backing _archiveMergePickerState — read at confirm time to pick the
     // right item type/fileName, since archiveMergeChoice is cleared once the scan starts.
-    private var activeArchiveMergeContentType: MergeContentType? = null
+    // Exposed publicly (mirroring FilesViewModel.activeMergeContentType) so the UI can drive an
+    // output-format picker for the active content type.
+    private val _activeArchiveMergeContentType = MutableStateFlow<MergeContentType?>(null)
+    val activeArchiveMergeContentType: StateFlow<MergeContentType?> = _activeArchiveMergeContentType.asStateFlow()
 
     init {
         load()
@@ -582,17 +586,52 @@ class ArchiveViewModel @Inject constructor(
                         if (ext.isNotEmpty()) entry.name.substringBeforeLast('.') + "." + ext + "_bkp"
                         else entry.name
                     } else entry.name
-                    val newItem = CalibreBatchItem(
-                        type = "SINGLE",
-                        putio_file_id = uploadedId,
-                        fileName = targetFileName,
-                        download_url = downloadUrl,
-                    )
-                    val added = calibreRepository.appendToAssembly(
-                        assemblyFileId = assemblyFileId,
-                        newItem = newItem,
-                        newFileIds = listOf(uploadedId),
-                    )
+                    // A single pack-shaped file (e.g. one CBR/image) must go through the same
+                    // content-type-aware merge path as picking 2+ files does (see
+                    // appendArchiveMerge), instead of always appending a hardcoded "SINGLE" item —
+                    // otherwise it can never fold into an existing CBZ pack in the target assembly
+                    // and the daemon defaults it to a standalone PDF conversion.
+                    val contentType = MergeContentType.entries.firstOrNull { it.matchesName(entry.name) }
+                    val added = if (contentType != null) {
+                        val cbzUpgradeType = when (contentType) {
+                            MergeContentType.IMAGES -> "IMAGE_CBZ_PACK"
+                            MergeContentType.CBR -> "CBR_CBZ_PACK"
+                            else -> null
+                        }
+                        val effectiveType = if (cbzUpgradeType != null) {
+                            val assembly = calibreRepository.getTransfer(assemblyFileId)
+                            if (assembly != null && calibreRepository.compatibleAssemblyItem(assembly, cbzUpgradeType) != null)
+                                cbzUpgradeType
+                            else contentType.itemType
+                        } else contentType.itemType
+                        val newItem = CalibreBatchItem(
+                            type = effectiveType,
+                            putio_file_id = uploadedId,
+                            fileName = contentType.outputFileName,
+                            files = listOf(AudiobookFile(
+                                putio_file_id = uploadedId,
+                                fileName = targetFileName,
+                                download_url = downloadUrl,
+                            )),
+                        )
+                        calibreRepository.mergeIntoAssemblyItem(
+                            assemblyFileId = assemblyFileId,
+                            newItem = newItem,
+                            newFileIds = listOf(uploadedId),
+                        )
+                    } else {
+                        val newItem = CalibreBatchItem(
+                            type = "SINGLE",
+                            putio_file_id = uploadedId,
+                            fileName = targetFileName,
+                            download_url = downloadUrl,
+                        )
+                        calibreRepository.appendToAssembly(
+                            assemblyFileId = assemblyFileId,
+                            newItem = newItem,
+                            newFileIds = listOf(uploadedId),
+                        )
+                    }
                     calibreRepository.removeTransfer(tempId)
                     _snackbarMessage.value = if (added) "Added to assembly"
                         else "\"$targetFileName\" is already in this assembly"
@@ -666,25 +705,68 @@ class ArchiveViewModel @Inject constructor(
             val (fileId, smbPath, useLocal, localPath) = resolved
 
             if (assemblyFileId != null) {
-                val newItem = CalibreBatchItem(
-                    type = "ARCHIVE_ENTRY",
-                    putio_file_id = fileId,
-                    fileName = entry.name,
-                    use_local = if (useLocal) true else null,
-                    local_path = localPath,
-                    smb_path = smbPath,
-                    archive_entry = entry.path,
-                )
-                val added = calibreRepository.appendToAssembly(
-                    assemblyFileId = assemblyFileId,
-                    newItem = newItem,
-                    newFileIds = listOf(fileId),
-                    overrideTitle = overrideTitle,
-                    overrideAuthor = overrideAuthor,
-                    overrideUuid = overrideUuid,
-                    overrideTags = overrideTags,
-                    overrideProtected = overrideProtected,
-                )
+                // See the matching comment in sendEntryToCalibre: a single pack-shaped file must
+                // go through the same content-type-aware merge path as 2+ files (appendArchiveMerge),
+                // instead of always appending a hardcoded "ARCHIVE_ENTRY" item, so it can fold into
+                // an existing CBZ pack in the target assembly rather than defaulting to a PDF.
+                val contentType = MergeContentType.entries.firstOrNull { it.matchesName(entry.name) }
+                val added = if (contentType != null) {
+                    val cbzUpgradeType = when (contentType) {
+                        MergeContentType.IMAGES -> "IMAGE_CBZ_PACK"
+                        MergeContentType.CBR -> "CBR_CBZ_PACK"
+                        else -> null
+                    }
+                    val effectiveType = if (cbzUpgradeType != null) {
+                        val assembly = calibreRepository.getTransfer(assemblyFileId)
+                        if (assembly != null && calibreRepository.compatibleAssemblyItem(assembly, cbzUpgradeType) != null)
+                            cbzUpgradeType
+                        else contentType.itemType
+                    } else contentType.itemType
+                    val newItem = CalibreBatchItem(
+                        type = effectiveType,
+                        putio_file_id = fileId,
+                        fileName = contentType.outputFileName,
+                        files = listOf(AudiobookFile(
+                            putio_file_id = fileId,
+                            fileName = entry.name,
+                            use_local = if (useLocal) true else null,
+                            local_path = localPath,
+                            smb_path = smbPath,
+                            archive_entry = entry.path,
+                            archive_file_name = archiveName,
+                        )),
+                    )
+                    calibreRepository.mergeIntoAssemblyItem(
+                        assemblyFileId = assemblyFileId,
+                        newItem = newItem,
+                        newFileIds = listOf(fileId),
+                        overrideTitle = overrideTitle,
+                        overrideAuthor = overrideAuthor,
+                        overrideUuid = overrideUuid,
+                        overrideTags = overrideTags,
+                        overrideProtected = overrideProtected,
+                    )
+                } else {
+                    val newItem = CalibreBatchItem(
+                        type = "ARCHIVE_ENTRY",
+                        putio_file_id = fileId,
+                        fileName = entry.name,
+                        use_local = if (useLocal) true else null,
+                        local_path = localPath,
+                        smb_path = smbPath,
+                        archive_entry = entry.path,
+                    )
+                    calibreRepository.appendToAssembly(
+                        assemblyFileId = assemblyFileId,
+                        newItem = newItem,
+                        newFileIds = listOf(fileId),
+                        overrideTitle = overrideTitle,
+                        overrideAuthor = overrideAuthor,
+                        overrideUuid = overrideUuid,
+                        overrideTags = overrideTags,
+                        overrideProtected = overrideProtected,
+                    )
+                }
                 _snackbarMessage.value = if (added) "Added to assembly"
                     else "\"${entry.name}\" is already in this assembly"
             } else {
@@ -748,7 +830,7 @@ class ArchiveViewModel @Inject constructor(
     fun openArchiveFileMerge(entry: ArchiveEntry) {
         val contentType = MergeContentType.entries.firstOrNull { it.matchesName(entry.name) } ?: return
         val s = _uiState.value as? ArchiveUiState.Success ?: return
-        activeArchiveMergeContentType = contentType
+        _activeArchiveMergeContentType.value = contentType
         val siblings = scanArchiveFlat(s.currentDir, s.allEntries) { contentType.matchesName(it.name) }
         _archiveMergePickerState.value = MergePickerState.ReadyFlat(
             s.currentDir.ifEmpty { archiveName }, siblings,
@@ -773,7 +855,7 @@ class ArchiveViewModel @Inject constructor(
         val contentType = choice.contentType ?: return
         val s = _uiState.value as? ArchiveUiState.Success ?: return
         _archiveMergeChoice.value = null
-        activeArchiveMergeContentType = contentType
+        _activeArchiveMergeContentType.value = contentType
         when (mode) {
             MergeProcessMode.FLATTEN -> {
                 val files = scanArchiveFlat(choice.dirPath, s.allEntries) { contentType.matchesName(it.name) }
@@ -839,11 +921,11 @@ class ArchiveViewModel @Inject constructor(
         tags: String? = null,
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
-        imageFormat: ImageOutputFormat? = null,
+        outputFormat: MergeOutputFormat,
     ) {
-        val contentType = activeArchiveMergeContentType ?: return
-        val effectiveType = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.itemType else contentType.itemType
-        val effectiveFileName = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.outputFileName else contentType.outputFileName
+        val contentType = _activeArchiveMergeContentType.value ?: return
+        val effectiveType = outputFormat.itemType
+        val effectiveFileName = outputFormat.outputFileName
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -852,7 +934,7 @@ class ArchiveViewModel @Inject constructor(
             }
 
             if (source is ArchiveSource.Local) {
-                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount, imageFormat)
+                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount, outputFormat)
                 return@launch
             }
 
@@ -895,13 +977,14 @@ class ArchiveViewModel @Inject constructor(
         assemblyFileId: Long,
         files: List<MergeCandidateFile>?,
         groups: List<MergeCandidateGroup>?,
+        outputFormat: MergeOutputFormat,
         overrideTitle: String? = null,
         overrideAuthor: String? = null,
         overrideUuid: String? = null,
         overrideTags: String? = null,
         overrideProtected: Boolean? = null,
     ) {
-        val contentType = activeArchiveMergeContentType ?: return
+        val contentType = _activeArchiveMergeContentType.value ?: return
         viewModelScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
             try {
@@ -922,18 +1005,19 @@ class ArchiveViewModel @Inject constructor(
                     archive_file_name = archiveName,
                 )
 
-                // When appending images to an existing assembly that already contains a CBZ
-                // item, upgrade the type to IMAGE_CBZ_PACK so the merge logic can fold the
-                // images into the right slot instead of creating a stray PDF item.
-                val (effectiveType, effectiveFileName) = if (contentType == MergeContentType.IMAGES) {
-                    val assembly = calibreRepository.getTransfer(assemblyFileId)
-                    if (assembly != null && calibreRepository.compatibleAssemblyItem(assembly, "IMAGE_CBZ_PACK") != null) {
-                        "IMAGE_CBZ_PACK" to "Book.cbz"
-                    } else {
-                        contentType.itemType to contentType.outputFileName
-                    }
+                // When appending to an existing assembly that already contains a compatible slot
+                // for one of this content type's output formats, fold into that slot instead of
+                // creating a stray duplicate item (see "Assembly duplicate-format bug"), even if
+                // it differs from the format the user picked for this new batch. Otherwise honor
+                // the caller-supplied outputFormat.
+                val assembly = calibreRepository.getTransfer(assemblyFileId)
+                val compatibleOption = assembly?.let { a ->
+                    contentType.outputFormatOptions().firstOrNull { calibreRepository.compatibleAssemblyItem(a, it.itemType) != null }
+                }
+                val (effectiveType, effectiveFileName) = if (compatibleOption != null) {
+                    compatibleOption.itemType to compatibleOption.outputFileName
                 } else {
-                    contentType.itemType to contentType.outputFileName
+                    outputFormat.itemType to outputFormat.outputFileName
                 }
 
                 val (newItem, newIds) = when {
@@ -982,10 +1066,10 @@ class ArchiveViewModel @Inject constructor(
         isProtected: Boolean,
         assembleBook: Boolean,
         googleAccount: String,
-        imageFormat: ImageOutputFormat? = null,
+        outputFormat: MergeOutputFormat,
     ) {
-        val effectiveType = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.itemType else contentType.itemType
-        val effectiveFileName = if (imageFormat != null && contentType == MergeContentType.IMAGES) imageFormat.outputFileName else contentType.outputFileName
+        val effectiveType = outputFormat.itemType
+        val effectiveFileName = outputFormat.outputFileName
         val flatCandidates = files ?: groups?.flatMap { it.files } ?: emptyList()
         if (flatCandidates.isEmpty()) {
             _snackbarMessage.value = "No files to merge"

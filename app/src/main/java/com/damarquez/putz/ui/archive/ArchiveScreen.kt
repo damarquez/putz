@@ -42,6 +42,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,14 +85,16 @@ import androidx.compose.ui.text.AnnotatedString
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileIconProvider
 import com.damarquez.putz.ui.viewer.ViewerKind
-import com.damarquez.putz.ui.files.ImageOutputFormat
 import com.damarquez.putz.ui.files.MergeCandidateFile
 import com.damarquez.putz.ui.files.MergeCandidateGroup
 import com.damarquez.putz.ui.files.MergeContentType
 import com.damarquez.putz.ui.files.MergeContentTypeChoiceDialog
+import com.damarquez.putz.ui.files.MergeOutputFormat
 import com.damarquez.putz.ui.files.MergePackSheet
+import com.damarquez.putz.ui.files.MergePickerState
 import com.damarquez.putz.ui.files.MergeProcessChoiceDialog
-import com.damarquez.putz.ui.files.defaultImageOutputFormat
+import com.damarquez.putz.ui.files.outputFormatOptions
+import com.damarquez.putz.ui.files.defaultOutputFormat
 import com.damarquez.putz.ui.files.AssemblyAppendSheet
 import com.damarquez.putz.ui.files.FormatSlotState
 import com.damarquez.putz.ui.files.assemblyIsProtected
@@ -118,6 +121,7 @@ fun ArchiveScreen(
     // Merge framework — see CONTRACTS.md "Merge framework" / archive-sourced files
     val archiveMergeChoice by viewModel.archiveMergeChoice.collectAsState()
     val archiveMergePickerState by viewModel.archiveMergePickerState.collectAsState()
+    val activeArchiveMergeContentType by viewModel.activeArchiveMergeContentType.collectAsState()
     // Phase 1 result — held here until user picks a destination (new request or existing assembly)
     var pendingArchiveMergeFlat by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var pendingArchiveMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
@@ -125,8 +129,8 @@ fun ArchiveScreen(
     // Phase 2 — new-request path: forward to CalibreConfirmationSheet
     var selectedArchiveMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedArchiveMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
-    // Image-merge format choice (null = not yet chosen, only relevant when content type is IMAGES)
-    var archiveMergeImageFormat by remember { mutableStateOf<ImageOutputFormat?>(null) }
+    // Output-format choice for the active content type, confirmable via a chip row in MergePackSheet.
+    var archiveMergeOutputFormat by remember { mutableStateOf<MergeOutputFormat?>(null) }
 
     // Auto-forward when there are no assemblies to choose from
     LaunchedEffect(pendingArchiveMergeFlat) {
@@ -417,6 +421,42 @@ fun ArchiveScreen(
         )
     }
 
+    // Re-derive the default output format for the active content type whenever a folder/file
+    // scan completes (e.g. images default to CBZ if any GIFs are present, CBR defaults to CBZ).
+    LaunchedEffect(archiveMergePickerState) {
+        val ct = activeArchiveMergeContentType ?: return@LaunchedEffect
+        archiveMergeOutputFormat = when (val s = archiveMergePickerState) {
+            is MergePickerState.ReadyFlat -> ct.defaultOutputFormat(s.files.map { it.file.displayName })
+            is MergePickerState.ReadyGrouped -> ct.defaultOutputFormat(s.groups.flatMap { it.files }.map { it.file.displayName })
+            else -> archiveMergeOutputFormat
+        }
+    }
+
+    val archiveOutputFormatPicker: (@Composable () -> Unit)? = activeArchiveMergeContentType?.let { ct ->
+        val options = ct.outputFormatOptions()
+        val selectedFormat = archiveMergeOutputFormat ?: ct.defaultOutputFormat()
+        ({
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Output format",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                options.forEach { fmt ->
+                    FilterChip(
+                        selected = selectedFormat == fmt,
+                        onClick = { archiveMergeOutputFormat = fmt },
+                        label = { Text(fmt.label) },
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
+        })
+    }
+
     // Merge framework (directory trigger) — see CONTRACTS.md "Merge framework"
     archiveMergeChoice?.let { choice ->
         if (choice.contentType == null) {
@@ -449,6 +489,7 @@ fun ArchiveScreen(
                     pendingArchiveMergeGroups = groups
                     viewModel.dismissArchiveMergePicker()
                 },
+                extraControls = archiveOutputFormatPicker,
             )
         }
     }
@@ -494,9 +535,10 @@ fun ArchiveScreen(
     // Assembly-append sheet for merge → existing assembly path
     if (archiveMergeDestinationAssembly != null) {
         val assembly = archiveMergeDestinationAssembly!!
+        val format = archiveMergeOutputFormat ?: activeArchiveMergeContentType?.defaultOutputFormat()
         val mergeDisplayName = when {
-            pendingArchiveMergeFlat != null -> "${pendingArchiveMergeFlat!!.size} files"
-            pendingArchiveMergeGroups != null -> "${pendingArchiveMergeGroups!!.size} chapters"
+            pendingArchiveMergeFlat != null -> "${pendingArchiveMergeFlat!!.size} files" + (format?.let { " → ${it.outputFileName}" } ?: "")
+            pendingArchiveMergeGroups != null -> "${pendingArchiveMergeGroups!!.size} chapters" + (format?.let { " → ${it.outputFileName}" } ?: "")
             else -> ""
         }
         AssemblyAppendSheet(
@@ -506,16 +548,19 @@ fun ArchiveScreen(
             isArchive = false,
             onDismiss = { archiveMergeDestinationAssembly = null; pendingArchiveMergeFlat = null; pendingArchiveMergeGroups = null },
             onConfirm = { _, _, override ->
-                viewModel.appendArchiveMerge(
-                    assemblyFileId = assembly.putioFileId,
-                    files = pendingArchiveMergeFlat,
-                    groups = pendingArchiveMergeGroups,
-                    overrideTitle = override?.title,
-                    overrideAuthor = override?.author,
-                    overrideUuid = override?.uuid,
-                    overrideTags = override?.tags,
-                    overrideProtected = override?.isProtected,
-                )
+                if (format != null) {
+                    viewModel.appendArchiveMerge(
+                        assemblyFileId = assembly.putioFileId,
+                        files = pendingArchiveMergeFlat,
+                        groups = pendingArchiveMergeGroups,
+                        outputFormat = format,
+                        overrideTitle = override?.title,
+                        overrideAuthor = override?.author,
+                        overrideUuid = override?.uuid,
+                        overrideTags = override?.tags,
+                        overrideProtected = override?.isProtected,
+                    )
+                }
                 archiveMergeDestinationAssembly = null
                 pendingArchiveMergeFlat = null
                 pendingArchiveMergeGroups = null
@@ -525,17 +570,10 @@ fun ArchiveScreen(
 
     if (selectedArchiveMergeFlatFiles != null) {
         val candidates = selectedArchiveMergeFlatFiles!!
-        val isImageMerge = remember(candidates) { candidates.all { MetadataUtils.isImage(it.file.displayName) } }
-        if (isImageMerge && archiveMergeImageFormat == null) {
-            val defaultFmt = remember(candidates) { defaultImageOutputFormat(candidates.map { it.file.displayName }) }
-            ImageOutputFormatPickerDialog(
-                defaultFormat = defaultFmt,
-                onDismiss = { selectedArchiveMergeFlatFiles = null },
-                onPick = { fmt -> archiveMergeImageFormat = fmt },
-            )
-        } else {
-            val format = archiveMergeImageFormat
-            val displayName = if (format != null) "${candidates.size} images → ${format.outputFileName}" else "${candidates.size} files"
+        val format = archiveMergeOutputFormat
+            ?: activeArchiveMergeContentType?.defaultOutputFormat(candidates.map { it.file.displayName })
+        if (format != null) {
+            val displayName = "${candidates.size} ${(activeArchiveMergeContentType?.label ?: "files").lowercase()} → ${format.outputFileName}"
             val (initialTitle, initialAuthor) = remember(candidates) {
                 MetadataUtils.extractMetadata(candidates.first().file.displayName)
             }
@@ -543,11 +581,11 @@ fun ArchiveScreen(
                 displayName = displayName,
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
-                onDismiss = { selectedArchiveMergeFlatFiles = null; archiveMergeImageFormat = null },
+                onDismiss = { selectedArchiveMergeFlatFiles = null; archiveMergeOutputFormat = null },
                 onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                    viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook, imageFormat = format)
+                    viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format)
                     selectedArchiveMergeFlatFiles = null
-                    archiveMergeImageFormat = null
+                    archiveMergeOutputFormat = null
                 },
                 checkExists = { title, author -> viewModel.checkBookExists(title, author) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -557,18 +595,10 @@ fun ArchiveScreen(
 
     if (selectedArchiveMergeGroups != null) {
         val groups = selectedArchiveMergeGroups!!
-        val isImageMerge = remember(groups) { groups.flatMap { it.files }.all { MetadataUtils.isImage(it.file.displayName) } }
-        if (isImageMerge && archiveMergeImageFormat == null) {
-            val allFiles = groups.flatMap { it.files }
-            val defaultFmt = remember(allFiles) { defaultImageOutputFormat(allFiles.map { it.file.displayName }) }
-            ImageOutputFormatPickerDialog(
-                defaultFormat = defaultFmt,
-                onDismiss = { selectedArchiveMergeGroups = null },
-                onPick = { fmt -> archiveMergeImageFormat = fmt },
-            )
-        } else {
-            val format = archiveMergeImageFormat
-            val displayName = if (format != null) "${groups.size} chapters → ${format.outputFileName}" else "${groups.size} chapters"
+        val format = archiveMergeOutputFormat
+            ?: activeArchiveMergeContentType?.defaultOutputFormat(groups.flatMap { it.files }.map { it.file.displayName })
+        if (format != null) {
+            val displayName = "${groups.size} chapters → ${format.outputFileName}"
             val (initialTitle, initialAuthor) = remember(groups) {
                 MetadataUtils.extractMetadata(groups.first().label)
             }
@@ -576,11 +606,11 @@ fun ArchiveScreen(
                 displayName = displayName,
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
-                onDismiss = { selectedArchiveMergeGroups = null; archiveMergeImageFormat = null },
+                onDismiss = { selectedArchiveMergeGroups = null; archiveMergeOutputFormat = null },
                 onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected ->
-                    viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook, imageFormat = format)
+                    viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format)
                     selectedArchiveMergeGroups = null
-                    archiveMergeImageFormat = null
+                    archiveMergeOutputFormat = null
                 },
                 checkExists = { title, author -> viewModel.checkBookExists(title, author) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
@@ -1081,31 +1111,3 @@ private fun formatSize(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-@Composable
-private fun ImageOutputFormatPickerDialog(
-    defaultFormat: ImageOutputFormat,
-    onDismiss: () -> Unit,
-    onPick: (ImageOutputFormat) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Output format") },
-        text = {
-            Column {
-                ImageOutputFormat.entries.forEach { fmt ->
-                    TextButton(
-                        onClick = { onPick(fmt) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = if (fmt == defaultFormat) "${fmt.label} (recommended)" else fmt.label,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}

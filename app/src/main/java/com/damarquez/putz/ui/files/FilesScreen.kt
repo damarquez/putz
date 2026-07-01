@@ -411,14 +411,8 @@ fun FilesScreen(
         val formatDisplayName = when (pd) {
             is PendingDestination.Single -> pd.file.displayName
             is PendingDestination.Pack -> pd.displayName
-            is PendingDestination.MergeFlat -> {
-                val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
-                "${pd.files.size} ${pd.contentType.label.lowercase()} → $outFile"
-            }
-            is PendingDestination.MergeGrouped -> {
-                val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
-                "${pd.groups.size} chapters → $outFile"
-            }
+            is PendingDestination.MergeFlat -> "${pd.files.size} ${pd.contentType.label.lowercase()} → ${pd.outputFormat.outputFileName}"
+            is PendingDestination.MergeGrouped -> "${pd.groups.size} chapters → ${pd.outputFormat.outputFileName}"
             null -> ""
         }
         val isArchiveFormat = pd is PendingDestination.Single && MetadataUtils.isArchive(pd.file.displayName)
@@ -453,20 +447,16 @@ fun FilesScreen(
                         )
                     }
                     is PendingDestination.MergeFlat -> {
-                        val itemType = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.itemType else pd.contentType.itemType
-                        val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
                         viewModel.appendMergeToAssembly(
-                            assembly.putioFileId, itemType, applyAltVersion(outFile, isAltVersion),
+                            assembly.putioFileId, pd.outputFormat.itemType, applyAltVersion(pd.outputFormat.outputFileName, isAltVersion),
                             files = pd.files.map { it.file },
                             overrideTitle = overrideTitle, overrideAuthor = overrideAuthor,
                             overrideUuid = overrideUuid, overrideTags = overrideTags, overrideProtected = overrideProtected,
                         )
                     }
                     is PendingDestination.MergeGrouped -> {
-                        val itemType = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.itemType else pd.contentType.itemType
-                        val outFile = if (pd.contentType == MergeContentType.IMAGES) pd.imageFormat.outputFileName else pd.contentType.outputFileName
                         viewModel.appendMergeToAssembly(
-                            assembly.putioFileId, itemType, applyAltVersion(outFile, isAltVersion),
+                            assembly.putioFileId, pd.outputFormat.itemType, applyAltVersion(pd.outputFormat.outputFileName, isAltVersion),
                             groups = pd.groups,
                             overrideTitle = overrideTitle, overrideAuthor = overrideAuthor,
                             overrideUuid = overrideUuid, overrideTags = overrideTags, overrideProtected = overrideProtected,
@@ -715,16 +705,16 @@ fun FilesScreen(
 
     // Merge framework (folder trigger) — see CONTRACTS.md "Merge framework"
     val activeMergeContentType by viewModel.activeMergeContentType.collectAsState()
-    var mergeImageFormat by remember { mutableStateOf(ImageOutputFormat.PDF) }
+    var mergeOutputFormat by remember { mutableStateOf<MergeOutputFormat?>(null) }
 
-    // When an image folder scan completes, default to CBZ if any GIFs detected, else PDF.
+    // When a folder scan completes, re-derive the default output format for the active content
+    // type (e.g. images default to CBZ if any GIFs are present, else the type's first option).
     LaunchedEffect(mergePickerState) {
-        if (activeMergeContentType == MergeContentType.IMAGES) {
-            mergeImageFormat = when (val s = mergePickerState) {
-                is MergePickerState.ReadyFlat -> defaultImageOutputFormat(s.files.map { it.file.displayName })
-                is MergePickerState.ReadyGrouped -> defaultImageOutputFormat(s.groups.flatMap { it.files }.map { it.file.displayName })
-                else -> mergeImageFormat
-            }
+        val ct = activeMergeContentType ?: return@LaunchedEffect
+        mergeOutputFormat = when (val s = mergePickerState) {
+            is MergePickerState.ReadyFlat -> ct.defaultOutputFormat(s.files.map { it.file.displayName })
+            is MergePickerState.ReadyGrouped -> ct.defaultOutputFormat(s.groups.flatMap { it.files }.map { it.file.displayName })
+            else -> mergeOutputFormat
         }
     }
 
@@ -744,26 +734,30 @@ fun FilesScreen(
         }
     }
 
-    val imageFormatPicker: (@Composable () -> Unit)? = if (activeMergeContentType == MergeContentType.IMAGES) ({
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Output format",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f),
-            )
-            ImageOutputFormat.entries.forEach { fmt ->
-                FilterChip(
-                    selected = mergeImageFormat == fmt,
-                    onClick = { mergeImageFormat = fmt },
-                    label = { Text(fmt.label) },
-                    modifier = Modifier.padding(start = 4.dp),
+    val outputFormatPicker: (@Composable () -> Unit)? = activeMergeContentType?.let { ct ->
+        val options = ct.outputFormatOptions()
+        val selectedFormat = mergeOutputFormat ?: ct.defaultOutputFormat()
+        ({
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Output format",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
                 )
+                options.forEach { fmt ->
+                    FilterChip(
+                        selected = selectedFormat == fmt,
+                        onClick = { mergeOutputFormat = fmt },
+                        label = { Text(fmt.label) },
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
             }
-        }
-    }) else null
+        })
+    }
 
     mergePickerState?.let { pickerState ->
         if (selectedMergeFlatFiles == null && selectedMergeGroups == null) {
@@ -772,15 +766,15 @@ fun FilesScreen(
                 onDismiss = { viewModel.dismissMergePicker() },
                 onConfirmFlat = { files ->
                     val ct = activeMergeContentType ?: MergeContentType.IMAGES
-                    pendingDestination = PendingDestination.MergeFlat(ct, mergeImageFormat, files)
+                    pendingDestination = PendingDestination.MergeFlat(ct, mergeOutputFormat ?: ct.defaultOutputFormat(), files)
                     viewModel.dismissMergePicker()
                 },
                 onConfirmGrouped = { groups ->
                     val ct = activeMergeContentType ?: MergeContentType.IMAGES
-                    pendingDestination = PendingDestination.MergeGrouped(ct, mergeImageFormat, groups)
+                    pendingDestination = PendingDestination.MergeGrouped(ct, mergeOutputFormat ?: ct.defaultOutputFormat(), groups)
                     viewModel.dismissMergePicker()
                 },
-                extraControls = imageFormatPicker,
+                extraControls = outputFormatPicker,
             )
         }
     }
@@ -788,8 +782,9 @@ fun FilesScreen(
     if (selectedMergeFlatFiles != null) {
         val candidates = selectedMergeFlatFiles!!
         val contentType = activeMergeContentType ?: MergeContentType.IMAGES
-        val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
-        val effectiveOutputFileName = if (contentType == MergeContentType.IMAGES) mergeImageFormat.outputFileName else contentType.outputFileName
+        val format = mergeOutputFormat ?: contentType.defaultOutputFormat()
+        val effectiveItemType = format.itemType
+        val effectiveOutputFileName = format.outputFileName
         val (initialTitle, initialAuthor) = remember(candidates) {
             MetadataUtils.extractMetadata(candidates.first().file.displayName)
         }
@@ -811,8 +806,9 @@ fun FilesScreen(
     if (selectedMergeGroups != null) {
         val groups = selectedMergeGroups!!
         val contentType = activeMergeContentType ?: MergeContentType.IMAGES
-        val effectiveItemType = if (contentType == MergeContentType.IMAGES) mergeImageFormat.itemType else contentType.itemType
-        val effectiveOutputFileName = if (contentType == MergeContentType.IMAGES) mergeImageFormat.outputFileName else contentType.outputFileName
+        val format = mergeOutputFormat ?: contentType.defaultOutputFormat()
+        val effectiveItemType = format.itemType
+        val effectiveOutputFileName = format.outputFileName
         val (initialTitle, initialAuthor) = remember(groups) {
             MetadataUtils.extractMetadata(groups.first().label)
         }
@@ -1693,12 +1689,12 @@ private sealed class PendingDestination {
     ) : PendingDestination()
     data class MergeFlat(
         val contentType: MergeContentType,
-        val imageFormat: ImageOutputFormat,
+        val outputFormat: MergeOutputFormat,
         val files: List<MergeCandidateFile>,
     ) : PendingDestination()
     data class MergeGrouped(
         val contentType: MergeContentType,
-        val imageFormat: ImageOutputFormat,
+        val outputFormat: MergeOutputFormat,
         val groups: List<MergeCandidateGroup>,
     ) : PendingDestination()
 }

@@ -63,6 +63,39 @@ fun defaultImageOutputFormat(fileNames: Iterable<String>): ImageOutputFormat =
     if (fileNames.any { it.endsWith(".gif", ignoreCase = true) }) ImageOutputFormat.CBZ
     else ImageOutputFormat.PDF
 
+/**
+ * A concrete output choice (item type + file name + display label) for a merge-framework
+ * folder/archive trigger. Generalizes the per-content-type default in [MergeContentType] and
+ * the images-only [ImageOutputFormat] so every content type can offer/confirm a target format.
+ */
+data class MergeOutputFormat(val itemType: String, val outputFileName: String, val label: String)
+
+fun MergeContentType.outputFormatOptions(): List<MergeOutputFormat> = when (this) {
+    MergeContentType.IMAGES -> listOf(
+        MergeOutputFormat("IMAGE_CBZ_PACK", "Book.cbz", "CBZ"),
+        MergeOutputFormat("IMAGE_PDF_PACK", "Book.pdf", "PDF"),
+        MergeOutputFormat("IMAGE_EPUB_PACK", "Book.epub", "EPUB"),
+    )
+    MergeContentType.CBR -> listOf(
+        MergeOutputFormat("CBR_CBZ_PACK", "Book.cbz", "CBZ"),
+        MergeOutputFormat("CBR_PDF_PACK", "Book.pdf", "PDF"),
+    )
+    MergeContentType.PDFS -> listOf(MergeOutputFormat("PDF_PACK", "Book.pdf", "PDF"))
+    MergeContentType.AUDIO -> listOf(MergeOutputFormat("PACK", "Audiobook.m4b", "M4B"))
+    MergeContentType.EPUBS -> listOf(MergeOutputFormat("EPUB_PACK", "Book.epub", "EPUB"))
+    MergeContentType.MOBIS -> listOf(MergeOutputFormat("MOBI_PACK", "Book.mobi", "MOBI"))
+}
+
+// Images keep the existing GIF-presence heuristic (GIF survives better in CBZ than flattened
+// into a PDF); every other type (including CBR) defaults to its first/best option — CBZ for CBR.
+fun MergeContentType.defaultOutputFormat(fileNames: Iterable<String> = emptyList()): MergeOutputFormat {
+    val options = outputFormatOptions()
+    if (this == MergeContentType.IMAGES && fileNames.any { it.endsWith(".gif", ignoreCase = true) }) {
+        return options.first { it.itemType == "IMAGE_CBZ_PACK" }
+    }
+    return options.first()
+}
+
 sealed class MergePickerState {
     data class Loading(val folderName: String) : MergePickerState()
     data class Error(val folderName: String, val message: String) : MergePickerState()
