@@ -89,6 +89,7 @@ fun FileItem(
     onAddSubtitleToMovie: (PutioFile) -> Unit,
     onSendToPlexamp: (PutioFile) -> Unit,
     onMergeFolder: (PutioFile) -> Unit,
+    onMergeArchive: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
     onRequestPrioritySync: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
@@ -121,6 +122,7 @@ fun FileItem(
         file.displayName.endsWith(".sub", ignoreCase = true)
     val isImage = fileType == PutioFileType.IMAGE || MetadataUtils.isImage(file.displayName)
     val isComicArchive = MetadataUtils.isComicArchive(file.displayName)
+    val isGenericArchive = MetadataUtils.isArchive(file.displayName) && !isComicArchive
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -552,7 +554,19 @@ fun FileItem(
                                     },
                                 )
                             }
-                            if (isEbook || isImage || isMultiTrackAudio || isPdf || isComicArchive || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder) {
+                            val canBrowseArchive = isGenericArchive && (file.isLocal || file.isLan || file.isSynced)
+                            if (canBrowseArchive) {
+                                DropdownMenuItem(
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Fuse archive…") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onMergeArchive(file)
+                                    },
+                                )
+                            }
+                            if (isEbook || isImage || isMultiTrackAudio || isPdf || isComicArchive || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder || canBrowseArchive) {
                                 HorizontalDivider()
                             }
                         }

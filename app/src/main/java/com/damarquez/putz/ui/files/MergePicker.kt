@@ -134,11 +134,16 @@ data class FolderScanResult(
             .map { MergeCandidateFile(it.file, it.relativePath) }
             .sortedBy { it.relativePath }
 
-    /** Root-level files are excluded (no chapter to put them in); one level of chaptering by
-     * the first path segment, deeper nesting preserved within each chapter — same semantics as
-     * the "subfolders as chapters" process mode always had. */
-    fun groupedCandidates(type: MergeContentType): List<MergeCandidateGroup> =
-        files.filter { it.contentType == type && it.relativePath.contains('/') }
+    /** One level of chaptering by the first path segment, deeper nesting preserved within each
+     * chapter. Root-level files (no subfolder to belong to) become their own leading chapter,
+     * labeled [rootLabel], instead of being silently dropped. */
+    fun groupedCandidates(type: MergeContentType, rootLabel: String): List<MergeCandidateGroup> {
+        val matched = files.filter { it.contentType == type }
+        val rootGroup = matched.filter { !it.relativePath.contains('/') }
+            .map { MergeCandidateFile(it.file, it.relativePath) }
+            .sortedBy { it.relativePath }
+            .let { if (it.isEmpty()) null else MergeCandidateGroup(rootLabel, it) }
+        val subfolderGroups = matched.filter { it.relativePath.contains('/') }
             .groupBy { it.relativePath.substringBefore('/') }
             .toList().sortedBy { it.first }
             .map { (chapter, items) ->
@@ -147,6 +152,8 @@ data class FolderScanResult(
                     items.map { MergeCandidateFile(it.file, it.relativePath.substringAfter('/')) }.sortedBy { it.relativePath },
                 )
             }
+        return listOfNotNull(rootGroup) + subfolderGroups
+    }
 }
 
 /**

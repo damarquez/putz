@@ -110,6 +110,7 @@ import com.damarquez.putz.ui.theme.LocalAppStyling
 fun ArchiveScreen(
     onNavigateUp: () -> Unit,
     onNavigateToViewer: (kind: ViewerKind, title: String, filePath: String) -> Unit,
+    autoFuse: Boolean = false,
     viewModel: ArchiveViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -150,6 +151,17 @@ fun ArchiveScreen(
         if (pendingAssemblies.isEmpty()) {
             selectedArchiveMergeGroups = groups
             pendingArchiveMergeGroups = null
+        }
+    }
+
+    // Reached from the Files-list "Fuse archive…" action: pop the merge choice dialog for the
+    // root as soon as entries are loaded, instead of requiring a manual extra tap once inside.
+    var autoFuseTriggered by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState) {
+        val s = uiState as? ArchiveUiState.Success ?: return@LaunchedEffect
+        if (autoFuse && !autoFuseTriggered) {
+            autoFuseTriggered = true
+            viewModel.openArchiveMergeChoice(currentDirAsEntry(s.currentDir, viewModel.archiveName))
         }
     }
 
@@ -252,6 +264,13 @@ fun ArchiveScreen(
                             Text("Extract")
                         }
                     } else if (s != null) {
+                        // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                        TextButton(
+                            onClick = { viewModel.openArchiveMergeChoice(currentDirAsEntry(s.currentDir, viewModel.archiveName)) },
+                            modifier = Modifier.padding(end = 8.dp),
+                        ) {
+                            Text("Fuse")
+                        }
                         Button(
                             onClick = { showDestinationPicker = true },
                             modifier = Modifier.padding(end = 8.dp),
@@ -1112,6 +1131,17 @@ private fun ArchiveEntryItem(
         }
     }
 }
+
+/** Synthetic entry representing "the directory currently being viewed" (root when [currentDir]
+ * is empty), since [ArchiveViewModel.openArchiveMergeChoice] needs an [ArchiveEntry] to fuse. */
+private fun currentDirAsEntry(currentDir: String, archiveName: String): ArchiveEntry =
+    ArchiveEntry(
+        path = currentDir,
+        name = currentDir.substringAfterLast('/').ifEmpty { archiveName },
+        isDirectory = true,
+        size = 0,
+        compressedSize = 0,
+    )
 
 private fun formatSize(bytes: Long): String = when {
     bytes >= 1_073_741_824L -> "%.1f GB".format(bytes / 1_073_741_824.0)

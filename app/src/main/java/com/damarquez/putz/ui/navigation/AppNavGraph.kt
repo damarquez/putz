@@ -273,17 +273,18 @@ fun AppNavGraph(
                             Screen.Files.createRoute(folderId, folderName, highlightId = highlightId)
                         )
                     },
-                    onNavigateToArchive = { localUri, lanConnectionId, lanPath, archiveName ->
+                    onNavigateToArchive = { localUri, lanConnectionId, lanPath, archiveName, autoFuse ->
                         navController.navigate(
                             Screen.Archive.createRoute(
                                 archiveName,
                                 localUri = localUri,
                                 lanConnectionId = if (lanConnectionId != -1L) lanConnectionId else null,
                                 lanPath = lanPath,
+                                autoFuse = autoFuse,
                             )
                         )
                     },
-                    onNavigateToPutioArchive = { fileId, stubFileId, fileName, downloadUrl, fileSize, parentFolderId, isSynced ->
+                    onNavigateToPutioArchive = { fileId, stubFileId, fileName, downloadUrl, fileSize, parentFolderId, isSynced, autoFuse ->
                         navController.navigate(
                             Screen.Archive.createRoute(
                                 fileName,
@@ -293,6 +294,7 @@ fun AppNavGraph(
                                 putioFileSize = fileSize,
                                 putioParentFolderId = parentFolderId,
                                 putioIsSynced = isSynced,
+                                autoFuse = autoFuse,
                             )
                         )
                     },
@@ -380,13 +382,18 @@ fun AppNavGraph(
                         type = NavType.BoolType
                         defaultValue = false
                     },
+                    navArgument(Screen.Archive.ARG_AUTO_FUSE) {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
                 ),
-            ) {
+            ) { backStackEntry ->
                 ArchiveScreen(
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToViewer = { kind, title, filePath ->
                         navController.navigate(Screen.Viewer.createRoute(kind.name, title, filePath))
                     },
+                    autoFuse = backStackEntry.arguments?.getBoolean(Screen.Archive.ARG_AUTO_FUSE) ?: false,
                     viewModel = hiltViewModel(),
                 )
             }

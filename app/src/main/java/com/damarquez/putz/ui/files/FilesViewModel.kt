@@ -260,6 +260,7 @@ class FilesViewModel @Inject constructor(
         val fileSize: Long,
         val parentFolderId: Long,
         val isSynced: Boolean,
+        val autoFuse: Boolean = false,
     )
     private val _putioArchiveEvent = MutableSharedFlow<PutioArchiveEvent>()
     val putioArchiveEvent: SharedFlow<PutioArchiveEvent> = _putioArchiveEvent.asSharedFlow()
@@ -1472,9 +1473,9 @@ class FilesViewModel @Inject constructor(
                 else MergePickerState.ReadyFlat(ready.folderName, files)
             }
             MergeProcessMode.SUBFOLDERS_AS_CHAPTERS -> {
-                val groups = ready.scan.groupedCandidates(contentType)
+                val groups = ready.scan.groupedCandidates(contentType, ready.folderName)
                 _mergePickerState.value = if (groups.isEmpty())
-                    MergePickerState.Error(ready.folderName, "No subfolders with ${contentType.label.lowercase()} found in this folder")
+                    MergePickerState.Error(ready.folderName, "No ${contentType.label.lowercase()} found in this folder")
                 else MergePickerState.ReadyGrouped(ready.folderName, groups)
             }
         }
@@ -1514,12 +1515,12 @@ class FilesViewModel @Inject constructor(
         return FolderScanResult(result, subfolderCount)
     }
 
-    fun openPutioArchive(file: PutioFile) {
+    fun openPutioArchive(file: PutioFile, autoFuse: Boolean = false) {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val url = filesRepository.getDownloadUrl(token, file.id)
             // CONTRACT: stub convention — fileId is the original file ID; stubFileId is the actual put.io ID of the stub
-            _putioArchiveEvent.emit(PutioArchiveEvent(file.syncedFileId, file.id, file.displayName, url, file.size, file.parentId, file.isSynced))
+            _putioArchiveEvent.emit(PutioArchiveEvent(file.syncedFileId, file.id, file.displayName, url, file.size, file.parentId, file.isSynced, autoFuse))
         }
     }
 

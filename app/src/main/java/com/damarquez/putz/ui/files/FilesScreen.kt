@@ -113,8 +113,8 @@ import com.damarquez.putz.ui.viewer.ViewerKind
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?, String?) -> Unit,
     onNavigateToFolderHighlighted: (folderId: Long, folderName: String, highlightId: Long) -> Unit,
-    onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String) -> Unit,
-    onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean) -> Unit,
+    onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String, autoFuse: Boolean) -> Unit,
+    onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean, autoFuse: Boolean) -> Unit,
     onNavigateToViewer: (kind: ViewerKind, title: String, filePath: String) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
@@ -174,6 +174,16 @@ fun FilesScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var currentHighlightId by remember { mutableStateOf(viewModel.highlightFileId) }
+
+    // Shared by row-tap (autoFuse=false, just browse) and the "Fuse archive…" menu action
+    // (autoFuse=true, browse and immediately pop the merge choice dialog for the root).
+    fun openArchive(file: PutioFile, autoFuse: Boolean) {
+        if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.displayName)) {
+            onNavigateToArchive(file.localUri, file.lanConnectionId ?: -1L, file.lanPath, file.displayName, autoFuse)
+        } else if (!file.isLocal && !file.isLan && file.isSynced && MetadataUtils.isArchive(file.displayName)) {
+            viewModel.openPutioArchive(file, autoFuse)
+        }
+    }
 
     val searchFocusRequester = remember { FocusRequester() }
 
@@ -244,7 +254,7 @@ fun FilesScreen(
 
     LaunchedEffect(Unit) {
         viewModel.putioArchiveEvent.collect { event ->
-            onNavigateToPutioArchive(event.fileId, event.stubFileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId, event.isSynced)
+            onNavigateToPutioArchive(event.fileId, event.stubFileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId, event.isSynced, event.autoFuse)
         }
     }
 
@@ -1581,15 +1591,8 @@ fun FilesScreen(
                                                     file.lanPath,
                                                     if (isInHiddenScope) "hidden" else currentTab.name,
                                                 )
-                                            } else if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.displayName)) {
-                                                onNavigateToArchive(
-                                                    file.localUri,
-                                                    file.lanConnectionId ?: -1L,
-                                                    file.lanPath,
-                                                    file.displayName,
-                                                )
-                                            } else if (!file.isLocal && !file.isLan && file.isSynced && MetadataUtils.isArchive(file.displayName)) {
-                                                viewModel.openPutioArchive(file)
+                                            } else if (MetadataUtils.isArchive(file.displayName)) {
+                                                openArchive(file, autoFuse = false)
                                             } else if (!file.isLocal && !file.isLan && file.isSynced) {
                                                 fileForDetails = file
                                                 fileDetailsStubContent = null
@@ -1632,6 +1635,7 @@ fun FilesScreen(
                                             }
                                         },
                                         onMergeFolder = { folder -> viewModel.openMergeProcessChoice(folder) },
+                                        onMergeArchive = { archive -> openArchive(archive, autoFuse = true) },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },

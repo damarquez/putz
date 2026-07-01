@@ -860,9 +860,9 @@ class ArchiveViewModel @Inject constructor(
                 else MergePickerState.ReadyFlat(ready.folderName, files)
             }
             MergeProcessMode.SUBFOLDERS_AS_CHAPTERS -> {
-                val groups = ready.scan.groupedCandidates(contentType)
+                val groups = ready.scan.groupedCandidates(contentType, ready.folderName)
                 _archiveMergePickerState.value = if (groups.isEmpty())
-                    MergePickerState.Error(ready.folderName, "No subfolders with ${contentType.label.lowercase()} found in this folder")
+                    MergePickerState.Error(ready.folderName, "No ${contentType.label.lowercase()} found in this folder")
                 else MergePickerState.ReadyGrouped(ready.folderName, groups)
             }
         }
