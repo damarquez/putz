@@ -997,7 +997,22 @@ class CalibreRepository @Inject constructor(
             }
         }
 
-        val updatedItems = currentItems.map { if (it == matched) mergedItem else it }
+        // Inherit encryption flag from the matched item unless explicitly overridden — without
+        // this, overrideProtected was silently discarded on this merge path (only appendToAssembly
+        // applied it), so re-checking/unchecking "protect" while adding a batch to an existing
+        // pack item had no effect on the dispatched request.
+        val inheritedProtected = overrideProtected ?: matched.protected
+        val mergedItemWithProtected = mergedItem.copy(protected = inheritedProtected)
+
+        // If overriding, keep the whole assembly consistently protected/unprotected, mirroring
+        // appendToAssembly's behavior — not just the item being merged into.
+        val updatedItems = currentItems.map { existing ->
+            when {
+                existing == matched -> mergedItemWithProtected
+                overrideProtected != null -> existing.copy(protected = overrideProtected)
+                else -> existing
+            }
+        }
         val updatedIds = (transfer.parsedFileIds() + newFileIds).distinct()
 
         calibreTransferDao.updateTransfer(transfer.copy(
