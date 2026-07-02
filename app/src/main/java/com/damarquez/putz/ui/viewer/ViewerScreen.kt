@@ -54,6 +54,7 @@ fun ViewerScreen(
             ViewerKind.MOBI -> MobiViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.PDF -> PdfViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.TXT -> TxtViewer(filePath = filePath, modifier = Modifier.padding(padding))
+            ViewerKind.HTML -> HtmlViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.CBR -> CbrViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.RTF -> RtfViewer(filePath = filePath, modifier = Modifier.padding(padding))
             ViewerKind.DOCX -> DocxViewer(filePath = filePath, modifier = Modifier.padding(padding))

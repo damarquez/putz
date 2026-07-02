@@ -11,6 +11,7 @@ enum class ViewerKind {
     MOBI,
     PDF,
     TXT,
+    HTML,
     CBR,
     RTF,
     DOCX,
@@ -26,6 +27,7 @@ enum class ViewerKind {
             MetadataUtils.isMobi(fileName) || MetadataUtils.isAzw3(fileName) || MetadataUtils.isAzw(fileName) -> MOBI
             MetadataUtils.isPdf(fileName) -> PDF
             MetadataUtils.isTxt(fileName) -> TXT
+            MetadataUtils.isHtml(fileName) -> HTML
             MetadataUtils.isComicArchive(fileName) -> CBR
             MetadataUtils.isRtf(fileName) -> RTF
             MetadataUtils.isDocx(fileName) -> DOCX

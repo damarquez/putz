@@ -438,7 +438,8 @@ class ArchiveViewModel @Inject constructor(
             _isPreviewLoading.value = true
             try {
                 val tempFile = withContext(Dispatchers.IO) {
-                    archiveRepository.extractEntryToTempFile(resolvedSource, entry, context.cacheDir)
+                    val previewsDir = java.io.File(context.cacheDir, "previews").apply { mkdirs() }
+                    archiveRepository.extractEntryToTempFile(resolvedSource, entry, previewsDir)
                 }
                 val viewerKind = withContext(Dispatchers.IO) { ViewerKind.forFile(tempFile) }
                     ?: ViewerKind.forFileName(entry.name)
