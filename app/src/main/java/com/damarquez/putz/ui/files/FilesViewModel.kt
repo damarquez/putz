@@ -582,6 +582,10 @@ class FilesViewModel @Inject constructor(
         )
     }
 
+    // Exposed for the pack/merge selection sheets' live size-total display (FileSizeProgress.kt),
+    // which need the same real-size lookup but outside the Files-screen listing's own state.
+    suspend fun readStubFileSize(file: PutioFile): Long? = calibreRepository.readStubFileSize(file)
+
     private fun augmentWithLocal(apiFiles: List<PutioFile>): List<PutioFile> {
         val list = if (parentId == 0L) {
             val localRoot = PutioFile(
@@ -631,9 +635,9 @@ class FilesViewModel @Inject constructor(
         return when {
             nameSortOrder != SortOrder.NONE -> {
                 if (nameSortOrder == SortOrder.ASCENDING) {
-                    list.sortedBy { it.name.lowercase() }
+                    list.sortedBy { it.displayName.lowercase() }
                 } else {
-                    list.sortedByDescending { it.name.lowercase() }
+                    list.sortedByDescending { it.displayName.lowercase() }
                 }
             }
             dateSortOrder != SortOrder.NONE -> {
@@ -646,7 +650,7 @@ class FilesViewModel @Inject constructor(
             else -> {
                 // Default sort: Folders first, then name
                 list.sortedWith(
-                    compareByDescending<PutioFile> { it.isFolder }.thenBy { it.name.lowercase() }
+                    compareByDescending<PutioFile> { it.isFolder }.thenBy { it.displayName.lowercase() }
                 )
             }
         }
@@ -1723,7 +1727,7 @@ class FilesViewModel @Inject constructor(
                     val currentSuccess = _uiState.value as? FilesUiState.Success
                     if (currentSuccess != null) {
                         _uiState.value = currentSuccess.copy(
-                            searchResults = result.data.sortedBy { it.name.lowercase() },
+                            searchResults = result.data.sortedBy { it.displayName.lowercase() },
                             isSearching = false
                         )
                     }

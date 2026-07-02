@@ -40,12 +40,14 @@ fun ImagePackSheet(
     defaultFormat: ImageOutputFormat,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>, format: ImageOutputFormat) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
 ) {
     var format by remember(defaultFormat) { mutableStateOf(defaultFormat) }
     var caseSensitiveSort by remember(imageFiles) { mutableStateOf(false) }
     var orderedFiles by remember(imageFiles, caseSensitiveSort) {
         mutableStateOf(MetadataUtils.sortByName(imageFiles, caseSensitiveSort) { it.displayName })
     }
+    val sizeProgress = rememberSizeProgress(imageFiles, readStubFileSize)
     var checkedIds by remember(imageFiles) { mutableStateOf(imageFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
     var collapseNames by remember { mutableStateOf(true) }
@@ -140,7 +142,7 @@ fun ImagePackSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${selectedFiles.size} of ${imageFiles.size} images selected",
+                        text = "${selectedFiles.size} of ${imageFiles.size} images selected" + sizeProgressSuffix(sizeProgress, selectedFiles),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),

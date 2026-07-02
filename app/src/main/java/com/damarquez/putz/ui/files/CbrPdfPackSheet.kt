@@ -38,9 +38,11 @@ fun CbrPdfPackSheet(
     cbrFiles: List<PutioFile>,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
     outputLabel: String = "PDF",
 ) {
     var caseSensitiveSort by remember(cbrFiles) { mutableStateOf(false) }
+    val sizeProgress = rememberSizeProgress(cbrFiles, readStubFileSize)
     var orderedFiles by remember(cbrFiles, caseSensitiveSort) {
         mutableStateOf(MetadataUtils.sortByName(cbrFiles, caseSensitiveSort) { it.displayName })
     }
@@ -119,7 +121,7 @@ fun CbrPdfPackSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${selectedFiles.size} of ${cbrFiles.size} comics selected",
+                        text = "${selectedFiles.size} of ${cbrFiles.size} comics selected" + sizeProgressSuffix(sizeProgress, selectedFiles),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),

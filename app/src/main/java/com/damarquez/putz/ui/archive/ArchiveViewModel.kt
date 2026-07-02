@@ -803,7 +803,12 @@ class ArchiveViewModel @Inject constructor(
     // carries this entry's full in-archive path so sendArchiveMerge can recover it directly
     // instead of re-deriving prefixes from MergeCandidateGroup's labels.
     private fun ArchiveEntry.asMergeCandidatePutioFile(): PutioFile =
-        PutioFile(id = path.hashCode().toLong(), name = name, lanPath = path)
+        PutioFile(id = path.hashCode().toLong(), name = name, lanPath = path, size = size)
+
+    // Exposed for the merge selection sheet's live size-total display (FileSizeProgress.kt).
+    // Archive-sourced candidates are never isSynced, so this is only ever called for parity —
+    // it never actually fires a fetch on this screen.
+    suspend fun readStubFileSize(file: PutioFile): Long? = calibreRepository.readStubFileSize(file)
 
     private fun scanArchiveFlat(rootDir: String, allEntries: List<ArchiveEntry>, matches: (ArchiveEntry) -> Boolean): List<MergeCandidateFile> {
         val prefix = if (rootDir.isEmpty()) "" else "$rootDir/"

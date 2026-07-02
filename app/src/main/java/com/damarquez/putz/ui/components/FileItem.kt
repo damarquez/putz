@@ -577,16 +577,11 @@ fun FileItem(
                                 val nameToCopy = if (file.isFolder) {
                                     file.name
                                 } else {
-                                    val name = file.name
-                                    val skIdx = name.indexOf(".sk_synced")
-                                    if (skIdx >= 0) {
-                                        val beforeStub = name.substring(0, skIdx)
-                                        val dotIdx = beforeStub.lastIndexOf('.')
-                                        if (dotIdx >= 0) beforeStub.substring(0, dotIdx) else beforeStub
-                                    } else {
-                                        val dotIdx = name.lastIndexOf('.')
-                                        if (dotIdx >= 0) name.substring(0, dotIdx) else name
-                                    }
+                                    // displayName already strips both the size-prefix marker
+                                    // and the .sk_synced.<id> suffix for synced files.
+                                    val name = file.displayName
+                                    val dotIdx = name.lastIndexOf('.')
+                                    if (dotIdx >= 0) name.substring(0, dotIdx) else name
                                 }
                                 clipboard.setText(AnnotatedString(nameToCopy))
                             },

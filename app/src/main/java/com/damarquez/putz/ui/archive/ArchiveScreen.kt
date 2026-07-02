@@ -517,6 +517,7 @@ fun ArchiveScreen(
                     pendingArchiveMergeGroups = groups
                     viewModel.dismissArchiveMergePicker()
                 },
+                readStubFileSize = { viewModel.readStubFileSize(it) },
                 extraControls = archiveOutputFormatPicker,
             )
         }

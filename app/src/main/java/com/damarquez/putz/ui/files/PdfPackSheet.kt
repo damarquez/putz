@@ -38,6 +38,7 @@ fun PdfPackSheet(
     pdfFiles: List<PutioFile>,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
 ) {
     var caseSensitiveSort by remember(pdfFiles) { mutableStateOf(false) }
     var orderedFiles by remember(pdfFiles, caseSensitiveSort) {
@@ -46,6 +47,7 @@ fun PdfPackSheet(
     var checkedIds by remember(pdfFiles) { mutableStateOf(pdfFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
     var collapseNames by remember { mutableStateOf(true) }
+    val sizeProgress = rememberSizeProgress(pdfFiles, readStubFileSize)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -118,7 +120,7 @@ fun PdfPackSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${selectedFiles.size} of ${pdfFiles.size} files selected",
+                        text = "${selectedFiles.size} of ${pdfFiles.size} files selected" + sizeProgressSuffix(sizeProgress, selectedFiles),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),

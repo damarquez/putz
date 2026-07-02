@@ -38,11 +38,13 @@ fun EpubPackSheet(
     epubFiles: List<PutioFile>,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
 ) {
     var caseSensitiveSort by remember(epubFiles) { mutableStateOf(false) }
     var orderedFiles by remember(epubFiles, caseSensitiveSort) {
         mutableStateOf(MetadataUtils.sortByName(epubFiles, caseSensitiveSort) { it.displayName })
     }
+    val sizeProgress = rememberSizeProgress(epubFiles, readStubFileSize)
     var checkedIds by remember(epubFiles) { mutableStateOf(epubFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
     var collapseNames by remember { mutableStateOf(true) }
@@ -118,7 +120,7 @@ fun EpubPackSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${selectedFiles.size} of ${epubFiles.size} files selected",
+                        text = "${selectedFiles.size} of ${epubFiles.size} files selected" + sizeProgressSuffix(sizeProgress, selectedFiles),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),

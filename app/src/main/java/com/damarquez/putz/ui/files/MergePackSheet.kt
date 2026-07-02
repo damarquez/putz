@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.damarquez.putz.data.model.PutioFile
 
 /** Shown while a folder/archive-dir merge trigger's full-tree tally scan is in flight
  * (put.io-backed folders only — see [MergeChoiceState.Scanning]). */
@@ -153,6 +154,7 @@ fun MergePackSheet(
     onDismiss: () -> Unit,
     onConfirmFlat: (List<MergeCandidateFile>) -> Unit,
     onConfirmGrouped: (List<MergeCandidateGroup>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
     extraControls: (@Composable () -> Unit)? = null,
 ) {
     Dialog(
@@ -173,8 +175,8 @@ fun MergePackSheet(
                 is MergePickerState.Error -> MergeStatusContent(state.message) {
                     TextButton(onClick = onDismiss) { Text("Close") }
                 }
-                is MergePickerState.ReadyFlat -> MergeFlatContent(state.files, onDismiss, onConfirmFlat, extraControls)
-                is MergePickerState.ReadyGrouped -> MergeGroupedContent(state.groups, onDismiss, onConfirmGrouped, extraControls)
+                is MergePickerState.ReadyFlat -> MergeFlatContent(state.files, onDismiss, onConfirmFlat, readStubFileSize, extraControls)
+                is MergePickerState.ReadyGrouped -> MergeGroupedContent(state.groups, onDismiss, onConfirmGrouped, readStubFileSize, extraControls)
             }
         }
     }
@@ -197,12 +199,14 @@ private fun MergeFlatContent(
     files: List<MergeCandidateFile>,
     onDismiss: () -> Unit,
     onConfirm: (List<MergeCandidateFile>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
     extraControls: (@Composable () -> Unit)? = null,
 ) {
     var orderedFiles by remember(files) { mutableStateOf(files) }
     var checkedPaths by remember(files) { mutableStateOf(files.map { it.relativePath }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.relativePath in checkedPaths }
     var collapseNames by remember { mutableStateOf(true) }
+    val sizeProgress = rememberSizeProgress(files.map { it.file }, readStubFileSize)
 
     Column(
         modifier = Modifier
@@ -221,7 +225,7 @@ private fun MergeFlatContent(
 
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "${selectedFiles.size} of ${files.size} files selected",
+                text = "${selectedFiles.size} of ${files.size} files selected" + sizeProgressSuffix(sizeProgress, selectedFiles.map { it.file }),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),
@@ -319,9 +323,12 @@ private fun MergeGroupedContent(
     groups: List<MergeCandidateGroup>,
     onDismiss: () -> Unit,
     onConfirm: (List<MergeCandidateGroup>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
     extraControls: (@Composable () -> Unit)? = null,
 ) {
     var orderedGroups by remember(groups) { mutableStateOf(groups) }
+    val allFiles = remember(groups) { groups.flatMap { it.files } }
+    val sizeProgress = rememberSizeProgress(allFiles.map { it.file }, readStubFileSize)
 
     Column(
         modifier = Modifier
@@ -335,6 +342,11 @@ private fun MergeGroupedContent(
             text = "Each subfolder becomes one chapter, in the listed order — use ▲▼ to reorder.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "${allFiles.size} files" + sizeProgressSuffix(sizeProgress, allFiles.map { it.file }),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
         )
 
         extraControls?.invoke()

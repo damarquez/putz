@@ -1793,10 +1793,14 @@ class CalibreRepository @Inject constructor(
         return fetchStubContent(file.id)?.local_path
     }
 
-    // CONTRACT: stub convention — read file_size from stub JSON (the original file's real size,
-    // not the tiny stub's put.io-reported size); returns null if not synced, unavailable, or on error
+    // CONTRACT: stub convention — read the original file's real size, not the tiny stub's
+    // put.io-reported size; returns null if not synced, unavailable, or on error.
+    // Checks the stub filename's embedded "<size>~~" prefix first — free, no network call —
+    // and only falls back to downloading/parsing the stub's JSON body for stubs that predate
+    // that feature (or haven't been backfilled by the daemon's size-migration walk yet).
     suspend fun readStubFileSize(file: com.damarquez.putz.data.model.PutioFile): Long? {
         if (!file.isSynced) return null
+        file.sizeFromStubName?.let { return it }
         return fetchStubContent(file.id)?.file_size
     }
 

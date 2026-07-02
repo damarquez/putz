@@ -38,11 +38,13 @@ fun AudiobookPackSheet(
     audioFiles: List<PutioFile>,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
 ) {
     var caseSensitiveSort by remember(audioFiles) { mutableStateOf(false) }
     var orderedFiles by remember(audioFiles, caseSensitiveSort) {
         mutableStateOf(MetadataUtils.sortByName(audioFiles, caseSensitiveSort) { it.displayName })
     }
+    val sizeProgress = rememberSizeProgress(audioFiles, readStubFileSize)
     var checkedIds by remember(audioFiles) { mutableStateOf(audioFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
     var collapseNames by remember { mutableStateOf(true) }
@@ -118,7 +120,7 @@ fun AudiobookPackSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${selectedFiles.size} of ${audioFiles.size} files selected",
+                        text = "${selectedFiles.size} of ${audioFiles.size} files selected" + sizeProgressSuffix(sizeProgress, selectedFiles),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),

@@ -38,11 +38,13 @@ fun MobiPackSheet(
     mobiFiles: List<PutioFile>,
     onDismiss: () -> Unit,
     onConfirm: (selectedFiles: List<PutioFile>) -> Unit,
+    readStubFileSize: suspend (PutioFile) -> Long?,
 ) {
     var caseSensitiveSort by remember(mobiFiles) { mutableStateOf(false) }
     var orderedFiles by remember(mobiFiles, caseSensitiveSort) {
         mutableStateOf(MetadataUtils.sortByName(mobiFiles, caseSensitiveSort) { it.displayName })
     }
+    val sizeProgress = rememberSizeProgress(mobiFiles, readStubFileSize)
     var checkedIds by remember(mobiFiles) { mutableStateOf(mobiFiles.map { it.id }.toSet()) }
     val selectedFiles = orderedFiles.filter { it.id in checkedIds }
     var collapseNames by remember { mutableStateOf(true) }
@@ -118,7 +120,7 @@ fun MobiPackSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${selectedFiles.size} of ${mobiFiles.size} files selected",
+                        text = "${selectedFiles.size} of ${mobiFiles.size} files selected" + sizeProgressSuffix(sizeProgress, selectedFiles),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),

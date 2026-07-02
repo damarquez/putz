@@ -540,6 +540,7 @@ fun FilesScreen(
                 pendingDestination = PendingDestination.Pack("PACK", files, "Audiobook.m4b", "${files.size} audio files")
                 audiobookPackTriggerFile = null
             },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
         )
     }
 
@@ -557,6 +558,7 @@ fun FilesScreen(
                 pendingDestination = PendingDestination.Pack("PDF_PACK", files, "Book.pdf", "${files.size} PDF files")
                 pdfPackTriggerFile = null
             },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
         )
     }
 
@@ -614,6 +616,7 @@ fun FilesScreen(
                 pendingDestination = PendingDestination.Pack("EPUB_PACK", files, "Book.epub", "${files.size} EPUB files")
                 epubPackTriggerFile = null
             },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
         )
     }
 
@@ -650,6 +653,7 @@ fun FilesScreen(
                 pendingDestination = PendingDestination.Pack("MOBI_PACK", files, "Book.mobi", "${files.size} MOBI files")
                 mobiPackTriggerFile = null
             },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
         )
     }
 
@@ -689,6 +693,7 @@ fun FilesScreen(
                 pendingDestination = PendingDestination.Pack(format.itemType, files, format.outputFileName, "${files.size} images", format)
                 imagePackTriggerFile = null
             },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
         )
     }
 
@@ -790,6 +795,7 @@ fun FilesScreen(
                     pendingDestination = PendingDestination.MergeGrouped(ct, mergeOutputFormat ?: ct.defaultOutputFormat(), groups)
                     viewModel.dismissMergePicker()
                 },
+                readStubFileSize = { viewModel.readStubFileSize(it) },
                 extraControls = outputFormatPicker,
             )
         }
@@ -857,6 +863,7 @@ fun FilesScreen(
                 pendingDestination = PendingDestination.Pack("CBR_PDF_PACK", files, "Book.pdf", "${files.size} CBR files")
                 cbrPdfPackTriggerFile = null
             },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
         )
     }
 
@@ -894,6 +901,7 @@ fun FilesScreen(
                 pendingDestination = PendingDestination.Pack("CBR_CBZ_PACK", files, "Book.cbz", "${files.size} CBR files")
                 cbrCbzPackTriggerFile = null
             },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
         )
     }
 

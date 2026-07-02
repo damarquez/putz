@@ -39,8 +39,20 @@ data class PutioFile(
     // CONTRACT: stub convention, Putz file state
     val isSynced: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder && ".sk_synced" in name
 
-    // CONTRACT: stub convention — always use displayName (not name) with MetadataUtils
-    val displayName: String get() = if (isSynced) name.substringBefore(".sk_synced") else name
+    // CONTRACT: stub convention — always use displayName (not name) with MetadataUtils.
+    // Strips a leading "<size>~~" size-prefix marker (if present), then everything from
+    // ".sk_synced" onward.
+    val displayName: String get() {
+        if (!isSynced) return name
+        return Regex("^\\d+~~").replaceFirst(name, "").substringBefore(".sk_synced")
+    }
+
+    // CONTRACT: stub convention — the real file size embedded as a "<size>~~" prefix in the
+    // stub filename, when present (stubs created/backfilled after this feature shipped).
+    // Null for stubs that don't have it yet — callers should fall back to a network fetch
+    // (CalibreRepository.readStubFileSize) in that case.
+    val sizeFromStubName: Long? get() = if (isSynced)
+        Regex("^(\\d+)~~").find(name)?.groupValues?.get(1)?.toLongOrNull() else null
 
     // CONTRACT: stub convention — original file ID encoded in new-format stubs (book.epub.sk_synced.12345)
     // Also used to distinguish new-format (true) from old-format (false) stubs
