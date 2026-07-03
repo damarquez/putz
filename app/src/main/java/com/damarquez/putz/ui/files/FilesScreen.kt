@@ -143,6 +143,13 @@ fun FilesScreen(
     val sizeSort by viewModel.sizeSort.collectAsState()
     val itemCount = (uiState as? FilesUiState.Success)?.files?.size
 
+    // Candidate pool for the fuse/pack pickers (PDF/EPUB/CBR/etc.): the current folder's listing
+    // normally, but the search results themselves while searching, so search acts as a "virtual
+    // folder" spanning whatever folders the matched files actually live in.
+    val packCandidateFiles = (uiState as? FilesUiState.Success)?.let { success ->
+        if (isSearchMode) success.searchResults ?: emptyList() else success.files
+    } ?: emptyList()
+
     val context = LocalContext.current
     val pickFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -530,10 +537,8 @@ fun FilesScreen(
 
     if (audiobookPackTriggerFile != null && selectedPackFiles == null && pendingDestination == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
-        val audioFiles = remember(audiobookPackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isMultiTrackAudio(it.displayName) }
-                ?: emptyList()
+        val audioFiles = remember(audiobookPackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isMultiTrackAudio(it.displayName) }
         }
         AudiobookPackSheet(
             audioFiles = audioFiles,
@@ -548,10 +553,8 @@ fun FilesScreen(
 
     if (pdfPackTriggerFile != null && selectedPdfFiles == null && pendingDestination == null) {
         // CONTRACT: stub convention — must use displayName, not name; stubs end in .sk_synced
-        val pdfFiles = remember(pdfPackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isPdf(it.displayName) }
-                ?: emptyList()
+        val pdfFiles = remember(pdfPackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isPdf(it.displayName) }
         }
         PdfPackSheet(
             pdfFiles = pdfFiles,
@@ -606,10 +609,8 @@ fun FilesScreen(
     }
 
     if (epubPackTriggerFile != null && selectedEpubFiles == null && pendingDestination == null) {
-        val epubFiles = remember(epubPackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isEpub(it.displayName) }
-                ?: emptyList()
+        val epubFiles = remember(epubPackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isEpub(it.displayName) }
         }
         EpubPackSheet(
             epubFiles = epubFiles,
@@ -643,10 +644,8 @@ fun FilesScreen(
     }
 
     if (mobiPackTriggerFile != null && selectedMobiFiles == null && pendingDestination == null) {
-        val mobiFiles = remember(mobiPackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isMobi(it.displayName) }
-                ?: emptyList()
+        val mobiFiles = remember(mobiPackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isMobi(it.displayName) }
         }
         MobiPackSheet(
             mobiFiles = mobiFiles,
@@ -680,11 +679,10 @@ fun FilesScreen(
     }
 
     if (imagePackTriggerFile != null && selectedImageFiles == null && pendingDestination == null) {
-        // CONTRACT: stub convention — must use displayName; filter to image siblings in current folder
-        val imageFiles = remember(imagePackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isImage(it.displayName) }
-                ?: emptyList()
+        // CONTRACT: stub convention — must use displayName; filter to image siblings in current
+        // folder, or across the search results when triggered from search (see packCandidateFiles)
+        val imageFiles = remember(imagePackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isImage(it.displayName) }
         }
         val defaultFormat = remember(imageFiles) { defaultImageOutputFormat(imageFiles.map { it.displayName }) }
         ImagePackSheet(
@@ -852,11 +850,10 @@ fun FilesScreen(
     }
 
     if (cbrPdfPackTriggerFile != null && selectedCbrFiles == null && pendingDestination == null) {
-        // CONTRACT: stub convention — must use displayName; filter to CBR siblings in current folder
-        val cbrFiles = remember(cbrPdfPackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isComicArchive(it.displayName) }
-                ?: emptyList()
+        // CONTRACT: stub convention — must use displayName; filter to CBR siblings in current
+        // folder, or across the search results when triggered from search (see packCandidateFiles)
+        val cbrFiles = remember(cbrPdfPackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isComicArchive(it.displayName) }
         }
         CbrPdfPackSheet(
             cbrFiles = cbrFiles,
@@ -890,10 +887,8 @@ fun FilesScreen(
     }
 
     if (cbrCbzPackTriggerFile != null && selectedCbrCbzFiles == null && pendingDestination == null) {
-        val cbrFiles = remember(cbrCbzPackTriggerFile) {
-            (uiState as? FilesUiState.Success)?.files
-                ?.filter { MetadataUtils.isComicArchive(it.displayName) }
-                ?: emptyList()
+        val cbrFiles = remember(cbrCbzPackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isComicArchive(it.displayName) }
         }
         CbrPdfPackSheet(
             cbrFiles = cbrFiles,
