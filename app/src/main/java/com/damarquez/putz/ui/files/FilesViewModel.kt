@@ -116,8 +116,12 @@ class FilesViewModel @Inject constructor(
     private val _dateSort = MutableStateFlow(SortOrder.NONE)
     val dateSort: StateFlow<SortOrder> = _dateSort.asStateFlow()
 
+    private val _sizeSort = MutableStateFlow(SortOrder.NONE)
+    val sizeSort: StateFlow<SortOrder> = _sizeSort.asStateFlow()
+
     fun toggleNameSort() {
         _dateSort.value = SortOrder.NONE
+        _sizeSort.value = SortOrder.NONE
         _nameSort.value = when (_nameSort.value) {
             SortOrder.NONE -> SortOrder.ASCENDING
             SortOrder.ASCENDING -> SortOrder.DESCENDING
@@ -128,8 +132,20 @@ class FilesViewModel @Inject constructor(
 
     fun toggleDateSort() {
         _nameSort.value = SortOrder.NONE
+        _sizeSort.value = SortOrder.NONE
         _dateSort.value = when (_dateSort.value) {
             SortOrder.NONE -> SortOrder.DESCENDING // Default to recent
+            SortOrder.DESCENDING -> SortOrder.ASCENDING
+            SortOrder.ASCENDING -> SortOrder.NONE
+        }
+        refreshList()
+    }
+
+    fun toggleSizeSort() {
+        _nameSort.value = SortOrder.NONE
+        _dateSort.value = SortOrder.NONE
+        _sizeSort.value = when (_sizeSort.value) {
+            SortOrder.NONE -> SortOrder.DESCENDING // Default to largest first
             SortOrder.DESCENDING -> SortOrder.ASCENDING
             SortOrder.ASCENDING -> SortOrder.NONE
         }
@@ -576,6 +592,7 @@ class FilesViewModel @Inject constructor(
     }
 
     private fun applySyncedFileSize(fileId: Long, size: Long) {
+        rawApiFiles = rawApiFiles.map { if (it.id == fileId) it.copy(size = size) else it }
         val current = _uiState.value as? FilesUiState.Success ?: return
         _uiState.value = current.copy(
             files = current.files.map { if (it.id == fileId) it.copy(size = size) else it }
@@ -631,6 +648,7 @@ class FilesViewModel @Inject constructor(
 
         val nameSortOrder = _nameSort.value
         val dateSortOrder = _dateSort.value
+        val sizeSortOrder = _sizeSort.value
 
         return when {
             nameSortOrder != SortOrder.NONE -> {
@@ -645,6 +663,13 @@ class FilesViewModel @Inject constructor(
                     list.sortedBy { it.createdAt ?: "" }
                 } else {
                     list.sortedByDescending { it.createdAt ?: "" }
+                }
+            }
+            sizeSortOrder != SortOrder.NONE -> {
+                if (sizeSortOrder == SortOrder.ASCENDING) {
+                    list.sortedBy { it.effectiveSize }
+                } else {
+                    list.sortedByDescending { it.effectiveSize }
                 }
             }
             else -> {

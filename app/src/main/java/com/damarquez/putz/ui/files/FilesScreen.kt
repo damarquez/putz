@@ -103,6 +103,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material3.NavigationRailItemDefaults
@@ -139,6 +140,7 @@ fun FilesScreen(
     val currentTab by viewModel.currentTab.collectAsState()
     val nameSort by viewModel.nameSort.collectAsState()
     val dateSort by viewModel.dateSort.collectAsState()
+    val sizeSort by viewModel.sizeSort.collectAsState()
     val itemCount = (uiState as? FilesUiState.Success)?.files?.size
 
     val context = LocalContext.current
@@ -1486,6 +1488,27 @@ fun FilesScreen(
                                         if (dateSort != SortOrder.NONE) {
                                             Icon(
                                                 imageVector = if (dateSort == SortOrder.ASCENDING) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                // Size Sort
+                                IconButton(onClick = { viewModel.toggleSizeSort() }) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.DataUsage,
+                                            contentDescription = "Sort by size",
+                                            tint = if (sizeSort != SortOrder.NONE) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (sizeSort != SortOrder.NONE) {
+                                            Icon(
+                                                imageVector = if (sizeSort == SortOrder.ASCENDING) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(16.dp),
                                                 tint = MaterialTheme.colorScheme.primary

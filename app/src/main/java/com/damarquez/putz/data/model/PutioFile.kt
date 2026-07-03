@@ -54,6 +54,10 @@ data class PutioFile(
     val sizeFromStubName: Long? get() = if (isSynced)
         Regex("^(\\d+)~~").find(name)?.groupValues?.get(1)?.toLongOrNull() else null
 
+    // CONTRACT: stub convention — size to sort/display by without a network round-trip.
+    // Prefers the embedded stub size prefix, falls back to the regular API-reported size.
+    val effectiveSize: Long get() = sizeFromStubName ?: size
+
     // CONTRACT: stub convention — original file ID encoded in new-format stubs (book.epub.sk_synced.12345)
     // Also used to distinguish new-format (true) from old-format (false) stubs
     val isNewFormatStub: Boolean get() = isSynced &&
