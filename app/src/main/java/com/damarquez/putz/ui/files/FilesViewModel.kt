@@ -155,7 +155,10 @@ class FilesViewModel @Inject constructor(
     private fun refreshList() {
         val current = _uiState.value
         if (current is FilesUiState.Success) {
-            _uiState.value = current.copy(files = augmentWithLocal(rawApiFiles))
+            _uiState.value = current.copy(
+                files = augmentWithLocal(rawApiFiles),
+                searchResults = current.searchResults?.let { sortFiles(it) },
+            )
         }
     }
 
@@ -595,7 +598,8 @@ class FilesViewModel @Inject constructor(
         rawApiFiles = rawApiFiles.map { if (it.id == fileId) it.copy(size = size) else it }
         val current = _uiState.value as? FilesUiState.Success ?: return
         _uiState.value = current.copy(
-            files = current.files.map { if (it.id == fileId) it.copy(size = size) else it }
+            files = current.files.map { if (it.id == fileId) it.copy(size = size) else it },
+            searchResults = current.searchResults?.map { if (it.id == fileId) it.copy(size = size) else it },
         )
     }
 
@@ -646,6 +650,12 @@ class FilesViewModel @Inject constructor(
             }
         } else apiFiles
 
+        return sortFiles(list)
+    }
+
+    // Shared by the browse list (augmentWithLocal) and search results, so both respect the
+    // same name/date/size sort toggles instead of search results always being unsorted.
+    private fun sortFiles(list: List<PutioFile>): List<PutioFile> {
         val nameSortOrder = _nameSort.value
         val dateSortOrder = _dateSort.value
         val sizeSortOrder = _sizeSort.value
@@ -1707,7 +1717,7 @@ class FilesViewModel @Inject constructor(
                 val current = _uiState.value
                 if (current is FilesUiState.Success) {
                     val immediateResults = current.files.filter { it.name.contains(query, ignoreCase = true) }
-                    _uiState.value = current.copy(isSearching = false, searchResults = immediateResults)
+                    _uiState.value = current.copy(isSearching = false, searchResults = sortFiles(immediateResults))
                 }
                 return@launch
             }
@@ -1719,8 +1729,8 @@ class FilesViewModel @Inject constructor(
                     // Instant shallow filter of already loaded files
                     val immediateResults = current.files.filter { it.name.contains(query, ignoreCase = true) }
                     _uiState.value = current.copy(
-                        isSearching = true, 
-                        searchResults = immediateResults
+                        isSearching = true,
+                        searchResults = sortFiles(immediateResults)
                     )
                 }
 
@@ -1729,10 +1739,10 @@ class FilesViewModel @Inject constructor(
                     if (cur is FilesUiState.Success) {
                         // Merge immediate results with background scan results (Set removes duplicates)
                         val merged = (cur.searchResults.orEmpty() + results).distinctBy { it.localUri ?: it.id }
-                        _uiState.value = cur.copy(searchResults = merged, isSearching = true)
+                        _uiState.value = cur.copy(searchResults = sortFiles(merged), isSearching = true)
                     }
                 }
-                
+
                 val curFinal = _uiState.value
                 if (curFinal is FilesUiState.Success) {
                     _uiState.value = curFinal.copy(isSearching = false)
@@ -1752,9 +1762,10 @@ class FilesViewModel @Inject constructor(
                     val currentSuccess = _uiState.value as? FilesUiState.Success
                     if (currentSuccess != null) {
                         _uiState.value = currentSuccess.copy(
-                            searchResults = result.data.sortedBy { it.displayName.lowercase() },
+                            searchResults = sortFiles(result.data),
                             isSearching = false
                         )
+                        enrichSyncedFileSizes(result.data)
                     }
                 }
                 is NetworkResult.Error -> {

@@ -273,7 +273,7 @@ fun FileItem(
                     Text(
                         text = buildString {
                             if (file.isSynced) {
-                                if (file.size > 0) append(formatFileSize(file.size))
+                                if (file.effectiveSize > 0) append(formatFileSize(file.effectiveSize))
                                 val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                                 val formatted = file.createdAt?.let { raw ->
                                     runCatching {

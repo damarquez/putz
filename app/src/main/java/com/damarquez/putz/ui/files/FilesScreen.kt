@@ -1447,14 +1447,13 @@ fun FilesScreen(
                             }
                         }
 
-                        // Sort Toggles
-                        if (!isSearchMode) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.End,
+                        // Sort Toggles (shown in search mode too, so results can be sorted)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End,
                             ) {
                                 // Name Sort
                                 IconButton(onClick = { viewModel.toggleNameSort() }) {
@@ -1517,71 +1516,72 @@ fun FilesScreen(
                                     }
                                 }
 
-                                VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+                                if (!isSearchMode) {
+                                    VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
 
-                                IconButton(onClick = { viewModel.toggleSearch() }) {
-                                    Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Box {
-                                    IconButton(onClick = { showMenu = true }) {
-                                        BadgedBox(
-                                            badge = {
-                                                if (libraryHasUpdates) {
-                                                    Badge()
-                                                }
-                                            }
-                                        ) {
-                                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
+                                    IconButton(onClick = { viewModel.toggleSearch() }) {
+                                        Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                    DropdownMenu(
-                                        expanded = showMenu,
-                                        onDismissRequest = { showMenu = false },
-                                    ) {
-                                        accountInfo?.let { info ->
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text(
-                                                            text = info.username,
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                        )
-                                                        Text(
-                                                            text = info.mail ?: "",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        )
-                                                        StorageBar(
-                                                            usedPercent = info.diskUsedPercent,
-                                                            modifier = Modifier.padding(top = 6.dp),
-                                                        )
+                                    IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Box {
+                                        IconButton(onClick = { showMenu = true }) {
+                                            BadgedBox(
+                                                badge = {
+                                                    if (libraryHasUpdates) {
+                                                        Badge()
                                                     }
-                                                },
-                                                onClick = {},
-                                            )
-                                            HorizontalDivider()
+                                                }
+                                            ) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
                                         }
-                                        DropdownMenuItem(
-                                            text = { Text("Settings") },
-                                            onClick = {
-                                                showMenu = false
-                                                onNavigateToSettings()
-                                            },
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
-                                            onClick = {
-                                                showMenu = false
-                                                showSignOutConfirm = true
-                                            },
-                                        )
+                                        DropdownMenu(
+                                            expanded = showMenu,
+                                            onDismissRequest = { showMenu = false },
+                                        ) {
+                                            accountInfo?.let { info ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Column {
+                                                            Text(
+                                                                text = info.username,
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                            )
+                                                            Text(
+                                                                text = info.mail ?: "",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            )
+                                                            StorageBar(
+                                                                usedPercent = info.diskUsedPercent,
+                                                                modifier = Modifier.padding(top = 6.dp),
+                                                            )
+                                                        }
+                                                    },
+                                                    onClick = {},
+                                                )
+                                                HorizontalDivider()
+                                            }
+                                            DropdownMenuItem(
+                                                text = { Text("Settings") },
+                                                onClick = {
+                                                    showMenu = false
+                                                    onNavigateToSettings()
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
+                                                onClick = {
+                                                    showMenu = false
+                                                    showSignOutConfirm = true
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
 
                         if (files.isEmpty()) {
                             if (isSearchMode && searchQuery.isNotEmpty() && !state.isSearching) {
