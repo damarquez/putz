@@ -570,7 +570,7 @@ fun FilesScreen(
     if (selectedPackFiles != null) {
         val packFiles = selectedPackFiles!!
         val (initialTitle, initialAuthor) = remember(packFiles) {
-            MetadataUtils.extractMetadata(packFiles.first().name)
+            MetadataUtils.extractMetadata(packFiles.first().displayName)
         }
         CalibreConfirmationSheet(
             displayName = "${packFiles.size} audio files",
@@ -591,7 +591,7 @@ fun FilesScreen(
     if (selectedPdfFiles != null) {
         val pdfFiles = selectedPdfFiles!!
         val (initialTitle, initialAuthor) = remember(pdfFiles) {
-            MetadataUtils.extractMetadata(pdfFiles.first().name)
+            MetadataUtils.extractMetadata(pdfFiles.first().displayName)
         }
         CalibreConfirmationSheet(
             displayName = "${pdfFiles.size} PDF files",
@@ -626,7 +626,7 @@ fun FilesScreen(
     if (selectedEpubFiles != null) {
         val epubFiles = selectedEpubFiles!!
         val (initialTitle, initialAuthor) = remember(epubFiles) {
-            MetadataUtils.extractMetadata(epubFiles.first().name)
+            MetadataUtils.extractMetadata(epubFiles.first().displayName)
         }
         CalibreConfirmationSheet(
             displayName = "${epubFiles.size} EPUB files",
@@ -661,7 +661,7 @@ fun FilesScreen(
     if (selectedMobiFiles != null) {
         val mobiFiles = selectedMobiFiles!!
         val (initialTitle, initialAuthor) = remember(mobiFiles) {
-            MetadataUtils.extractMetadata(mobiFiles.first().name)
+            MetadataUtils.extractMetadata(mobiFiles.first().displayName)
         }
         CalibreConfirmationSheet(
             displayName = "${mobiFiles.size} MOBI files",
