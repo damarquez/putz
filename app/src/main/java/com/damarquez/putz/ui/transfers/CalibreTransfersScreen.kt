@@ -1,7 +1,5 @@
 package com.damarquez.putz.ui.transfers
 
-import android.content.ClipboardManager
-import android.content.Context
 import android.net.Uri
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -9,7 +7,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
@@ -55,7 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -78,7 +73,6 @@ import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.data.repository.PendingUnprotectBook
 import com.damarquez.putz.data.repository.PendingUnprotectBookRepository
-import com.damarquez.putz.util.MetadataUtils
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.ui.files.CalibreConfirmationSheet
@@ -524,39 +518,6 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                     }
 
                     IconButton(
-                        onClick = {
-                            val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val primaryClip = clipboardManager.primaryClip
-                            if (primaryClip != null && primaryClip.itemCount > 0) {
-                                val item = primaryClip.getItemAt(0)
-                                val uri = item.uri
-                                val text = item.text?.toString()
-                                val htmlText = item.htmlText
-
-                                if (uri != null) {
-                                    val type = context.contentResolver.getType(uri)
-                                    if (type?.startsWith("image/") == true) {
-                                        cacheClipboardImage(uri, null)
-                                    } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
-                                        clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
-                                    } else {
-                                        scope.launch { snackbarHostState.showSnackbar("Clipboard contains a URI but it's not an image or text") }
-                                    }
-                                } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
-                                    clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
-                                } else {
-                                    scope.launch { snackbarHostState.showSnackbar("Clipboard content not supported (need image or text)") }
-                                }
-                            } else {
-                                scope.launch { snackbarHostState.showSnackbar("Clipboard is empty") }
-                            }
-                        },
-                        enabled = isGoogleSignedIn
-                    ) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
-                    }
-
-                    IconButton(
                         onClick = { viewModel.requestSync() },
                         enabled = !isSyncing && isGoogleSignedIn
                     ) {
@@ -582,30 +543,6 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onLongPress = {
-                            val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val primaryClip = clipboardManager.primaryClip
-                            if (primaryClip != null && primaryClip.itemCount > 0) {
-                                val item = primaryClip.getItemAt(0)
-                                val uri = item.uri
-                                val text = item.text?.toString()
-                                val htmlText = item.htmlText
-                                if (uri != null) {
-                                    val type = context.contentResolver.getType(uri)
-                                    if (type?.startsWith("image/") == true) {
-                                        cacheClipboardImage(uri, null)
-                                    } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
-                                        clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
-                                    }
-                                } else if (!text.isNullOrBlank() || !htmlText.isNullOrBlank()) {
-                                    clipboardComments = MetadataUtils.sanitizeHtml(text ?: "", htmlText)
-                                }
-                            }
-                        }
-                    )
-                }
         ) {
             if (transfers.isEmpty()) {
                 Box(
@@ -613,7 +550,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No Calibre transfers yet\n(Use the paste button or long-press to update from clipboard)",
+                        text = "No Calibre transfers yet",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
