@@ -38,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.util.MagnetParser
 import java.text.SimpleDateFormat
@@ -117,8 +116,6 @@ fun AddTransferSheet(
                     text = previewName,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
@@ -153,8 +150,6 @@ fun AddTransferSheet(
                             text = entry.resolvedName ?: entry.putioName ?: entry.label,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = "Added $dateStr · ${entry.status}",

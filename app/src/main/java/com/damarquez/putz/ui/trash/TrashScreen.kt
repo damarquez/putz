@@ -57,7 +57,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.TrashFile
 
@@ -331,8 +330,6 @@ private fun TrashFileItem(
                 Text(
                     text = file.name,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 val expiry = formatExpiry(file.expirationDate)
                 val subtitle = buildString {

@@ -265,8 +265,6 @@ fun FileItem(
                 Text(
                     text = file.displayName,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                     color = foregroundColor ?: MaterialTheme.colorScheme.onSurface,
                 )
                 if (!file.isFolder) {

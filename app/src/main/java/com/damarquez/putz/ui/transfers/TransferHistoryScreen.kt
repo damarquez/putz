@@ -342,8 +342,6 @@ private fun HistoryEntryRow(
             }
             Text(
                 text = entry.resolvedName ?: entry.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         },
         supportingContent = {
@@ -358,8 +356,6 @@ private fun HistoryEntryRow(
                         text = "Label: ${entry.label}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Text(
@@ -480,8 +476,6 @@ internal fun HistoryDetailSheet(
                             text = name,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     },
                 )
@@ -567,8 +561,6 @@ internal fun FileEntryRow(file: HistoryEntryFile, highlight: String = "") {
             Text(
                 text = highlightText(file.name, highlight, highlightColor),
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         },
         trailingContent = if (file.size > 0) {

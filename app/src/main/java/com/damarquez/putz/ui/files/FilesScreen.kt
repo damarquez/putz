@@ -57,7 +57,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreRepository
-import androidx.compose.ui.text.style.TextOverflow
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileItem
 import com.damarquez.putz.ui.navigation.Screen

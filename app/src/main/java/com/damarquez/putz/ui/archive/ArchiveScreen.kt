@@ -227,8 +227,6 @@ fun ArchiveScreen(
                     Column {
                         Text(
                             text = viewModel.archiveName,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleMedium,
                         )
                         if (s != null && s.currentDir.isNotEmpty()) {
@@ -236,8 +234,6 @@ fun ArchiveScreen(
                                 text = s.currentDir,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -853,8 +849,6 @@ fun ArchiveScreen(
                             text = picker.currentFolderName,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -886,7 +880,7 @@ fun ArchiveScreen(
                 ) {
                     items(picker.dirs, key = { it.id }) { dir ->
                         ListItem(
-                            headlineContent = { Text(dir.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            headlineContent = { Text(dir.name) },
                             leadingContent = { Icon(Icons.Default.Folder, contentDescription = null) },
                             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.clickable { viewModel.putioPickerEnterDir(dir) },
@@ -931,8 +925,6 @@ fun ArchiveScreen(
                         text = displayPath,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Spacer(Modifier.width(8.dp))
@@ -963,7 +955,7 @@ fun ArchiveScreen(
                 ) {
                     items(picker.dirs, key = { it.lanPath ?: it.name }) { dir ->
                         ListItem(
-                            headlineContent = { Text(dir.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            headlineContent = { Text(dir.name) },
                             leadingContent = { Icon(Icons.Default.Folder, contentDescription = null) },
                             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                             modifier = Modifier.clickable { viewModel.lanPickerEnterDir(dir) },
@@ -1054,8 +1046,6 @@ private fun ArchiveEntryItem(
             Text(
                 text = entry.name,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
             if (!entry.isDirectory && entry.size > 0L) {
                 Text(

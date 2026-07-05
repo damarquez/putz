@@ -28,7 +28,7 @@ fun ViewerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1) },
+                title = { Text(title) },
                 navigationIcon = {
                     // Goes through the back dispatcher (not onNavigateUp directly) so a viewer's
                     // own BackHandler (e.g. PagedHtmlViewer undoing in-book link navigation) gets

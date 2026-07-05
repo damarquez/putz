@@ -397,8 +397,6 @@ internal fun TransferBrowserSheet(
                                     files != null && selectedCount == 0 -> MaterialTheme.colorScheme.error
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         if (files != null && state.isIncluded) {
@@ -553,8 +551,6 @@ internal fun TransferBrowserSheet(
                                         text = displayName,
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier = Modifier.weight(1f),
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                                 ReorderArrowButton(
@@ -762,8 +758,6 @@ private fun TreeRow(
                     text = it,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -796,8 +790,6 @@ private fun FileLeafRow(file: AudiobookFile, indent: Int) {
         Text(
             text = MetadataUtils.stripStubExtension(file.fileName),
             style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

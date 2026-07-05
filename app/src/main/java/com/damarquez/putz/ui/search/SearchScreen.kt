@@ -54,7 +54,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.damarquez.putz.data.model.MetaCandidate
@@ -206,8 +205,6 @@ fun SearchScreen(
                             }
                         },
                         style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -295,7 +292,7 @@ private fun CandidateItem(
 ) {
     ListItem(
         headlineContent = {
-            Text(candidate.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(candidate.name)
         },
         supportingContent = candidate.releaseInfo?.let { info ->
             { Text(info, style = MaterialTheme.typography.bodySmall) }
@@ -325,7 +322,7 @@ private fun TorrentResultItem(
 ) {
     ListItem(
         headlineContent = {
-            Text(result.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(result.title)
         },
         supportingContent = {
             val parts = buildList {
