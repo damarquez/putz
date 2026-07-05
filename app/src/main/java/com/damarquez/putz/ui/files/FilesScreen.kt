@@ -496,6 +496,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(singleFile) {
             MetadataUtils.extractMetadata(singleFile.displayName)
         }
+        val sizeProgress = rememberSizeProgress(listOf(singleFile)) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = singleFile.displayName,
             initialTitle = initialTitle,
@@ -509,6 +510,7 @@ fun FilesScreen(
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isArchive = MetadataUtils.isArchive(singleFile.displayName),
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, listOf(singleFile)),
         )
     }
 
@@ -572,6 +574,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(packFiles) {
             MetadataUtils.extractMetadata(packFiles.first().displayName)
         }
+        val sizeProgress = rememberSizeProgress(packFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${packFiles.size} audio files",
             initialTitle = initialTitle,
@@ -585,6 +588,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, packFiles),
         )
     }
 
@@ -593,6 +597,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(pdfFiles) {
             MetadataUtils.extractMetadata(pdfFiles.first().displayName)
         }
+        val sizeProgress = rememberSizeProgress(pdfFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${pdfFiles.size} PDF files",
             initialTitle = initialTitle,
@@ -605,6 +610,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, pdfFiles),
         )
     }
 
@@ -628,6 +634,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(epubFiles) {
             MetadataUtils.extractMetadata(epubFiles.first().displayName)
         }
+        val sizeProgress = rememberSizeProgress(epubFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${epubFiles.size} EPUB files",
             initialTitle = initialTitle,
@@ -640,6 +647,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, epubFiles),
         )
     }
 
@@ -663,6 +671,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(mobiFiles) {
             MetadataUtils.extractMetadata(mobiFiles.first().displayName)
         }
+        val sizeProgress = rememberSizeProgress(mobiFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${mobiFiles.size} MOBI files",
             initialTitle = initialTitle,
@@ -675,6 +684,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, mobiFiles),
         )
     }
 
@@ -703,6 +713,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(imageFiles) {
             MetadataUtils.extractMetadata(imageFiles.first().displayName)
         }
+        val sizeProgress = rememberSizeProgress(imageFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${imageFiles.size} images → ${format.outputFileName}",
             initialTitle = initialTitle,
@@ -715,6 +726,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, imageFiles),
         )
     }
 
@@ -810,6 +822,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(candidates) {
             MetadataUtils.extractMetadata(candidates.first().file.displayName)
         }
+        val sizeProgress = rememberSizeProgress(candidates.map { it.file }) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${candidates.size} ${contentType.label.lowercase()} → $effectiveOutputFileName",
             initialTitle = initialTitle,
@@ -822,6 +835,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, candidates.map { it.file }),
         )
     }
 
@@ -834,6 +848,8 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(groups) {
             MetadataUtils.extractMetadata(groups.first().label)
         }
+        val allFiles = remember(groups) { groups.flatMap { it.files.map { f -> f.file } } }
+        val sizeProgress = rememberSizeProgress(allFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${groups.size} chapters → $effectiveOutputFileName",
             initialTitle = initialTitle,
@@ -846,6 +862,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, allFiles),
         )
     }
 
@@ -871,6 +888,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(cbrFiles) {
             MetadataUtils.extractMetadata(cbrFiles.first().displayName)
         }
+        val sizeProgress = rememberSizeProgress(cbrFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${cbrFiles.size} CBR files → PDF",
             initialTitle = initialTitle,
@@ -883,6 +901,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, cbrFiles),
         )
     }
 
@@ -907,6 +926,7 @@ fun FilesScreen(
         val (initialTitle, initialAuthor) = remember(cbrFiles) {
             MetadataUtils.extractMetadata(cbrFiles.first().displayName)
         }
+        val sizeProgress = rememberSizeProgress(cbrFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${cbrFiles.size} CBR files → CBZ",
             initialTitle = initialTitle,
@@ -919,6 +939,7 @@ fun FilesScreen(
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, cbrFiles),
         )
     }
 

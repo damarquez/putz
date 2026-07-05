@@ -86,6 +86,7 @@ fun CalibreConfirmationSheet(
     autoAddTags: String? = null,
     includeComments: Boolean = true,
     coverImageUri: Uri? = null,
+    sizeSummary: String? = null,
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
@@ -218,6 +219,14 @@ fun CalibreConfirmationSheet(
                             }
                             context.startActivity(intent)
                         },
+                    )
+                }
+
+                if (sizeSummary != null) {
+                    Text(
+                        text = sizeSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 

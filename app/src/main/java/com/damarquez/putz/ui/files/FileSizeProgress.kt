@@ -78,3 +78,12 @@ fun sizeProgressSuffix(progress: FileSizeProgress?, selected: Collection<PutioFi
     return if (progress.isComplete) " · $sizeText"
     else " · $sizeText so far (fetching sizes: ${progress.resolvedCount}/${progress.totalToResolve})"
 }
+
+/** Standalone "Total size: …" line for the final send/confirm screen — same live-updating
+ * total as [sizeProgressSuffix], without the leading separator meant for appending inline. */
+fun sizeSummaryText(progress: FileSizeProgress?, files: Collection<PutioFile>): String? {
+    if (progress == null) return null
+    val sizeText = formatByteSize(progress.totalFor(files))
+    return if (progress.isComplete) "Total size: $sizeText"
+    else "Total size: $sizeText so far (fetching sizes: ${progress.resolvedCount}/${progress.totalToResolve})"
+}

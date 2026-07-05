@@ -66,6 +66,9 @@ import androidx.compose.runtime.setValue
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.ui.files.CalibreConfirmationSheet
 import com.damarquez.putz.ui.files.TransferRef
+import com.damarquez.putz.ui.files.formatByteSize
+import com.damarquez.putz.ui.files.rememberSizeProgress
+import com.damarquez.putz.ui.files.sizeSummaryText
 import com.damarquez.putz.util.MetadataUtils
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -606,6 +609,7 @@ fun ArchiveScreen(
             val (initialTitle, initialAuthor) = remember(candidates) {
                 MetadataUtils.extractMetadata(candidates.first().file.displayName)
             }
+            val sizeProgress = rememberSizeProgress(candidates.map { it.file }) { viewModel.readStubFileSize(it) }
             CalibreConfirmationSheet(
                 displayName = displayName,
                 initialTitle = initialTitle,
@@ -618,6 +622,7 @@ fun ArchiveScreen(
                 },
                 checkExists = { title, author -> viewModel.checkBookExists(title, author) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+                sizeSummary = sizeSummaryText(sizeProgress, candidates.map { it.file }),
             )
         }
     }
@@ -631,6 +636,8 @@ fun ArchiveScreen(
             val (initialTitle, initialAuthor) = remember(groups) {
                 MetadataUtils.extractMetadata(groups.first().label)
             }
+            val allFiles = remember(groups) { groups.flatMap { it.files.map { f -> f.file } } }
+            val sizeProgress = rememberSizeProgress(allFiles) { viewModel.readStubFileSize(it) }
             CalibreConfirmationSheet(
                 displayName = displayName,
                 initialTitle = initialTitle,
@@ -643,6 +650,7 @@ fun ArchiveScreen(
                 },
                 checkExists = { title, author -> viewModel.checkBookExists(title, author) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+                sizeSummary = sizeSummaryText(sizeProgress, allFiles),
             )
         }
     }
@@ -663,6 +671,7 @@ fun ArchiveScreen(
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            sizeSummary = "Total size: ${formatByteSize(entry.size)}",
         )
     }
 
@@ -685,6 +694,7 @@ fun ArchiveScreen(
                 },
                 checkExists = { title, author -> viewModel.checkBookExists(title, author) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+                sizeSummary = "Total size: ${formatByteSize(entry.size)}",
             )
         } else {
             AlertDialog(
