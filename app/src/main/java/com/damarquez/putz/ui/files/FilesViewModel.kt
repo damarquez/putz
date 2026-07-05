@@ -74,6 +74,10 @@ enum class SortOrder {
     NONE, ASCENDING, DESCENDING
 }
 
+enum class SearchScope {
+    FOLDER, EVERYWHERE
+}
+
 @HiltViewModel
 class FilesViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -289,6 +293,22 @@ class FilesViewModel @Inject constructor(
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    // Cloud search scope toggle — defaults to the current folder (+ subfolders); put.io's
+    // /files/search endpoint does not reliably restrict results to a parent_id subtree, so
+    // FOLDER scope is done as a client-side recursive walk instead (see search()).
+    private val _searchScope = MutableStateFlow(SearchScope.FOLDER)
+    val searchScope: StateFlow<SearchScope> = _searchScope.asStateFlow()
+
+    // Whether the current folder is a plain put.io cloud folder (as opposed to Local Files or
+    // a LAN share) — only cloud search has a folder/everywhere distinction worth offering.
+    val isCloudSearchContext: Boolean = run {
+        val isLocalRoot = parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID
+        val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
+        val isLanRoot = parentId == com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID
+        val isLanBrowsing = lanConnectionId != -1L
+        !(isLocalRoot || isLocalFolder || isLanRoot || isLanBrowsing)
+    }
 
     private var searchJob: Job? = null
 
@@ -1695,6 +1715,11 @@ class FilesViewModel @Inject constructor(
         search(query)
     }
 
+    fun toggleSearchScope() {
+        _searchScope.value = if (_searchScope.value == SearchScope.FOLDER) SearchScope.EVERYWHERE else SearchScope.FOLDER
+        if (_searchQuery.value.isNotBlank()) search(_searchQuery.value)
+    }
+
     fun search(query: String) {
         searchJob?.cancel()
         if (query.isBlank()) {
@@ -1753,11 +1778,40 @@ class FilesViewModel @Inject constructor(
             // CLOUD SEARCH
             val current = _uiState.value
             if (current is FilesUiState.Success) {
-                _uiState.value = current.copy(isSearching = true)
+                _uiState.value = current.copy(isSearching = true, searchResults = emptyList())
             }
 
             val token = settingsRepository.authTokenFlow.first()
-            when (val result = filesRepository.searchFiles(token, query, parentId)) {
+
+            if (_searchScope.value == SearchScope.FOLDER && parentId != 0L) {
+                // put.io's /files/search does not reliably restrict results to a parent_id
+                // subtree, so scope to the current folder ourselves via a client-side
+                // recursive walk (same BFS shape as scanMergeFolder).
+                val collected = mutableListOf<PutioFile>()
+                val queue = ArrayDeque<Long>()
+                queue.add(parentId)
+                while (queue.isNotEmpty()) {
+                    val currentFolderId = queue.removeFirst()
+                    val children = filesRepository.listFiles(token, currentFolderId).dataOrNull()?.first ?: emptyList()
+                    val matches = children.filter { it.displayName.contains(query, ignoreCase = true) }
+                    if (matches.isNotEmpty()) {
+                        collected.addAll(matches)
+                        val cur = _uiState.value as? FilesUiState.Success
+                        if (cur != null) {
+                            _uiState.value = cur.copy(searchResults = sortFiles(collected.toList()), isSearching = true)
+                        }
+                    }
+                    children.filter { it.isFolder }.forEach { queue.add(it.id) }
+                }
+                val finalState = _uiState.value as? FilesUiState.Success
+                if (finalState != null) {
+                    _uiState.value = finalState.copy(isSearching = false)
+                    enrichSyncedFileSizes(collected)
+                }
+                return@launch
+            }
+
+            when (val result = filesRepository.searchFiles(token, query, 0L)) {
                 is NetworkResult.Success -> {
                     val currentSuccess = _uiState.value as? FilesUiState.Success
                     if (currentSuccess != null) {

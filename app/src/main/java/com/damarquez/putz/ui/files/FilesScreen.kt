@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -136,6 +137,7 @@ fun FilesScreen(
     val transferPreparationProgress by viewModel.transferPreparationProgress.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchScope by viewModel.searchScope.collectAsState()
     val currentTab by viewModel.currentTab.collectAsState()
     val nameSort by viewModel.nameSort.collectAsState()
     val dateSort by viewModel.dateSort.collectAsState()
@@ -1292,7 +1294,14 @@ fun FilesScreen(
                         TextField(
                             value = searchQuery,
                             onValueChange = { viewModel.onSearchQueryChanged(it) },
-                            placeholder = { Text("Search in $folderName") },
+                            placeholder = {
+                                Text(
+                                    if (!viewModel.isCloudSearchContext || searchScope == SearchScope.EVERYWHERE)
+                                        "Search everywhere"
+                                    else
+                                        "Search in $folderName"
+                                )
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(searchFocusRequester),
@@ -1363,6 +1372,18 @@ fun FilesScreen(
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
                                 Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            }
+                        }
+                        if (viewModel.isCloudSearchContext) {
+                            IconButton(onClick = { viewModel.toggleSearchScope() }) {
+                                Icon(
+                                    imageVector = if (searchScope == SearchScope.FOLDER) Icons.Default.Folder else Icons.Default.Public,
+                                    contentDescription = if (searchScope == SearchScope.FOLDER)
+                                        "Searching in $folderName — tap to search everywhere"
+                                    else
+                                        "Searching everywhere — tap to search in $folderName",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
                             }
                         }
                     }
