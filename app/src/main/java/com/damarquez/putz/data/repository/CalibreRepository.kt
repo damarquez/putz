@@ -2455,18 +2455,21 @@ class CalibreRepository @Inject constructor(
                     // don't let one flaky search abort deletion of the rest of a multi-file pack).
                     // Verify whether the original file still exists:
                     // - 200: old-format transfer (never replaced by a stub) → delete the original.
-                    // - 404: file was synced to a stub, but search didn't find it. Adding originalId
-                    //        would silently no-op (put.io accepts deletes of non-existent IDs), leaving
-                    //        the stub on put.io. Log a warning instead.
+                    // - 404: file was synced to a stub, but search didn't find it (transient search-index
+                    //        lag or a non-retried search failure). Adding originalId would silently no-op
+                    //        (put.io accepts deletes of non-existent IDs), leaving the stub on put.io —
+                    //        so treat it as unresolved and retry later instead of dropping it.
                     // - other error: network issue → leave this file for a retry rather than risk
                     //        deleting the wrong file, but keep resolving the rest of the pack.
                     val fileCheck = withPutioRetry { putioApiClient.getFile(token, originalId) }
                     when {
                         fileCheck is NetworkResult.Success ->
                             idsToDelete.add(originalId)
-                        (fileCheck as? NetworkResult.Error)?.code == 404 ->
+                        (fileCheck as? NetworkResult.Error)?.code == 404 -> {
                             android.util.Log.w("CalibreRepository",
-                                "Stub for put.io file $originalId not found via search and original is gone — stub may remain on put.io")
+                                "Stub for put.io file $originalId not found via search and original is gone — will retry search later")
+                            unresolvedIds.add(originalId)
+                        }
                         else -> {
                             android.util.Log.w("CalibreRepository",
                                 "Could not verify put.io file $originalId — will retry later: ${(fileCheck as? NetworkResult.Error)?.message}")
