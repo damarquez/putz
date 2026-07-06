@@ -127,7 +127,7 @@ class LocalFilesRepository @Inject constructor(
         dao.deleteById(realId)
     }
 
-    fun searchLocalFiles(query: String, uriString: String? = null): Flow<List<PutioFile>> = flow {
+    fun searchLocalFiles(matches: (String) -> Boolean, uriString: String? = null): Flow<List<PutioFile>> = flow {
         val hiddenUris = hiddenDao.getAllUris().toSet()
         val results = mutableListOf<PutioFile>()
         var count = 0
@@ -135,7 +135,7 @@ class LocalFilesRepository @Inject constructor(
         if (uriString == null) {
             // Searching in Local Files virtual root (attachments)
             dao.getAll()
-                .filter { it.name.contains(query, ignoreCase = true) }
+                .filter { matches(it.name) }
                 .forEach { entity ->
                     results.add(
                         PutioFile(
@@ -185,9 +185,9 @@ class LocalFilesRepository @Inject constructor(
                         if (docUri.toString() in hiddenUris) continue
 
                         val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                        val matches = name.contains(query, ignoreCase = true)
+                        val isMatch = matches(name)
 
-                        if (matches && (isDir || MetadataUtils.isEbook(name))) {
+                        if (isMatch && (isDir || MetadataUtils.isEbook(name))) {
                             results.add(
                                 PutioFile(
                                     id = (docUri.toString().hashCode().toLong().let { if (it > 0) -it else it })

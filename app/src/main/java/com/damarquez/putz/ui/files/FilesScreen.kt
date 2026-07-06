@@ -1491,6 +1491,18 @@ fun FilesScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.End,
                             ) {
+                                if (isSearchMode && searchQuery.isNotEmpty()) {
+                                    Text(
+                                        text = if (state.isSearching)
+                                            "${files.size} found so far…"
+                                        else
+                                            "${files.size} found",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+
                                 // Name Sort
                                 IconButton(onClick = { viewModel.toggleNameSort() }) {
                                     Box(contentAlignment = Alignment.Center) {

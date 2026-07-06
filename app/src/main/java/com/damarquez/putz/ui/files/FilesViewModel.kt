@@ -49,6 +49,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import com.damarquez.putz.util.MetadataUtils
+import com.damarquez.putz.util.SearchQuery
 import java.io.File
 import javax.inject.Inject
 
@@ -1733,6 +1734,10 @@ class FilesViewModel @Inject constructor(
         searchJob = viewModelScope.launch {
             delay(300) // Debounce
 
+            // Supports AND/OR/NOT, parentheses, and "quoted" whole-word terms (see SearchQuery);
+            // malformed input safely falls back to a plain substring match on the raw text.
+            val matcher = SearchQuery.compile(query)
+
             val isLocalRoot = parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID
             val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
             val isLanRoot = parentId == com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID
@@ -1741,7 +1746,7 @@ class FilesViewModel @Inject constructor(
             if (isLanRoot || isLanBrowsing) {
                 val current = _uiState.value
                 if (current is FilesUiState.Success) {
-                    val immediateResults = current.files.filter { it.name.contains(query, ignoreCase = true) }
+                    val immediateResults = current.files.filter { matcher(it.name) }
                     _uiState.value = current.copy(isSearching = false, searchResults = sortFiles(immediateResults))
                 }
                 return@launch
@@ -1752,14 +1757,14 @@ class FilesViewModel @Inject constructor(
                 val current = _uiState.value
                 if (current is FilesUiState.Success) {
                     // Instant shallow filter of already loaded files
-                    val immediateResults = current.files.filter { it.name.contains(query, ignoreCase = true) }
+                    val immediateResults = current.files.filter { matcher(it.displayName) }
                     _uiState.value = current.copy(
                         isSearching = true,
                         searchResults = sortFiles(immediateResults)
                     )
                 }
 
-                localFilesRepository.searchLocalFiles(query, localUri).collect { results ->
+                localFilesRepository.searchLocalFiles(matcher, localUri).collect { results ->
                     val cur = _uiState.value
                     if (cur is FilesUiState.Success) {
                         // Merge immediate results with background scan results (Set removes duplicates)
@@ -1783,17 +1788,22 @@ class FilesViewModel @Inject constructor(
 
             val token = settingsRepository.authTokenFlow.first()
 
-            if (_searchScope.value == SearchScope.FOLDER && parentId != 0L) {
-                // put.io's /files/search does not reliably restrict results to a parent_id
-                // subtree, so scope to the current folder ourselves via a client-side
-                // recursive walk (same BFS shape as scanMergeFolder).
+            // put.io's /files/search endpoint neither reliably scopes to a parent_id subtree
+            // nor understands AND/OR/NOT/quote syntax, so both "search in folder" and any
+            // boolean query are evaluated locally via a client-side recursive walk (same BFS
+            // shape as scanMergeFolder) instead of being sent to the remote endpoint.
+            val needsClientSideWalk = (_searchScope.value == SearchScope.FOLDER && parentId != 0L) ||
+                SearchQuery.isBooleanQuery(query)
+
+            if (needsClientSideWalk) {
+                val rootId = if (_searchScope.value == SearchScope.FOLDER) parentId else 0L
                 val collected = mutableListOf<PutioFile>()
                 val queue = ArrayDeque<Long>()
-                queue.add(parentId)
+                queue.add(rootId)
                 while (queue.isNotEmpty()) {
                     val currentFolderId = queue.removeFirst()
                     val children = filesRepository.listFiles(token, currentFolderId).dataOrNull()?.first ?: emptyList()
-                    val matches = children.filter { it.displayName.contains(query, ignoreCase = true) }
+                    val matches = children.filter { matcher(it.displayName) }
                     if (matches.isNotEmpty()) {
                         collected.addAll(matches)
                         val cur = _uiState.value as? FilesUiState.Success

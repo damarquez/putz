@@ -129,4 +129,6 @@ dependencies {
     implementation(libs.media3.common)
 
     debugImplementation(libs.compose.ui.tooling)
+
+    testImplementation("junit:junit:4.13.2")
 }
