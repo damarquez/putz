@@ -567,7 +567,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                     if (activeTransfers.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Active",
+                                text = "Active (${activeTransfers.size})",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
@@ -603,7 +603,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                     if (completedTransfers.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Completed",
+                                text = "Completed (${completedTransfers.size})",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.secondary,
                                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
