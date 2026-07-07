@@ -186,6 +186,60 @@ class FilesViewModel @Inject constructor(
     private val _plexPickerState = MutableStateFlow<LanFolderPickerState?>(null)
     val plexPickerState: StateFlow<LanFolderPickerState?> = _plexPickerState.asStateFlow()
 
+    // ViewModel-backed (not local Compose state) so the in-progress draft survives navigating
+    // away to preview a file and back — the FilesViewModel outlives that push/pop, plain
+    // `remember` state in the screen would not.
+    private val _calibreBatchDraft = MutableStateFlow<List<CalibreBatchDraftItem>?>(null)
+    val calibreBatchDraft: StateFlow<List<CalibreBatchDraftItem>?> = _calibreBatchDraft.asStateFlow()
+
+    /** Re-fetches the live current PutioFile for a synced stub (its put.io ID drifts whenever the
+     *  daemon re-syncs it — see [startCalibreBatchDraft]), matched by displayName within its
+     *  parent folder. Falls back to [file] unchanged if it isn't synced, the fetch fails, or no
+     *  match is found (e.g. moved/deleted since). Used by the single-file "Send to Calibre" flow. */
+    suspend fun resolveFreshSyncedFile(file: PutioFile): PutioFile {
+        if (!file.isSynced) return file
+        val token = settingsRepository.authTokenFlow.first()
+        val fresh = (filesRepository.listFiles(token, file.parentId) as? NetworkResult.Success)
+            ?.data?.first?.firstOrNull { it.displayName == file.displayName }
+        return fresh ?: file
+    }
+
+    fun startCalibreBatchDraft(files: List<PutioFile>) {
+        // Files screen serves a cached folder listing outside of explicit pull-to-refresh, which
+        // can be stale by weeks for a rarely-revisited folder. A stub's embedded put.io ID
+        // (PutioFile.syncedFileId) changes every time the daemon re-syncs it, so a stale listing
+        // hands out a dead ID — sending still "succeeds" (content is read via local_path either
+        // way) but the resulting transfer can never be deleted from put.io afterward. Re-fetch the
+        // current folder live and swap in each synced file's fresh counterpart before building the
+        // draft so the ID captured is current as of right now.
+        if (files.none { it.isSynced }) {
+            _calibreBatchDraft.value = files.map { file ->
+                val (title, author) = MetadataUtils.extractMetadata(file.displayName)
+                CalibreBatchDraftItem(file = file, title = title, author = author)
+            }
+            return
+        }
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val freshByName = (filesRepository.listFiles(token, parentId) as? NetworkResult.Success)
+                ?.data?.first?.associateBy { it.displayName }
+                .orEmpty()
+            _calibreBatchDraft.value = files.map { file ->
+                val current = if (file.isSynced) freshByName[file.displayName] ?: file else file
+                val (title, author) = MetadataUtils.extractMetadata(current.displayName)
+                CalibreBatchDraftItem(file = current, title = title, author = author)
+            }
+        }
+    }
+
+    fun updateCalibreBatchDraftItem(updated: CalibreBatchDraftItem) {
+        _calibreBatchDraft.value = _calibreBatchDraft.value?.map { if (it.file.id == updated.file.id) updated else it }
+    }
+
+    fun dismissCalibreBatchDraft() {
+        _calibreBatchDraft.value = null
+    }
+
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
 
@@ -903,6 +957,18 @@ class FilesViewModel @Inject constructor(
         _snackbarMessage.value = msg
         calibreRepository.setTransferErrorMessage(progressKey, msg)
         return null
+    }
+
+    /** Batch send-to-Calibre: each item becomes its own independent add-book request. */
+    fun sendBatchToCalibre(items: List<CalibreBatchDraftItem>) {
+        items.forEach { item ->
+            sendToCalibre(
+                item.file,
+                item.title.trim(),
+                item.author.trim().ifBlank { "Unknown" },
+                isProtected = item.isProtected,
+            )
+        }
     }
 
     fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null) {

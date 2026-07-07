@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
@@ -178,6 +179,7 @@ fun FilesScreen(
     var fileDetailsLoading by remember { mutableStateOf(false) }
     var renameValue by remember { mutableStateOf("") }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    val calibreBatchDraft by viewModel.calibreBatchDraft.collectAsState()
     var showSignOutConfirm by remember { mutableStateOf(false) }
     val isInHiddenScope = viewModel.isInHiddenScope
 
@@ -494,6 +496,17 @@ fun FilesScreen(
 
     if (selectedFileForCalibre != null) {
         val singleFile = selectedFileForCalibre!!
+        // The file may come from a cached folder listing that's stale by days/weeks if this
+        // folder hasn't been pull-to-refreshed — and a synced stub's put.io ID drifts every time
+        // the daemon re-syncs it (see FilesViewModel.startCalibreBatchDraft for the full story).
+        // Silently swap in the live current file before the user can send, so we never hand the
+        // daemon a dead ID that later makes this transfer undeletable from put.io.
+        LaunchedEffect(singleFile.id, singleFile.name) {
+            if (singleFile.isSynced) {
+                val fresh = viewModel.resolveFreshSyncedFile(singleFile)
+                if (fresh != singleFile) selectedFileForCalibre = fresh
+            }
+        }
         val (initialTitle, initialAuthor) = remember(singleFile) {
             MetadataUtils.extractMetadata(singleFile.displayName)
         }
@@ -512,6 +525,21 @@ fun FilesScreen(
             isArchive = MetadataUtils.isArchive(singleFile.displayName),
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, listOf(singleFile)),
+        )
+    }
+
+    calibreBatchDraft?.let { draft ->
+        CalibreBatchConfirmationSheet(
+            items = draft,
+            onDismiss = { viewModel.dismissCalibreBatchDraft() },
+            onConfirm = { finalItems ->
+                viewModel.sendBatchToCalibre(finalItems)
+                viewModel.dismissCalibreBatchDraft()
+                selectedFiles = emptySet()
+            },
+            onItemChange = { updated -> viewModel.updateCalibreBatchDraftItem(updated) },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            onPreview = { file -> viewModel.previewFile(file) },
         )
     }
 
@@ -1365,6 +1393,13 @@ fun FilesScreen(
                 },
                 actions = {
                     if (isSelectionMode) {
+                        val hasFolderSelected = selectedFiles.any { it.isFolder }
+                        IconButton(
+                            onClick = { viewModel.startCalibreBatchDraft(selectedFiles.toList()) },
+                            enabled = !hasFolderSelected,
+                        ) {
+                            Icon(Icons.Default.LibraryAdd, contentDescription = "Send selected to Calibre")
+                        }
                         IconButton(onClick = { showBatchDeleteConfirm = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete selected")
                         }

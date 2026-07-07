@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import android.app.SearchManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.damarquez.putz.data.repository.CalibreBookMatch
@@ -65,6 +66,27 @@ import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.util.MetadataUtils
 
 data class TransferRef(val uuid: String, val title: String, val author: String)
+
+/** Opens the sibling CalibreAnywhere app's search screen for [query], falling back to its deep link. */
+fun openCalibreAnywhereSearch(context: Context, query: String) {
+    try {
+        val intent = Intent("com.damarquez.calibreanywhere.SEARCH_TITLE").apply {
+            setPackage("com.damarquez.calibreanywhere")
+            putExtra("com.damarquez.calibreanywhere.extra.SEARCH_QUERY", query)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        try {
+            val deepLink = "calibreanywhere://search?q=${Uri.encode(query)}"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e2: Exception) {
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -235,27 +257,7 @@ fun CalibreConfirmationSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                try {
-                                    val searchTitle = matchedBookTitle ?: title
-                                    val intent = Intent("com.damarquez.calibreanywhere.SEARCH_TITLE").apply {
-                                        setPackage("com.damarquez.calibreanywhere")
-                                        putExtra("com.damarquez.calibreanywhere.extra.SEARCH_QUERY", searchTitle)
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                                    }
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    try {
-                                        val searchTitle = matchedBookTitle ?: title
-                                        val deepLink = "calibreanywhere://search?q=${Uri.encode(searchTitle)}"
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
-                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (e2: Exception) {
-                                    }
-                                }
-                            },
+                            .clickable { openCalibreAnywhereSearch(context, matchedBookTitle ?: title) },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -458,16 +460,7 @@ fun CalibreConfirmationSheet(
                     if (!titleAuthorLocked && title.isNotBlank()) {
                         Spacer(Modifier.width(4.dp))
                         IconButton(
-                            onClick = {
-                                title = title
-                                    .replace('_', ' ')
-                                    .replace(Regex("\\s+"), " ")
-                                    .trim()
-                                    .split(" ")
-                                    .joinToString(" ") { word ->
-                                        word.lowercase().replaceFirstChar { it.uppercase() }
-                                    }
-                            }
+                            onClick = { title = MetadataUtils.fixTitleCapitalization(title) }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AutoFixHigh,

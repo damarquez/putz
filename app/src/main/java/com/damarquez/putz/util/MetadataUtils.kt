@@ -10,6 +10,9 @@ object MetadataUtils {
     private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "wmv", "m4v", "ts", "webm", "flv", "mpg", "mpeg", "divx")
     private val PLEXAMP_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac", "aac", "wav", "ogg", "opus", "wma", "ape", "alac", "aiff", "dsf")
 
+    /** Extra single-word junk tags (beyond format/extension names) to strip from parsed titles. Extend as needed. */
+    private val JUNK_PAREN_WORDS = setOf("retail")
+
     private fun cleanStubSuffix(fileName: String): String {
         return fileName.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
     }
@@ -176,6 +179,25 @@ object MetadataUtils {
         }
 
         return Pair(nameWithoutExt, "Unknown")
+    }
+
+    /**
+     * Cleans up a parsed title: strips parenthetical groups that are just a format/extension tag
+     * (e.g. "(epub)") or a known junk word (e.g. "(retail)"), then normalizes underscores/whitespace
+     * and title-cases each word. Shared by the single-file and batch send-to-Calibre "fix" buttons.
+     */
+    fun fixTitleCapitalization(title: String): String {
+        val junkTokens = EBOOK_EXTENSIONS + PLEXAMP_AUDIO_EXTENSIONS + JUNK_PAREN_WORDS
+        val withoutJunkParens = Regex("""\(\s*([A-Za-z0-9]+)\s*\)""").replace(title) { match ->
+            if (match.groupValues[1].lowercase() in junkTokens) "" else match.value
+        }
+        return withoutJunkParens
+            .replace('_', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .split(" ")
+            .filter { it.isNotEmpty() }
+            .joinToString(" ") { word -> word.lowercase().replaceFirstChar { it.uppercase() } }
     }
 
     /**
