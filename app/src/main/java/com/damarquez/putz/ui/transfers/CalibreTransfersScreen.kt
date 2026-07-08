@@ -92,8 +92,8 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
     pendingProtectBookRepository: PendingProtectBookRepository,
     pendingUnprotectBookRepository: PendingUnprotectBookRepository,
+    syncViewModel: GlobalSyncViewModel,
 ) {
-    val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
     val context = LocalContext.current

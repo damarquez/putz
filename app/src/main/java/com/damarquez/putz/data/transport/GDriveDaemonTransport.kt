@@ -3,6 +3,9 @@ package com.damarquez.putz.data.transport
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.remote.GDriveManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -23,17 +26,29 @@ class GDriveDaemonTransport @Inject constructor(
 
     override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
         val files = gDriveManager.listResponses(googleAccount, appId)
-        return files.mapNotNull { file ->
-            val content = gDriveManager.downloadFileContent(googleAccount, file.id) ?: return@mapNotNull null
-            val putioFileId = runCatching {
-                json.parseToJsonElement(content).jsonObject["putio_file_id"]?.jsonPrimitive?.content?.toLong()
-            }.getOrNull()
-            ResponseEnvelope(
-                id = file.id,
-                putioFileId = putioFileId,
-                content = content,
-                source = ResponseEnvelope.Source.DRIVE,
-            )
+        // Fetching each file's content is a separate network round-trip; done sequentially,
+        // a backlog of hundreds of responses takes minutes to even finish listing before any
+        // processing/cleanup starts — long enough that new responses keep arriving faster than
+        // the backlog drains. Fetch in bounded-concurrency batches instead of one at a time
+        // (bounded so we don't hammer the Drive API into rate-limiting us, which would make
+        // things worse).
+        return files.chunked(20).flatMap { chunk ->
+            coroutineScope {
+                chunk.map { file ->
+                    async {
+                        val content = gDriveManager.downloadFileContent(googleAccount, file.id) ?: return@async null
+                        val putioFileId = runCatching {
+                            json.parseToJsonElement(content).jsonObject["putio_file_id"]?.jsonPrimitive?.content?.toLong()
+                        }.getOrNull()
+                        ResponseEnvelope(
+                            id = file.id,
+                            putioFileId = putioFileId,
+                            content = content,
+                            source = ResponseEnvelope.Source.DRIVE,
+                        )
+                    }
+                }.awaitAll()
+            }.filterNotNull()
         }
     }
 

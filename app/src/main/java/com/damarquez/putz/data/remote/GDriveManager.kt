@@ -122,6 +122,26 @@ class GDriveManager @Inject constructor(
             
             val requestsFolderId = findFolder(service, "requests", rootFolderId) ?: createFolder(service, "requests", rootFolderId)
 
+            // Drive allows multiple files with the same name in one folder — files().create()
+            // never replaces an existing one. Without this, every retry for the same book piles
+            // up another "req_<id>.json" alongside earlier (possibly broken/stale) copies, and
+            // the daemon works through each one independently over several minutes, so an old
+            // failure can keep resurfacing and overwriting a newer, already-fixed request's
+            // result. Trash any existing copies for this exact filename before uploading the
+            // new one so at most one live request per book/action survives at a time.
+            try {
+                val existing = service.files().list()
+                    .setQ("name = '$fileName' and '$requestsFolderId' in parents and trashed = false")
+                    .setFields("files(id)")
+                    .execute()
+                existing.files?.forEach { stale ->
+                    Log.d("GDriveManager", "Trashing stale duplicate request $fileName (id=${stale.id}) before resubmitting")
+                    service.files().update(stale.id, com.google.api.services.drive.model.File().apply { trashed = true }).execute()
+                }
+            } catch (e: Exception) {
+                Log.w("GDriveManager", "Could not check for stale duplicate requests named $fileName", e)
+            }
+
             val tempFile = File.createTempFile("upload_", "_$fileName", context.cacheDir)
                 .apply { writeText(content) }
             val uploaded = try {
@@ -192,11 +212,23 @@ class GDriveManager @Inject constructor(
     suspend fun listResponses(accountName: String, appId: String): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)
-            val libFolderId = getLibraryFolderId(service) ?: return@withContext emptyList()
+            val libFolderId = getLibraryFolderId(service) ?: run {
+                Log.w("GDriveManager", "listResponses: could not resolve library folder (metadata.db not found)")
+                return@withContext emptyList()
+            }
 
-            val rootId = findFolder(service, ".calibre_integration", libFolderId) ?: return@withContext emptyList()
-            val responsesId = findFolder(service, "responses", rootId) ?: return@withContext emptyList()
-            val appFolderId = findFolder(service, appId, responsesId) ?: return@withContext emptyList()
+            val rootId = findFolder(service, ".calibre_integration", libFolderId) ?: run {
+                Log.w("GDriveManager", "listResponses: .calibre_integration folder not found under $libFolderId")
+                return@withContext emptyList()
+            }
+            val responsesId = findFolder(service, "responses", rootId) ?: run {
+                Log.w("GDriveManager", "listResponses: responses folder not found under $rootId")
+                return@withContext emptyList()
+            }
+            val appFolderId = findFolder(service, appId, responsesId) ?: run {
+                Log.w("GDriveManager", "listResponses: no subfolder named '$appId' under responses ($responsesId) — nothing to read")
+                return@withContext emptyList()
+            }
 
             val all = mutableListOf<com.google.api.services.drive.model.File>()
             var pageToken: String? = null
@@ -211,9 +243,10 @@ class GDriveManager @Inject constructor(
                 all += result.files ?: emptyList()
                 pageToken = result.nextPageToken
             } while (pageToken != null)
+            Log.d("GDriveManager", "listResponses: found ${all.size} file(s) in app folder $appFolderId (appId=$appId)")
             all
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("GDriveManager", "listResponses: threw for appId=$appId", e)
             emptyList()
         }
     }
@@ -223,7 +256,7 @@ class GDriveManager @Inject constructor(
             val service = getDriveService(accountName)
             service.files().get(fileId).executeMediaAsInputStream().bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("GDriveManager", "downloadFileContent: FAILED for fileId=$fileId", e)
             null
         }
     }
@@ -242,8 +275,22 @@ class GDriveManager @Inject constructor(
         try {
             val service = getDriveService(accountName)
             service.files().delete(fileId).execute()
+            Log.d("GDriveManager", "deleteFile: deleted $fileId")
         } catch (e: Exception) {
-            e.printStackTrace()
+            // A 404 here just means the file is already gone (deleted by an earlier attempt —
+            // e.g. a duplicate response the daemon uploaded twice under the same name for the
+            // same putio_id, same root cause as the request-side duplicate-upload bug). The
+            // goal state (file gone) is already satisfied, so this isn't a real failure — don't
+            // let it drown out genuine errors (permissions, quota, network) in the logs.
+            val isAlreadyGone = (e as? com.google.api.client.googleapis.json.GoogleJsonResponseException)?.statusCode == 404
+            if (isAlreadyGone) {
+                Log.d("GDriveManager", "deleteFile: $fileId already gone (404) — treating as success")
+            } else {
+                // Silent failure here means a response is never acknowledged, so it's re-fetched
+                // and re-processed on every poll forever — this is the #1 suspect for responses
+                // piling up in Drive while Putz appears to do nothing with them.
+                Log.e("GDriveManager", "deleteFile: FAILED to delete $fileId", e)
+            }
         }
     }
 }

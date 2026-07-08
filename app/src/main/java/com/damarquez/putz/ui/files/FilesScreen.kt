@@ -123,8 +123,8 @@ fun FilesScreen(
     onNavigateToSettings: () -> Unit,
     onSignOut: () -> Unit,
     viewModel: FilesViewModel,
+    syncViewModel: GlobalSyncViewModel,
 ) {
-    val syncViewModel: GlobalSyncViewModel = hiltViewModel()
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
     val uiState by viewModel.uiState.collectAsState()

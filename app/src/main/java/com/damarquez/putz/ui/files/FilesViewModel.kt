@@ -959,19 +959,40 @@ class FilesViewModel @Inject constructor(
         return null
     }
 
-    /** Batch send-to-Calibre: each item becomes its own independent add-book request. */
+    /** Batch send-to-Calibre: each item becomes its own independent add-book request.
+     *  Resolves every synced item's stub local_path up front, before placing ANY request —
+     *  a request dispatched with a still-unresolved path can never be fixed by the daemon
+     *  (the legacy sync-index fallback it would fall back to is dead), so a partial-batch
+     *  failure used to leave one book permanently stuck while the rest went out fine. Now
+     *  the whole batch either all sends or none of it does. */
     fun sendBatchToCalibre(items: List<CalibreBatchDraftItem>) {
-        items.forEach { item ->
-            sendToCalibre(
-                item.file,
-                item.title.trim(),
-                item.author.trim().ifBlank { "Unknown" },
-                isProtected = item.isProtected,
-            )
-        }
+        trackTransferPreparation { viewModelScope.launch {
+            _snackbarMessage.value = "Preparing ${items.size} book${if (items.size == 1) "" else "s"}..."
+
+            val prepared = items.map { item ->
+                item to if (item.file.isSynced) calibreRepository.readStubLocalPath(item.file) else null
+            }
+            val unresolved = prepared.filter { (item, path) -> item.file.isSynced && path == null }
+            if (unresolved.isNotEmpty()) {
+                _snackbarMessage.value = "Could not verify ${unresolved.size} of ${items.size} book(s) are " +
+                    "synced (check your connection) — nothing was sent: " +
+                    unresolved.joinToString(", ") { (item, _) -> item.title }
+                return@launch
+            }
+
+            prepared.forEach { (item, localPath) ->
+                sendToCalibre(
+                    item.file,
+                    item.title.trim(),
+                    item.author.trim().ifBlank { "Unknown" },
+                    isProtected = item.isProtected,
+                    preresolvedLocalPath = localPath,
+                )
+            }
+        } }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null) {
         trackTransferPreparation { viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
@@ -986,8 +1007,43 @@ class FilesViewModel @Inject constructor(
                     val ext = file.displayName.substringAfterLast('.', "")
                     if (ext.isNotEmpty()) file.displayName.substringBeforeLast('.') + "." + ext + "_bkp" else file.displayName
                 } else file.displayName
-                // Save to DB immediately so the transfer is never silently lost if the
-                // coroutine is cancelled (e.g. navigating away). local_path is resolved below.
+
+                if (assembleBook) {
+                    // Assembly spans multiple sends over time, so this book's local_path may
+                    // legitimately still be unresolved when this particular file is added —
+                    // park it and let resolveLocalPathAndDispatch persist the path once known.
+                    calibreRepository.addTransfer(
+                        putioFileId = file.syncedFileId,
+                        fileName = syncedFileName,
+                        title = title,
+                        author = author,
+                        googleAccount = googleAccount,
+                        downloadUrl = null,
+                        archiveMode = archiveMode,
+                        isTempUpload = false,
+                        assembleBook = true,
+                        calibreBookUuid = calibreBookUuid,
+                        useLocal = true,
+                        localPath = null,
+                        isProtected = isProtected,
+                        tags = tags,
+                    )
+                    _snackbarMessage.value = "Book assembled"
+                    val localPath = preresolvedLocalPath ?: calibreRepository.readStubLocalPath(file)
+                    calibreRepository.resolveLocalPathAndDispatch(file.syncedFileId, localPath, googleAccount)
+                    return@launch
+                }
+
+                // Resolve the stub's local_path FIRST, before creating or dispatching
+                // anything — a use_local request sent without it can never be fixed by the
+                // daemon (the legacy sync-index fallback it falls back to is dead), so it's
+                // better to fail here, with the confirmation screen still fresh in the
+                // user's mind, than to queue a request that's silently doomed.
+                val localPath = preresolvedLocalPath ?: calibreRepository.readStubLocalPath(file)
+                if (localPath == null) {
+                    _snackbarMessage.value = "Could not verify '$title' is synced — check your connection and try again"
+                    return@launch
+                }
                 calibreRepository.addTransfer(
                     putioFileId = file.syncedFileId,
                     fileName = syncedFileName,
@@ -997,20 +1053,14 @@ class FilesViewModel @Inject constructor(
                     downloadUrl = null,
                     archiveMode = archiveMode,
                     isTempUpload = false,
-                    assembleBook = assembleBook,
+                    assembleBook = false,
                     calibreBookUuid = calibreBookUuid,
                     useLocal = true,
-                    localPath = null,
+                    localPath = localPath,
                     isProtected = isProtected,
                     tags = tags,
                 )
-                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer queued for $title"
-                // Resolve local path then dispatch (or just update batchData for assembled).
-                // Safe to cancel here — the DB record already exists and the polling loop
-                // will retry any PENDING transfer that was never dispatched.
-                val localPath = calibreRepository.readStubLocalPath(file)
-                calibreRepository.resolveLocalPathAndDispatch(file.syncedFileId, localPath, googleAccount)
-                if (!assembleBook) _snackbarMessage.value = "Transfer requested for $title"
+                _snackbarMessage.value = "Transfer requested for $title"
                 return@launch
             } else if (file.isLan) {
                 val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }

@@ -691,6 +691,18 @@ class CalibreRepository @Inject constructor(
             return
         }
 
+        // Path resolution can fail transiently (e.g. no connectivity) and return null.
+        // Never dispatch a use_local item without its path — the daemon has no way to
+        // resolve it (the legacy sync-index fallback is dead) and would fail permanently
+        // after 15 retries. Stay PENDING so a later resolve attempt can complete this.
+        if (updatedItems.any { it.use_local == true && it.local_path == null }) {
+            calibreTransferDao.updateTransfer(transfer.copy(
+                batchData = json.encodeToString(updatedItems),
+                lastUpdatedAt = System.currentTimeMillis(),
+            ))
+            return
+        }
+
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             putio_file_id = transfer.putioFileId,
@@ -1195,6 +1207,9 @@ class CalibreRepository @Inject constructor(
     suspend fun pollResponses(googleAccount: String) {
         val myAppId = settingsRepository.getOrCreateAppId()
         val envelopes = daemonTransport.pollResponses(googleAccount, myAppId)
+        if (envelopes.isNotEmpty()) {
+            android.util.Log.d("CalibreRepository", "pollResponses: fetched ${envelopes.size} envelope(s) for app_id=$myAppId")
+        }
         envelopes.forEach { envelope ->
             try {
                 val response = json.decodeFromString<CalibreResponse>(envelope.content)
@@ -1204,6 +1219,14 @@ class CalibreRepository @Inject constructor(
                     settingsRepository.saveDaemonStatus(response.daemon_status)
                 } else if (response.putio_file_id != null) {
                     val transfer = calibreTransferDao.getTransferById(response.putio_file_id)
+                    if (transfer == null) {
+                        // No local record for this putio_file_id (deleted locally, from a
+                        // reinstalled/wiped DB, or a stale duplicate response for a request
+                        // that already completed via a different response). Nothing to apply
+                        // it to — still falls through to acknowledgeResponse() below so it gets
+                        // deleted from Drive instead of lingering forever.
+                        android.util.Log.d("CalibreRepository", "pollResponses: orphaned response for putio_file_id=${response.putio_file_id} (no local transfer) — discarding")
+                    }
                     if (transfer != null) {
                         val newStatus = when (response.status.uppercase()) {
                             "PROCESSING" -> CalibreTransferStatus.PROCESSING
@@ -1287,7 +1310,10 @@ class CalibreRepository @Inject constructor(
                 }
                 daemonTransport.acknowledgeResponse(googleAccount, envelope, myAppId)
             } catch (e: Exception) {
-                e.printStackTrace()
+                // Swallowing this without logging used to mean a single bad envelope (or a
+                // silently-failing acknowledge) could pile up unbounded — the envelope never
+                // gets deleted, so it's re-fetched and re-fails on every subsequent poll forever.
+                android.util.Log.e("CalibreRepository", "pollResponses: failed to process/acknowledge envelope id=${envelope.id} source=${envelope.source} content=${envelope.content}", e)
             }
         }
     }
@@ -2297,16 +2323,93 @@ class CalibreRepository @Inject constructor(
         return false
     }
 
+    // CONTRACT: stub convention — new-format stubs get a fresh put.io ID every time the
+    // daemon re-syncs the file, so item.putio_file_id (the ORIGINAL file's ID, embedded in
+    // the stub filename) can't be used directly to fetch the stub's JSON body — it has to be
+    // located first via search, same as deleteFileFromPutio() does for deletion.
+    private suspend fun resolveStubLocalPathByOriginalId(originalId: Long): String? {
+        val tag = "CalibreRepository"
+        // Cheap first attempt: covers old-format stubs, where the ID never drifts and
+        // originalId IS the current live ID.
+        readStubLocalPathById(originalId)?.let {
+            android.util.Log.d(tag, "resolveStubLocalPath($originalId): resolved directly (no drift)")
+            return it
+        }
+
+        val token = secureStorage.authTokenFlow.value
+        if (token.isBlank()) {
+            android.util.Log.w(tag, "resolveStubLocalPath($originalId): no put.io token available")
+            return null
+        }
+        // searchFiles() does blocking OkHttp I/O synchronously — must be off the caller's
+        // dispatcher (retryTransfer runs on Main via viewModelScope.launch) or it throws
+        // NetworkOnMainThreadException, which has a null message and gets reported here as
+        // the unhelpful "Unknown error".
+        val searchResult = withContext(Dispatchers.IO) {
+            withPutioRetry { putioApiClient.searchFiles(token, ".sk_synced.$originalId") }
+        }
+        if (searchResult !is NetworkResult.Success) {
+            android.util.Log.w(tag, "resolveStubLocalPath($originalId): search failed — ${(searchResult as? NetworkResult.Error)?.message}")
+            return null
+        }
+        android.util.Log.d(tag, "resolveStubLocalPath($originalId): search returned ${searchResult.data.size} result(s): ${searchResult.data.map { it.id to it.name }}")
+        val stubId = searchResult.data
+            .firstOrNull { it.name.substringAfterLast(".sk_synced.", "").toLongOrNull() == originalId }
+            ?.id
+        if (stubId == null) {
+            android.util.Log.w(tag, "resolveStubLocalPath($originalId): no search result matched the embedded original ID")
+            return null
+        }
+        val localPath = readStubLocalPathById(stubId)
+        if (localPath == null) {
+            android.util.Log.w(tag, "resolveStubLocalPath($originalId): found stub id=$stubId but its JSON body had no local_path (or fetch failed)")
+        }
+        return localPath
+    }
+
+    // A use_local item with no local_path can never be resolved by the daemon (the legacy
+    // sync-index fallback is dead — see CONTRACTS.md §15), so resubmitting it verbatim just
+    // reproduces the same permanent failure. Attempt to fill in the missing path from the
+    // put.io stub before resending; returns null if any item is still unresolved.
+    private suspend fun resolveMissingLocalPaths(items: List<CalibreBatchItem>): List<CalibreBatchItem>? {
+        if (items.none { it.use_local == true && it.local_path == null }) return items
+        val resolved = items.map { item ->
+            if (item.use_local == true && item.local_path == null) {
+                item.copy(local_path = resolveStubLocalPathByOriginalId(item.putio_file_id))
+            } else item
+        }
+        return if (resolved.any { it.use_local == true && it.local_path == null }) null else resolved
+    }
+
     suspend fun retryTransfer(fileId: Long, googleAccount: String): NetworkResult<Unit> {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return NetworkResult.Error("Transfer not found")
 
         if (transfer.transferType == "PLEX") return retryPlexTransfer(transfer, googleAccount)
         if (transfer.transferType == "PLEXAMP") return retryPlexampTransfer(transfer, googleAccount)
 
-        val payload = transfer.lastRequestPayload ?: run {
+        // Resolve any missing local_path first — it mirrors whatever payload (stored or
+        // reconstructed) is about to be sent below, so both branches pick up the fix.
+        val storedItems = transfer.batchData?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
+        }
+        val resolvedStoredItems = storedItems?.let { resolveMissingLocalPaths(it) }
+        if (storedItems != null && resolvedStoredItems == null) {
+            calibreTransferDao.updateTransfer(transfer.copy(lastUpdatedAt = System.currentTimeMillis()))
+            return NetworkResult.Error("File not confirmed synced yet — will retry automatically")
+        }
+        if (resolvedStoredItems != null && resolvedStoredItems != storedItems) {
+            calibreTransferDao.updateTransfer(transfer.copy(batchData = json.encodeToString(resolvedStoredItems)))
+        }
+
+        val payload = transfer.lastRequestPayload?.let { stored ->
+            if (resolvedStoredItems == null) stored else try {
+                val req = json.decodeFromString<CalibreBatchRequest>(stored)
+                json.encodeToString(req.copy(items = resolvedStoredItems))
+            } catch (_: Exception) { stored }
+        } ?: run {
             // Reconstruct if missing (for legacy transfers created before lastRequestPayload was added)
             val items = try {
-                if (!transfer.batchData.isNullOrBlank()) {
+                resolvedStoredItems ?: if (!transfer.batchData.isNullOrBlank()) {
                     json.decodeFromString<List<CalibreBatchItem>>(transfer.batchData)
                 } else {
                     // Fallback for very old single-file transfers

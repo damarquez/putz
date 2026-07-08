@@ -310,6 +310,7 @@ fun AppNavGraph(
                         }
                     },
                     viewModel = hiltViewModel(),
+                    syncViewModel = syncViewModel,
                 )
             }
 
@@ -448,6 +449,7 @@ fun AppNavGraph(
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
                     pendingEditMetadataRepository = pendingEditMetadataRepository,
+                    syncViewModel = syncViewModel,
                 )
             }
         }

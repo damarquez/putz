@@ -271,18 +271,17 @@ class CalibreTransfersViewModel @Inject constructor(
     }
 
     private fun startPolling() {
+        // NOTE: pollResponses/pollLibraryUpdates/pollHeartbeat are NOT called here — that's
+        // GlobalSyncViewModel's job, and it's a true app-wide singleton (see AppNavGraph). This
+        // loop used to duplicate that work, running a second full poll cycle concurrently with
+        // GlobalSyncViewModel's whenever this screen was open — which raced both loops against
+        // each other (e.g. two threads both trying to delete the same already-handled response,
+        // logged as spurious 404s) and doubled Drive API load for zero benefit. This loop now
+        // only does the stuck-transfer watchdog logic that's unique to it.
         viewModelScope.launch {
             while (isActive) {
                 val account = settingsRepository.googleTokenFlow.first()
                 if (account.isNotBlank()) {
-                    try {
-                        calibreRepository.pollResponses(account)
-                        calibreRepository.pollLibraryUpdates(account)
-                        calibreRepository.pollHeartbeat(account)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-
                     // Also check for stuck transfers (older than 5 mins) or failed GDrive uploads
                     val currentTransfers = calibreRepository.getTransfers().first()
                     val now = System.currentTimeMillis()
