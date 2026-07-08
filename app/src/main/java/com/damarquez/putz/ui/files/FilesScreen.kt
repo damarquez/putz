@@ -18,7 +18,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
@@ -1399,6 +1401,18 @@ fun FilesScreen(
                 },
                 actions = {
                     if (isSelectionMode) {
+                        val isAllSelected = packCandidateFiles.isNotEmpty() &&
+                            selectedFiles.size == packCandidateFiles.size
+                        IconButton(
+                            onClick = {
+                                selectedFiles = if (isAllSelected) emptySet() else packCandidateFiles.toSet()
+                            },
+                        ) {
+                            Icon(
+                                if (isAllSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                                contentDescription = if (isAllSelected) "Deselect all" else "Select all",
+                            )
+                        }
                         val hasFolderSelected = selectedFiles.any { it.isFolder }
                         IconButton(
                             onClick = { viewModel.startCalibreBatchDraft(selectedFiles.toList()) },
