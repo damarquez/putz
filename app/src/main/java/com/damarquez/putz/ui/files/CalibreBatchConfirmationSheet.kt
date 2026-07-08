@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
@@ -109,9 +109,10 @@ fun CalibreBatchConfirmationSheet(
                 Spacer(Modifier.height(8.dp))
 
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(items, key = { it.file.id }) { item ->
+                    itemsIndexed(items, key = { _, item -> item.file.id }) { index, item ->
                         CalibreBatchRow(
                             item = item,
+                            index = if (items.size > 1) index + 1 else null,
                             checkExists = checkExists,
                             checkPendingTransfer = checkPendingTransfer,
                             onChange = onItemChange,
@@ -141,6 +142,7 @@ fun CalibreBatchConfirmationSheet(
 @Composable
 private fun CalibreBatchRow(
     item: CalibreBatchDraftItem,
+    index: Int?,
     checkExists: suspend (String, String) -> Long?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
     onChange: (CalibreBatchDraftItem) -> Unit,
@@ -164,6 +166,14 @@ private fun CalibreBatchRow(
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (index != null) {
+                Text(
+                    text = "$index.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(24.dp),
+                )
+            }
             Checkbox(
                 checked = item.included,
                 onCheckedChange = { onChange(item.copy(included = it)) },
