@@ -1775,6 +1775,7 @@ fun FilesScreen(
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },
+                                        onCopyJson = { viewModel.copyStubJson(it) },
                                         onDelete = { fileToDelete = file },
                                         onRename = { f ->
                                             renameValue = f.name

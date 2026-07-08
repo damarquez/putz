@@ -821,6 +821,20 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun copyStubJson(file: PutioFile) {
+        viewModelScope.launch {
+            val rawJson = calibreRepository.readStubRawJson(file)
+            if (rawJson == null) {
+                _snackbarMessage.value = "No stub data for this file"
+                return@launch
+            }
+            val clipboardManager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("Stub JSON", rawJson)
+            clipboardManager.setPrimaryClip(clip)
+            _snackbarMessage.value = "Stub JSON copied to clipboard"
+        }
+    }
+
     fun copyDownloadLink(file: PutioFile) {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()

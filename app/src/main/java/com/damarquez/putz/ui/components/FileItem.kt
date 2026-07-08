@@ -3,6 +3,7 @@ package com.damarquez.putz.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +27,6 @@ import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,6 +68,35 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+// Drop-in replacement for Material3's DropdownMenuItem: same named-parameter shape, but the
+// default DropdownMenuItem enforces a 48.dp minimum row height that made this file's popup menu
+// (which can have a dozen+ entries) take up far too much vertical space.
+@Composable
+private fun TightMenuItem(
+    text: @Composable () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leadingIcon != null) {
+            Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) { leadingIcon() }
+            Spacer(modifier = Modifier.width(10.dp))
+        }
+        androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
+            text()
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileItem(
@@ -94,6 +123,7 @@ fun FileItem(
     onRequestPrioritySync: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
     onCopyLink: (PutioFile) -> Unit,
+    onCopyJson: (PutioFile) -> Unit,
     onDelete: () -> Unit,
     onRename: ((PutioFile) -> Unit)? = null,
     isSelected: Boolean,
@@ -317,7 +347,7 @@ fun FileItem(
                     ) {
                         if (isInHiddenFolder && !file.isFolder) {
                             // Hidden folder: only download, rename, delete
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Download") },
                                 onClick = {
                                     showMenu = false
@@ -325,7 +355,7 @@ fun FileItem(
                                 },
                             )
                             if (onRename != null) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     text = { Text("Rename") },
                                     onClick = {
                                         showMenu = false
@@ -333,8 +363,15 @@ fun FileItem(
                                     },
                                 )
                             }
+                            TightMenuItem(
+                                text = { Text("Copy JSON") },
+                                onClick = {
+                                    showMenu = false
+                                    onCopyJson(file)
+                                },
+                            )
                             HorizontalDivider()
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
@@ -346,7 +383,7 @@ fun FileItem(
                             )
                         } else {
                         if (isInSearchResults && onOpenParentFolder != null && !file.isSpecialRootFolder) {
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Open parent folder") },
                                 leadingIcon = {
                                     Icon(Icons.Default.FolderOpen, contentDescription = null)
@@ -362,7 +399,7 @@ fun FileItem(
                         // formats they don't need a full download/sync first — safe to allow even
                         // on a plain remote put.io file that was never synced to the LAN server.
                         if (!file.isFolder && !file.isTrash && (!isRegularRemote || isAudio)) {
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Preview") },
                                 onClick = {
                                     showMenu = false
@@ -372,14 +409,14 @@ fun FileItem(
                             HorizontalDivider()
                         }
                         if (!file.isLan && !file.isFolder && !isRegularRemote) {
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Download") },
                                 onClick = {
                                     showMenu = false
                                     onDownload(file)
                                 },
                             )
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Copy download link") },
                                 onClick = {
                                     showMenu = false
@@ -389,7 +426,7 @@ fun FileItem(
                             HorizontalDivider()
                         }
                         if (isRegularRemote && !file.isLan && !file.isFolder) {
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Priority sync") },
                                 onClick = {
                                     showMenu = false
@@ -400,7 +437,7 @@ fun FileItem(
                         }
                         if (!isRegularRemote) {
                             if (isEbook) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     text = { Text("Send to Calibre") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
@@ -410,7 +447,7 @@ fun FileItem(
                                 )
                             }
                             if (isImage) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     text = { Text("Replace book cover") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
@@ -418,7 +455,7 @@ fun FileItem(
                                         onReplaceCover(file)
                                     },
                                 )
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Fuse images…") },
                                     enabled = isGoogleSignedIn,
@@ -429,7 +466,7 @@ fun FileItem(
                                 )
                             }
                             if (isMultiTrackAudio) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Fuse into M4B…") },
                                     enabled = isGoogleSignedIn,
@@ -440,7 +477,7 @@ fun FileItem(
                                 )
                             }
                             if (isPdf) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Fuse PDFs…") },
                                     enabled = isGoogleSignedIn,
@@ -451,7 +488,7 @@ fun FileItem(
                                 )
                             }
                             if (isEpub) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Fuse EPUBs…") },
                                     enabled = isGoogleSignedIn,
@@ -462,7 +499,7 @@ fun FileItem(
                                 )
                             }
                             if (isMobi) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Fuse MOBIs…") },
                                     enabled = isGoogleSignedIn,
@@ -473,7 +510,7 @@ fun FileItem(
                                 )
                             }
                             if (isComicArchive) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Convert CBRs to PDF…") },
                                     enabled = isGoogleSignedIn,
@@ -482,7 +519,7 @@ fun FileItem(
                                         onSendAsCbrPdf(file)
                                     },
                                 )
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Convert CBRs to CBZ…") },
                                     enabled = isGoogleSignedIn,
@@ -493,7 +530,7 @@ fun FileItem(
                                 )
                             }
                             if (isVideo && file.isSynced) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     text = { Text("Send to Plex") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
@@ -504,7 +541,7 @@ fun FileItem(
                             }
                             if (isSubtitle && file.isSynced) {
                                 if (hasPendingPlexAssemblies) {
-                                    DropdownMenuItem(
+                                    TightMenuItem(
                                         text = { Text("Assemble into movie") },
                                         enabled = isGoogleSignedIn,
                                         onClick = {
@@ -513,7 +550,7 @@ fun FileItem(
                                         },
                                     )
                                 }
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     text = { Text("Add subtitle to movie") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
@@ -523,7 +560,7 @@ fun FileItem(
                                 )
                             }
                             if (isAudio && file.isSynced) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     text = { Text("Send to Plexamp") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
@@ -534,7 +571,7 @@ fun FileItem(
                             }
                             val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden
                             if (isRegularFolder) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     text = { Text("Send folder to Plexamp") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
@@ -542,7 +579,7 @@ fun FileItem(
                                         onSendToPlexamp(file)
                                     },
                                 )
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Fuse folder…") },
                                     enabled = isGoogleSignedIn,
@@ -554,7 +591,7 @@ fun FileItem(
                             }
                             val canBrowseArchive = isGenericArchive && (file.isLocal || file.isLan || file.isSynced)
                             if (canBrowseArchive) {
-                                DropdownMenuItem(
+                                TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
                                     text = { Text("Fuse archive…") },
                                     enabled = isGoogleSignedIn,
@@ -568,7 +605,7 @@ fun FileItem(
                                 HorizontalDivider()
                             }
                         }
-                        DropdownMenuItem(
+                        TightMenuItem(
                             text = { Text("Copy name") },
                             onClick = {
                                 showMenu = false
@@ -584,8 +621,15 @@ fun FileItem(
                                 clipboard.setText(AnnotatedString(nameToCopy))
                             },
                         )
+                        TightMenuItem(
+                            text = { Text("Copy JSON") },
+                            onClick = {
+                                showMenu = false
+                                onCopyJson(file)
+                            },
+                        )
                         if (!file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden) {
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = { Text("Search web") },
                                 onClick = {
                                     showMenu = false
@@ -600,7 +644,7 @@ fun FileItem(
                         }
                         if (!file.isLan && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden && !isRegularRemote) {
                             HorizontalDivider()
-                            DropdownMenuItem(
+                            TightMenuItem(
                                 text = {
                                     Text(
                                         text = if (file.isLocal) "Detach from Putz" else "Delete",

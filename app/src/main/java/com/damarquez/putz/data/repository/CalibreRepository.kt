@@ -1810,6 +1810,7 @@ class CalibreRepository @Inject constructor(
     // content for a given stub's put.io ID never changes — cache it for the process lifetime
     // to avoid re-fetching it every time the Files screen reloads the same folder.
     private val stubContentCache = java.util.concurrent.ConcurrentHashMap<Long, StubContent>()
+    private val stubRawJsonCache = java.util.concurrent.ConcurrentHashMap<Long, String>()
 
     // CONTRACT: stub convention — read raw stub JSON by put.io file ID; the single network call
     // backing readStubLocalPath(By Id)/readStubFileSize/readStubContent below
@@ -1820,11 +1821,22 @@ class CalibreRepository @Inject constructor(
         return withContext(Dispatchers.IO) {
             val result = putioApiClient.downloadFileAsString(token, stubFileId)
             (result as? NetworkResult.Success)?.data?.let { body ->
+                stubRawJsonCache[stubFileId] = body
                 try {
                     json.decodeFromString<StubContent>(body).also { stubContentCache[stubFileId] = it }
                 } catch (_: Exception) { null }
             }
         }
+    }
+
+    // CONTRACT: stub convention — read the stub's JSON body exactly as the daemon wrote it
+    // (includes fields StubContent doesn't model, e.g. synced_at). Used by "Copy JSON" in the
+    // Files screen kebab menu; returns null if not synced or on error.
+    suspend fun readStubRawJson(file: com.damarquez.putz.data.model.PutioFile): String? {
+        if (!file.isSynced) return null
+        stubRawJsonCache[file.id]?.let { return it }
+        fetchStubContent(file.id)
+        return stubRawJsonCache[file.id]
     }
 
     // CONTRACT: stub convention — read local_path from stub JSON by file ID; for use when PutioFile is unavailable
