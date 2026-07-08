@@ -969,7 +969,8 @@ class FilesViewModel @Inject constructor(
         trackTransferPreparation { viewModelScope.launch {
             _snackbarMessage.value = "Preparing ${items.size} book${if (items.size == 1) "" else "s"}..."
 
-            val prepared = items.map { item ->
+            val prepared = items.mapIndexed { index, item ->
+                calibreRepository.updatePrepareProgress((index + 1) to items.size)
                 item to if (item.file.isSynced) calibreRepository.readStubLocalPath(item.file) else null
             }
             val unresolved = prepared.filter { (item, path) -> item.file.isSynced && path == null }

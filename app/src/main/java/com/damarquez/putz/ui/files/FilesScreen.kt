@@ -1319,7 +1319,12 @@ fun FilesScreen(
             topBar = {
                 TopAppBar(
                 title = {
-                    if (isSearchMode) {
+                    if (isSearchMode && isSelectionMode) {
+                        Text(
+                            text = "${selectedFiles.size} selected of ${packCandidateFiles.size} found",
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    } else if (isSearchMode) {
                         TextField(
                             value = searchQuery,
                             onValueChange = { viewModel.onSearchQueryChanged(it) },
