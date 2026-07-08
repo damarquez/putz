@@ -3,6 +3,7 @@ package com.damarquez.putz.util
 import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
 import java.io.File
+import java.net.URLDecoder
 import java.util.zip.ZipFile
 
 /**
@@ -33,7 +34,10 @@ object EpubExtractor {
         val opfDir = opfFile.parentFile ?: destDir
         val (manifest, spineIds) = parseOpf(opfFile)
 
-        return spineIds.mapNotNull { id -> manifest[id]?.let { href -> File(opfDir, href) } }
+        // hrefs are URIs per the OPF spec — some producers (e.g. this Adobe InDesign/Wildside
+        // Press pipeline) percent-encode spaces/parens in them, while the on-disk zip entries
+        // stay literal. Decode before resolving or these chapters silently fail the exists() check.
+        return spineIds.mapNotNull { id -> manifest[id]?.let { href -> File(opfDir, URLDecoder.decode(href, "UTF-8")) } }
             .filter { it.exists() }
     }
 
