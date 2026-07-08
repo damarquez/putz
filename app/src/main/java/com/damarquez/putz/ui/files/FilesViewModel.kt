@@ -1722,6 +1722,9 @@ class FilesViewModel @Inject constructor(
         return calibreRepository.checkExistsByUuid(dbFile, uuid)
     }
 
+    suspend fun findPendingTransfer(fileId: Long, fileName: String) =
+        calibreRepository.findPendingTransfer(fileId, fileName)
+
     fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()

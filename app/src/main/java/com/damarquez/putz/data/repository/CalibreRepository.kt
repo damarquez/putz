@@ -428,6 +428,23 @@ class CalibreRepository @Inject constructor(
     }
     fun getTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
 
+    /** Finds a still-in-flight transfer (not COMPLETED/FAILED) that already covers this file,
+     *  whether as a single-file transfer or as one file within a batch/assembly. Used to warn
+     *  before placing a duplicate request for a file that's already queued.
+     *
+     *  Callers must pass [fileId] as `PutioFile.syncedFileId` (not `.id`) for synced files —
+     *  that's the original put.io ID embedded in the stub filename, which is what sendToCalibre
+     *  actually records as the transfer's putioFileId. `.id` is the stub's own current put.io
+     *  ID (a distinct object from the original file), so comparing against it would false-negative.
+     *  [fileName] is matched too as a belt-and-suspenders fallback (it's what's stored as the
+     *  transfer's fileName and doesn't depend on getting the right ID field at all). */
+    suspend fun findPendingTransfer(fileId: Long, fileName: String): CalibreTransferEntity? =
+        calibreTransferDao.getAllTransfers().first().firstOrNull { transfer ->
+            transfer.status != CalibreTransferStatus.COMPLETED &&
+                transfer.status != CalibreTransferStatus.FAILED &&
+                (fileId in transfer.parsedFileIds() || transfer.fileName == fileName)
+        }
+
     // CONTRACT: UPDATE_COMMENTS
     suspend fun sendUpdateCommentsRequest(
         title: String,

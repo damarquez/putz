@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.util.MetadataUtils
@@ -67,6 +68,7 @@ fun CalibreBatchConfirmationSheet(
     onConfirm: (List<CalibreBatchDraftItem>) -> Unit,
     onItemChange: (CalibreBatchDraftItem) -> Unit,
     checkExists: suspend (String, String) -> Long?,
+    checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity? = { _, _ -> null },
     onPreview: (PutioFile) -> Unit,
 ) {
     val includedItems = items.filter { it.included }
@@ -111,6 +113,7 @@ fun CalibreBatchConfirmationSheet(
                         CalibreBatchRow(
                             item = item,
                             checkExists = checkExists,
+                            checkPendingTransfer = checkPendingTransfer,
                             onChange = onItemChange,
                             onPreview = onPreview,
                         )
@@ -139,11 +142,13 @@ fun CalibreBatchConfirmationSheet(
 private fun CalibreBatchRow(
     item: CalibreBatchDraftItem,
     checkExists: suspend (String, String) -> Long?,
+    checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
     onChange: (CalibreBatchDraftItem) -> Unit,
     onPreview: (PutioFile) -> Unit,
 ) {
     val context = LocalContext.current
     var matchedBookId by remember(item.file.id) { mutableStateOf<Long?>(null) }
+    var pendingTransfer by remember(item.file.id) { mutableStateOf<CalibreTransferEntity?>(null) }
 
     LaunchedEffect(item.title, item.author, item.included) {
         matchedBookId = if (item.included && item.title.isNotBlank()) {
@@ -151,6 +156,10 @@ private fun CalibreBatchRow(
         } else {
             null
         }
+    }
+
+    LaunchedEffect(item.file.id) {
+        pendingTransfer = checkPendingTransfer(item.file.syncedFileId, item.file.displayName)
     }
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -237,6 +246,24 @@ private fun CalibreBatchRow(
                     checked = item.isProtected,
                     onCheckedChange = { onChange(item.copy(isProtected = it)) },
                 )
+            }
+
+            if (pendingTransfer != null) {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.height(16.dp).width(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "Already has a pending transfer (${pendingTransfer!!.status})!",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
 
             if (matchedBookId != null) {

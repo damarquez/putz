@@ -525,6 +525,7 @@ fun FilesScreen(
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            checkPendingTransfer = { viewModel.findPendingTransfer(singleFile.syncedFileId, singleFile.displayName) },
             isArchive = MetadataUtils.isArchive(singleFile.displayName),
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, listOf(singleFile)),
@@ -542,6 +543,7 @@ fun FilesScreen(
             },
             onItemChange = { updated -> viewModel.updateCalibreBatchDraftItem(updated) },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkPendingTransfer = { fileId, fileName -> viewModel.findPendingTransfer(fileId, fileName) },
             onPreview = { file -> viewModel.previewFile(file) },
         )
     }

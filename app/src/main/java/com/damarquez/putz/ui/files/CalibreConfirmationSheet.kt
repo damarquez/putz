@@ -60,6 +60,7 @@ import androidx.compose.ui.window.DialogProperties
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.util.MetadataUtils
@@ -98,6 +99,7 @@ fun CalibreConfirmationSheet(
     onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean) -> Unit,
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
+    checkPendingTransfer: (suspend () -> CalibreTransferEntity?)? = null,
     isArchive: Boolean = false,
     isReplaceCover: Boolean = false,
     isUpdateComments: Boolean = false,
@@ -134,6 +136,11 @@ fun CalibreConfirmationSheet(
         if (initialTags.isNotBlank()) {
             tags = initialTags
         }
+    }
+
+    var pendingTransfer by remember { mutableStateOf<CalibreTransferEntity?>(null) }
+    LaunchedEffect(Unit) {
+        pendingTransfer = checkPendingTransfer?.invoke()
     }
 
     var matchedBookId by remember { mutableStateOf<Long?>(null) }
@@ -243,6 +250,24 @@ fun CalibreConfirmationSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+
+                if (pendingTransfer != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "This file already has a pending transfer request (${pendingTransfer!!.status})!",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
 
                 if (matchedBookId != null) {
