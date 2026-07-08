@@ -515,6 +515,7 @@ fun FilesScreen(
             displayName = singleFile.displayName,
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            onPreview = { viewModel.previewFile(singleFile) },
             onDismiss = { selectedFileForCalibre = null },
             onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
                 viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, tags)

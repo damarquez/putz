@@ -57,7 +57,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import android.app.SearchManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -94,6 +93,7 @@ fun CalibreConfirmationSheet(
     displayName: String,
     initialTitle: String,
     initialAuthor: String,
+    onPreview: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean) -> Unit,
     checkExists: suspend (String, String) -> Long?,
@@ -233,14 +233,7 @@ fun CalibreConfirmationSheet(
                         text = displayName,
                         style = MaterialTheme.typography.bodyMedium.copy(textDecoration = TextDecoration.Underline),
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable {
-                            val query = MetadataUtils.webSearchQuery(displayName)
-                            val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
-                                putExtra(SearchManager.QUERY, query)
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(intent)
-                        },
+                        modifier = Modifier.clickable { onPreview() },
                     )
                 }
 
