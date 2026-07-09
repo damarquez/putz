@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,10 +15,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -561,17 +565,42 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 val activeTransfers = transfers.filter { it.status != CalibreTransferStatus.COMPLETED }
                 val completedTransfers = transfers.filter { it.status == CalibreTransferStatus.COMPLETED }
 
+                val listState = rememberLazyListState()
+
+                // Index bookkeeping so the header/footer jump buttons land on the right row —
+                // each section is [header item, N transfer items, footer item] back to back.
+                val activeHeaderIndex = 0
+                val activeFooterIndex = activeHeaderIndex + activeTransfers.size + 1
+                val completedHeaderIndex =
+                    (if (activeTransfers.isNotEmpty()) activeFooterIndex + 1 else 0)
+                val completedFooterIndex = completedHeaderIndex + completedTransfers.size + 1
+
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize()
                 ) {
                     if (activeTransfers.isNotEmpty()) {
                         item {
-                            Text(
-                                text = "Active (${activeTransfers.size})",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = "Active (${activeTransfers.size})",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 8.dp)
+                                )
+                                IconButton(onClick = {
+                                    scope.launch { listState.animateScrollToItem(activeFooterIndex) }
+                                }) {
+                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Scroll to bottom of Active")
+                                }
+                            }
                         }
                         items(
                             items = activeTransfers,
@@ -598,16 +627,45 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 onTap = { transferToBrowse = transfer },
                             )
                         }
+                        item {
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                TextButton(onClick = {
+                                    scope.launch { listState.animateScrollToItem(activeHeaderIndex) }
+                                }) {
+                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = null)
+                                    Text("Back to top")
+                                }
+                            }
+                        }
                     }
 
                     if (completedTransfers.isNotEmpty()) {
                         item {
-                            Text(
-                                text = "Completed (${completedTransfers.size})",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = "Completed (${completedTransfers.size})",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 8.dp)
+                                )
+                                IconButton(onClick = {
+                                    scope.launch { listState.animateScrollToItem(completedFooterIndex) }
+                                }) {
+                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Scroll to bottom of Completed")
+                                }
+                            }
                         }
                         items(
                             items = completedTransfers,
@@ -637,6 +695,21 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 },
                                 onTap = { transferToBrowse = transfer },
                             )
+                        }
+                        item {
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                TextButton(onClick = {
+                                    scope.launch { listState.animateScrollToItem(completedHeaderIndex) }
+                                }) {
+                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = null)
+                                    Text("Back to top")
+                                }
+                            }
                         }
                     }
                 }
