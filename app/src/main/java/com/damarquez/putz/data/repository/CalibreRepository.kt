@@ -485,6 +485,7 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             isTempUpload = true,
+            hasPutioFile = false,
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr
         )
@@ -536,6 +537,7 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             isTempUpload = true,
+            hasPutioFile = false,
             calibreBookUuid = pending.uuid,
             lastRequestPayload = jsonStr,
         )
@@ -571,6 +573,7 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             isTempUpload = true,
+            hasPutioFile = false,
             lastRequestPayload = jsonStr,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
@@ -1276,7 +1279,7 @@ class CalibreRepository @Inject constructor(
                                 lastUpdatedAt = System.currentTimeMillis()
                             ))
 
-                            if (newStatus == CalibreTransferStatus.COMPLETED && transfer.isTempUpload) {
+                            if (newStatus == CalibreTransferStatus.COMPLETED && transfer.isTempUpload && transfer.hasPutioFile) {
                                 val token = secureStorage.authTokenFlow.value
                                 if (token.isNotBlank()) {
                                     deleteFileFromPutio(token, transfer.putioFileId)
@@ -2004,6 +2007,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2043,6 +2047,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2082,6 +2087,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2119,6 +2125,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2148,6 +2155,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2185,6 +2193,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2214,6 +2223,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2251,6 +2261,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
@@ -2280,6 +2291,7 @@ class CalibreRepository @Inject constructor(
             batchData = "[]",
             calibreBookUuid = calibreBookUuid,
             lastRequestPayload = jsonStr,
+            hasPutioFile = false,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }

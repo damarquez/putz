@@ -95,7 +95,7 @@ class TransferDeleteService : Service() {
         var failedCount = 0
         green.forEachIndexed { index, transfer ->
             var failureMessage: String? = null
-            if (alsoDeleteFromPutio) {
+            if (alsoDeleteFromPutio && transfer.hasPutioFile) {
                 if (transfer.isTempUpload && transfer.sourceLocalUri != null) {
                     calibreRepository.updateDeleteProgress(
                         TransferDeleteProgress(

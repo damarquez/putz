@@ -447,7 +447,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
         val isCompleted = transfer.status == CalibreTransferStatus.COMPLETED
         val isDuplicate = transfer.status == CalibreTransferStatus.FAILED && 
                          transfer.errorMessage?.contains("already has format", ignoreCase = true) == true
-        val canCleanup = isCompleted || isDuplicate
+        val canCleanup = (isCompleted || isDuplicate) && transfer.hasPutioFile
         val isLocal = transfer.isTempUpload
         
         AlertDialog(

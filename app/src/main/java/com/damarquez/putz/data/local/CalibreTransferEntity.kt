@@ -62,6 +62,12 @@ data class CalibreTransferEntity(
      *  "Check & refresh" (CalibreTransferItem.kt) — each check also re-verifies the
      *  book/formats with the daemon and refreshes its assets.db entry. */
     val probeCount: Int = 0,
+
+    /** False for requests with no real put.io file behind them — e.g. PROTECT_BOOK,
+     *  UNPROTECT_BOOK, SET_PAGE_COUNT, UPDATE_COMMENTS — which use a synthetic
+     *  System.currentTimeMillis() as putioFileId. "Also delete from put.io" must be a
+     *  no-op for these; there is nothing on put.io to delete. */
+    val hasPutioFile: Boolean = true,
     ) {
 
     fun parsedFileIds(): List<Long> = 
