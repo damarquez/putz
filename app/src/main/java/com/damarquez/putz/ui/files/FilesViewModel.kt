@@ -89,6 +89,7 @@ class FilesViewModel @Inject constructor(
     private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
     private val lanDaemonTransport: LanDaemonTransport,
+    private val trashRepository: com.damarquez.putz.data.repository.TrashRepository,
 ) : ViewModel() {
 
     val parentId: Long = savedStateHandle[Screen.Files.ARG_PARENT_ID] ?: 0L
@@ -1922,6 +1923,14 @@ class FilesViewModel @Inject constructor(
 
             val token = settingsRepository.authTokenFlow.first()
 
+            // put.io's own /files/search index lags behind a deletion by several minutes
+            // (deleting moves a file to Trash first; the search index takes a while to
+            // converge), so a just-deleted stub can briefly still appear in results, then
+            // vanish, then sometimes even reappear once more before finally settling. Fetching
+            // the current trash list once per search and filtering it out client-side closes
+            // that window immediately instead of waiting on put.io's own convergence.
+            val trashedIds = fetchTrashedIds(token)
+
             // put.io's /files/search endpoint neither reliably scopes to a parent_id subtree
             // nor understands AND/OR/NOT/quote syntax, so both "search in folder" and any
             // boolean query are evaluated locally via a client-side recursive walk (same BFS
@@ -1937,7 +1946,7 @@ class FilesViewModel @Inject constructor(
                 while (queue.isNotEmpty()) {
                     val currentFolderId = queue.removeFirst()
                     val children = filesRepository.listFiles(token, currentFolderId).dataOrNull()?.first ?: emptyList()
-                    val matches = children.filter { matcher(it.displayName) }
+                    val matches = children.filter { matcher(it.displayName) && it.id !in trashedIds }
                     if (matches.isNotEmpty()) {
                         collected.addAll(matches)
                         val cur = _uiState.value as? FilesUiState.Success
@@ -1959,11 +1968,12 @@ class FilesViewModel @Inject constructor(
                 is NetworkResult.Success -> {
                     val currentSuccess = _uiState.value as? FilesUiState.Success
                     if (currentSuccess != null) {
+                        val filtered = result.data.filter { it.id !in trashedIds }
                         _uiState.value = currentSuccess.copy(
-                            searchResults = sortFiles(result.data),
+                            searchResults = sortFiles(filtered),
                             isSearching = false
                         )
-                        enrichSyncedFileSizes(result.data)
+                        enrichSyncedFileSizes(filtered)
                     }
                 }
                 is NetworkResult.Error -> {
@@ -1976,6 +1986,16 @@ class FilesViewModel @Inject constructor(
                 }
                 NetworkResult.Loading -> Unit
             }
+        }
+    }
+
+    // CONTRACT: search trash-filtering — see the comment at its call site in search() above.
+    // Best-effort: if the trash list can't be fetched, search proceeds unfiltered (same
+    // behavior as before this existed) rather than blocking or failing the search.
+    private suspend fun fetchTrashedIds(token: String): Set<Long> {
+        return when (val result = trashRepository.listTrash(token)) {
+            is NetworkResult.Success -> result.data.first.map { it.id }.toSet()
+            else -> emptySet()
         }
     }
 

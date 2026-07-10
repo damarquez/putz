@@ -622,6 +622,13 @@ fun FileItem(
                             },
                         )
                         TightMenuItem(
+                            text = { Text("Copy ID") },
+                            onClick = {
+                                showMenu = false
+                                clipboard.setText(AnnotatedString(file.id.toString()))
+                            },
+                        )
+                        TightMenuItem(
                             text = { Text("Copy JSON") },
                             onClick = {
                                 showMenu = false

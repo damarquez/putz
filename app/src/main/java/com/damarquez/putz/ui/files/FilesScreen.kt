@@ -1502,7 +1502,17 @@ fun FilesScreen(
 
                 PullToRefreshBox(
                     isRefreshing = state.isRefreshing || state.isSearching,
-                    onRefresh = { viewModel.loadFiles(isRefresh = true) },
+                    onRefresh = {
+                        // Pulling to refresh while viewing search results must re-run the
+                        // search itself, not reload the underlying folder listing — searchResults
+                        // is only ever set by search(), so refreshing via loadFiles() alone left
+                        // stale results (e.g. an already-deleted stub) on screen indefinitely.
+                        if (isSearchMode && searchQuery.isNotEmpty()) {
+                            viewModel.search(searchQuery)
+                        } else {
+                            viewModel.loadFiles(isRefresh = true)
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues),
