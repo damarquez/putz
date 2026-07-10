@@ -1903,8 +1903,14 @@ class CalibreRepository @Inject constructor(
                             val normDbTitle = normalize(dbTitle)
                             val normDbAuthor = normalize(dbAuthor)
                             
-                            // Check if normalized search terms are contained within normalized DB values
-                            if (normDbTitle.contains(normTitle) && (author.isBlank() || normDbAuthor.contains(normAuthor))) {
+                            // Title must match exactly (after accent/case normalization) — a
+                            // substring/contains check here previously matched any title that
+                            // merely *mentioned* the search title elsewhere, e.g. searching
+                            // "The Willows" matching the anthology "Ancient Sorceries (The
+                            // Listener; The Sea Fit; The Willows)" and wrongly warning it might
+                            // already exist. Author still allows contains(), for the case where
+                            // the same book was stored under a slightly different author string.
+                            if (normDbTitle == normTitle && (author.isBlank() || normDbAuthor.contains(normAuthor))) {
                                 return@withContext id
                             }
                         } while (cursor.moveToNext())
