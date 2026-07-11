@@ -13,6 +13,12 @@ object MetadataUtils {
     /** Extra single-word junk tags (beyond format/extension names) to strip from parsed titles. Extend as needed. */
     private val JUNK_PAREN_WORDS = setOf("retail")
 
+    /** Minor words kept lowercase in title-casing, unless they're the first or last word. */
+    private val TITLE_CASE_MINOR_WORDS = setOf(
+        "a", "an", "the", "and", "but", "or", "nor", "for", "on", "in", "to",
+        "of", "at", "with", "without", "either",
+    )
+
     private fun cleanStubSuffix(fileName: String): String {
         return fileName.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
     }
@@ -185,19 +191,36 @@ object MetadataUtils {
      * Cleans up a parsed title: strips parenthetical groups that are just a format/extension tag
      * (e.g. "(epub)") or a known junk word (e.g. "(retail)"), then normalizes underscores/whitespace
      * and title-cases each word. Shared by the single-file and batch send-to-Calibre "fix" buttons.
+     *
+     * Words starting with punctuation (e.g. an opening paren) are capitalized on their first letter,
+     * not their first character, since `replaceFirstChar` on "(special)" would only touch the "(".
+     * Minor words (a, the, and, ...) stay lowercase unless they're the first or last word of the title,
+     * or they immediately follow a "-" standing alone between spaces (treated like a clause break).
      */
     fun fixTitleCapitalization(title: String): String {
         val junkTokens = EBOOK_EXTENSIONS + PLEXAMP_AUDIO_EXTENSIONS + JUNK_PAREN_WORDS
         val withoutJunkParens = Regex("""\(\s*([A-Za-z0-9]+)\s*\)""").replace(title) { match ->
             if (match.groupValues[1].lowercase() in junkTokens) "" else match.value
         }
-        return withoutJunkParens
+        val words = withoutJunkParens
             .replace('_', ' ')
             .replace(Regex("\\s+"), " ")
             .trim()
             .split(" ")
             .filter { it.isNotEmpty() }
-            .joinToString(" ") { word -> word.lowercase().replaceFirstChar { it.uppercase() } }
+
+        return words.mapIndexed { index, word ->
+            val lower = word.lowercase()
+            val letterIndex = word.indexOfFirst { it.isLetter() }
+            val bareWord = if (letterIndex >= 0) lower.substring(letterIndex) else lower
+            val afterDash = index > 0 && words[index - 1] == "-"
+            val isMinorWord = index != 0 && index != words.lastIndex && !afterDash && bareWord in TITLE_CASE_MINOR_WORDS
+            if (isMinorWord || letterIndex < 0) {
+                lower
+            } else {
+                lower.substring(0, letterIndex) + lower[letterIndex].uppercase() + lower.substring(letterIndex + 1)
+            }
+        }.joinToString(" ")
     }
 
     /**

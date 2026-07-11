@@ -158,7 +158,11 @@ fun CalibreConfirmationSheet(
     var isProtected by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    val titleAuthorLocked = isReplaceCover
+    // A UUID match on the plain "send new book" flow only targets an existing book for a new
+    // format — the daemon never writes title/author back for it (see process_book_batch in
+    // putz_manager.py), so editing these fields here would be misleading. isUpdateComments is
+    // the one mode where a UUID match's title/author edits actually get applied to the book.
+    val titleAuthorLocked = isReplaceCover || (isUuidMatched && !isUpdateComments)
     val requiresUuidMatch = isReplaceCover
 
     LaunchedEffect(uuid, autoAddTags) {

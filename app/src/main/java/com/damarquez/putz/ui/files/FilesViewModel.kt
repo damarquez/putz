@@ -1001,7 +1001,10 @@ class FilesViewModel @Inject constructor(
                     item.file,
                     item.title.trim(),
                     item.author.trim().ifBlank { "Unknown" },
+                    isAltVersion = item.isAltVersion,
+                    calibreBookUuid = item.uuid.trim().ifBlank { null },
                     isProtected = item.isProtected,
+                    tags = item.tags.trim().ifBlank { null },
                     preresolvedLocalPath = localPath,
                 )
             }

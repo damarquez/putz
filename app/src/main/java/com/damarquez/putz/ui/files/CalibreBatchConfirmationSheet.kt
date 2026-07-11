@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Warning
@@ -42,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -52,6 +54,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.model.PutioFile
+import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.util.MetadataUtils
 
@@ -62,6 +65,9 @@ data class CalibreBatchDraftItem(
     val author: String,
     val included: Boolean = true,
     val isProtected: Boolean = false,
+    val isAltVersion: Boolean = false,
+    val tags: String = "",
+    val uuid: String = "",
     val matchedBookId: Long? = null,
 )
 
@@ -73,6 +79,7 @@ fun CalibreBatchConfirmationSheet(
     onConfirm: (List<CalibreBatchDraftItem>) -> Unit,
     onItemChange: (CalibreBatchDraftItem) -> Unit,
     checkExists: suspend (String, String) -> Long?,
+    checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity? = { _, _ -> null },
     onPreview: (PutioFile) -> Unit,
 ) {
@@ -119,6 +126,7 @@ fun CalibreBatchConfirmationSheet(
                             item = item,
                             index = if (items.size > 1) index + 1 else null,
                             checkExists = checkExists,
+                            checkExistsByUuid = checkExistsByUuid,
                             checkPendingTransfer = checkPendingTransfer,
                             onChange = onItemChange,
                             onPreview = onPreview,
@@ -162,6 +170,7 @@ private fun CalibreBatchRow(
     item: CalibreBatchDraftItem,
     index: Int?,
     checkExists: suspend (String, String) -> Long?,
+    checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
     onChange: (CalibreBatchDraftItem) -> Unit,
     onPreview: (PutioFile) -> Unit,
@@ -170,11 +179,42 @@ private fun CalibreBatchRow(
     onUnselectFromHere: () -> Unit,
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     var matchedBookId by remember(item.file.id) { mutableStateOf<Long?>(null) }
+    var matchedBookTitle by remember(item.file.id) { mutableStateOf<String?>(null) }
+    var matchedBookAuthor by remember(item.file.id) { mutableStateOf<String?>(null) }
+    var isUuidMatched by remember(item.file.id) { mutableStateOf(false) }
     var pendingTransfer by remember(item.file.id) { mutableStateOf<CalibreTransferEntity?>(null) }
     var showBulkMenu by remember { mutableStateOf(false) }
 
-    LaunchedEffect(item.title, item.author, item.included) {
+    // A UUID match takes over title/author (like the single-file dialog) and owns matchedBookId
+    // while present; the text-based match below only runs when there's no UUID to match on.
+    LaunchedEffect(item.uuid) {
+        if (item.uuid.isNotBlank()) {
+            val match = checkExistsByUuid(item.uuid.trim())
+            if (match != null) {
+                matchedBookId = match.id
+                matchedBookTitle = match.title
+                matchedBookAuthor = match.author
+                isUuidMatched = true
+                if (item.title != match.title || item.author != match.author) {
+                    onChange(item.copy(title = match.title, author = match.author))
+                }
+            } else {
+                matchedBookId = null
+                matchedBookTitle = null
+                matchedBookAuthor = null
+                isUuidMatched = false
+            }
+        } else {
+            isUuidMatched = false
+            matchedBookTitle = null
+            matchedBookAuthor = null
+        }
+    }
+
+    LaunchedEffect(item.title, item.author, item.included, item.uuid) {
+        if (item.uuid.isNotBlank()) return@LaunchedEffect
         matchedBookId = if (item.included && item.title.isNotBlank()) {
             checkExists(item.title, item.author.ifBlank { "Unknown" })
         } else {
@@ -236,35 +276,42 @@ private fun CalibreBatchRow(
         }
 
         if (item.included) {
+            // A UUID match only targets an existing book for a new format — the daemon never
+            // writes title/author back for it (see process_book_batch in putz_manager.py), so
+            // editing these fields once matched would be misleading. Lock them, mirroring the
+            // single-file dialog.
             Spacer(Modifier.height(4.dp))
             CompactOutlinedTextField(
                 value = item.title,
                 onValueChange = { onChange(item.copy(title = it)) },
                 label = "Title",
                 modifier = Modifier.fillMaxWidth(),
+                enabled = !isUuidMatched,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                trailingIcon = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { onChange(item.copy(title = item.file.displayName.substringBeforeLast('.'))) },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FileOpen,
-                                contentDescription = "Load filename as title",
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                            )
-                        }
-                        IconButton(
-                            onClick = { onChange(item.copy(title = MetadataUtils.fixTitleCapitalization(item.title))) },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoFixHigh,
-                                contentDescription = "Fix title capitalisation",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                trailingIcon = if (!isUuidMatched) {
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { onChange(item.copy(title = item.file.displayName.substringBeforeLast('.'))) },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FileOpen,
+                                    contentDescription = "Load filename as title",
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                )
+                            }
+                            IconButton(
+                                onClick = { onChange(item.copy(title = MetadataUtils.fixTitleCapitalization(item.title))) },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoFixHigh,
+                                    contentDescription = "Fix title capitalisation",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
-                },
+                } else null,
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -274,11 +321,13 @@ private fun CalibreBatchRow(
                     label = "Author",
                     placeholder = "Unknown",
                     modifier = Modifier.weight(1f),
+                    enabled = !isUuidMatched,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(
                     onClick = { onChange(item.copy(title = item.author, author = item.title)) },
+                    enabled = !isUuidMatched,
                 ) {
                     Icon(
                         imageVector = Icons.Default.SwapVert,
@@ -286,6 +335,41 @@ private fun CalibreBatchRow(
                     )
                 }
             }
+
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CompactOutlinedTextField(
+                    value = item.uuid,
+                    onValueChange = { onChange(item.copy(uuid = it)) },
+                    label = "Book UUID (Optional)",
+                    modifier = Modifier.weight(1f),
+                    placeholder = "Directly target an existing book",
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = {
+                        val pasted = clipboardManager.getText()?.text.orEmpty().trim()
+                        if (pasted.isNotEmpty()) onChange(item.copy(uuid = pasted))
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentPaste,
+                        contentDescription = "Paste UUID from clipboard",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            CompactOutlinedTextField(
+                value = item.tags,
+                onValueChange = { onChange(item.copy(tags = it)) },
+                label = "Tags (optional)",
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = "Programming, Python, Reference",
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            )
 
             Spacer(Modifier.height(4.dp))
             Row(
@@ -300,6 +384,28 @@ private fun CalibreBatchRow(
                 Switch(
                     checked = item.isProtected,
                     onCheckedChange = { onChange(item.copy(isProtected = it)) },
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Alternative version",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = "Append _bkp to extension (e.g. pdf → pdf_bkp)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = item.isAltVersion,
+                    onCheckedChange = { onChange(item.copy(isAltVersion = it)) },
                 )
             }
 
@@ -326,23 +432,27 @@ private fun CalibreBatchRow(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { openCalibreAnywhereSearch(context, item.title) },
+                        .clickable { openCalibreAnywhereSearch(context, matchedBookTitle ?: item.title) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Warning,
+                        imageVector = if (isUuidMatched) Icons.Default.FileOpen else Icons.Default.Warning,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = if (isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         modifier = Modifier.height(16.dp).width(16.dp),
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Might already exist in Calibre! (ID: #$matchedBookId)",
+                        text = if (isUuidMatched) {
+                            "Matched: $matchedBookTitle by $matchedBookAuthor (ID: #$matchedBookId)"
+                        } else {
+                            "Might already exist in Calibre! (ID: #$matchedBookId)"
+                        },
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontWeight = FontWeight.Bold,
                             textDecoration = TextDecoration.Underline,
                         ),
-                        color = MaterialTheme.colorScheme.error,
+                        color = if (isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     )
                 }
             }
