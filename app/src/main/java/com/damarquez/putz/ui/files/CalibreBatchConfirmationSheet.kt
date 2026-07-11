@@ -50,7 +50,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -83,10 +82,14 @@ fun CalibreBatchConfirmationSheet(
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity? = { _, _ -> null },
+    readStubFileSize: suspend (PutioFile) -> Long? = { null },
     onPreview: (PutioFile) -> Unit,
 ) {
     val includedItems = items.filter { it.included }
     val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() }
+    // Resolved once for the whole list (not per row) so synced stubs' real sizes are fetched a
+    // single time and shared, rather than re-fetched by every row's own effect.
+    val sizeProgress = rememberSizeProgress(items.map { it.file }, readStubFileSize)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -127,6 +130,7 @@ fun CalibreBatchConfirmationSheet(
                         CalibreBatchRow(
                             item = item,
                             index = if (items.size > 1) index + 1 else null,
+                            sizeBytes = sizeProgress?.sizesById?.get(item.file.id) ?: item.file.size,
                             checkExists = checkExists,
                             checkExistsByUuid = checkExistsByUuid,
                             checkPendingTransfer = checkPendingTransfer,
@@ -196,6 +200,7 @@ private fun CompactIconButton(
 private fun CalibreBatchRow(
     item: CalibreBatchDraftItem,
     index: Int?,
+    sizeBytes: Long,
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
@@ -291,11 +296,9 @@ private fun CalibreBatchRow(
                 }
             }
             Text(
-                text = item.file.displayName,
+                text = if (sizeBytes > 0) "${item.file.displayName} [${formatByteSize(sizeBytes)}]" else item.file.displayName,
                 style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
                 color = MaterialTheme.colorScheme.primary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
                     .clickable { onPreview(item.file) },
@@ -303,8 +306,26 @@ private fun CalibreBatchRow(
         }
 
         if (item.included) {
+            if (pendingTransfer != null) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.height(16.dp).width(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "Already has a pending transfer (${pendingTransfer!!.status})!",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
             if (matchedBookId != null) {
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -337,7 +358,7 @@ private fun CalibreBatchRow(
             // writes title/author back for it (see process_book_batch in putz_manager.py), so
             // editing these fields once matched would be misleading. Lock them, mirroring the
             // single-file dialog.
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(6.dp))
             CompactOutlinedTextField(
                 value = item.title,
                 onValueChange = { onChange(item.copy(title = it)) },
@@ -406,7 +427,7 @@ private fun CalibreBatchRow(
                 )
             }
 
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(6.dp))
             CompactOutlinedTextField(
                 value = item.tags,
                 onValueChange = { onChange(item.copy(tags = it)) },
@@ -417,7 +438,7 @@ private fun CalibreBatchRow(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             )
 
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -443,23 +464,6 @@ private fun CalibreBatchRow(
                 )
             }
 
-            if (pendingTransfer != null) {
-                Spacer(Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.height(16.dp).width(16.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Already has a pending transfer (${pendingTransfer!!.status})!",
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
         }
     }
 }

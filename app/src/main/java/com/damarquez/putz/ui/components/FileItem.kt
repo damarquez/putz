@@ -130,6 +130,7 @@ fun FileItem(
     isSelectionMode: Boolean,
     selectionCount: Int = 0,
     onSelectNextN: () -> Unit = {},
+    onUnselectBeforeHere: () -> Unit = {},
     onUnselectFromHere: () -> Unit = {},
     isGoogleSignedIn: Boolean = false,
     isHighlighted: Boolean = false,
@@ -702,6 +703,13 @@ fun FileItem(
                 onClick = {
                     showSelectionMenu = false
                     onSelectNextN()
+                },
+            )
+            TightMenuItem(
+                text = { Text("Unselect all before here") },
+                onClick = {
+                    showSelectionMenu = false
+                    onUnselectBeforeHere()
                 },
             )
             TightMenuItem(

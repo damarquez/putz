@@ -539,12 +539,12 @@ fun FilesScreen(
             onConfirm = { finalItems ->
                 viewModel.sendBatchToCalibre(finalItems)
                 viewModel.dismissCalibreBatchDraft()
-                selectedFiles = emptySet()
             },
             onItemChange = { updated -> viewModel.updateCalibreBatchDraftItem(updated) },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             checkPendingTransfer = { fileId, fileName -> viewModel.findPendingTransfer(fileId, fileName) },
+            readStubFileSize = { file -> viewModel.readStubFileSize(file) },
             onPreview = { file -> viewModel.previewFile(file) },
         )
     }
@@ -1774,6 +1774,15 @@ fun FilesScreen(
                                                 )
                                             }
                                             selectedFiles = selectedFiles + file + nextBatch
+                                        },
+                                        onUnselectBeforeHere = {
+                                            // Unselects everything above the long-pressed item in
+                                            // this list, leaving the item itself and everything
+                                            // after it selected.
+                                            val index = files.indexOf(file)
+                                            if (index > 0) {
+                                                selectedFiles = selectedFiles - files.subList(0, index).toSet()
+                                            }
                                         },
                                         onUnselectFromHere = {
                                             // Unselects the long-pressed item and everything
