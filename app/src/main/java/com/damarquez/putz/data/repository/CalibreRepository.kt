@@ -619,6 +619,12 @@ class CalibreRepository @Inject constructor(
         localPath: String? = null,   // CONTRACT: stub convention — relative path within the local mirror repo
         isProtected: Boolean = false,
         tags: String? = null,
+        // Lets a concurrent batch caller (see FilesViewModel.sendBatchToCalibre) stamp a
+        // deterministic, list-order-preserving value instead of real dispatch time — when
+        // several items are sent in parallel, whichever coroutine happens to reach this line
+        // first would otherwise win the "most recent" slot in the addedAt-sorted transfer list,
+        // regardless of the order the user actually queued them in.
+        addedAt: Long? = null,
     ) {
         val initialItem = CalibreBatchItem(
             type = when {
@@ -646,7 +652,7 @@ class CalibreRepository @Inject constructor(
                 isUploading -> CalibreTransferStatus.UPLOADING
                 else -> CalibreTransferStatus.PENDING
             },
-            addedAt = System.currentTimeMillis(),
+            addedAt = addedAt ?: System.currentTimeMillis(),
             lastUpdatedAt = System.currentTimeMillis(),
             allPutioFileIds = putioFileId.toString(),
             isTempUpload = isTempUpload,

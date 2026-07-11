@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileOpen
@@ -45,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +72,10 @@ data class CalibreBatchDraftItem(
     val tags: String = "",
     val uuid: String = "",
     val matchedBookId: Long? = null,
+    // Resolved in the background by FilesViewModel.prefetchBatchLocalPaths while this item's
+    // row is still open for review, so Send can dispatch immediately for items that already
+    // resolved instead of waiting on a fresh stub-content read for every file.
+    val localPath: String? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -294,6 +300,15 @@ private fun CalibreBatchRow(
                         onClick = { showBulkMenu = false; onUnselectFromHere() },
                     )
                 }
+            }
+            if (item.file.isSynced) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = if (item.localPath != null) "File info resolved" else "Resolving file info…",
+                    tint = if (item.localPath != null) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(4.dp))
             }
             Text(
                 text = if (sizeBytes > 0) "${item.file.displayName} [${formatByteSize(sizeBytes)}]" else item.file.displayName,

@@ -138,6 +138,7 @@ fun FilesScreen(
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val isPreparingTransfer by viewModel.isPreparingTransfer.collectAsState()
     val transferPreparationProgress by viewModel.transferPreparationProgress.collectAsState()
+    val transferPreparationLabel by viewModel.transferPreparationLabel.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchScope by viewModel.searchScope.collectAsState()
@@ -1543,8 +1544,8 @@ fun FilesScreen(
                                 Spacer(Modifier.width(12.dp))
                                 Text(
                                     text = transferPreparationProgress?.let { (done, total) ->
-                                        "Preparing files for Calibre… ($done/$total)"
-                                    } ?: "Preparing files for Calibre…",
+                                        "$transferPreparationLabel ($done/$total)"
+                                    } ?: transferPreparationLabel,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )

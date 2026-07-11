@@ -225,10 +225,50 @@ class FilesViewModel @Inject constructor(
             val freshByName = (filesRepository.listFiles(token, parentId) as? NetworkResult.Success)
                 ?.data?.first?.associateBy { it.displayName }
                 .orEmpty()
-            _calibreBatchDraft.value = files.map { file ->
+            val draft = files.map { file ->
                 val current = if (file.isSynced) freshByName[file.displayName] ?: file else file
                 val (title, author) = MetadataUtils.extractMetadata(current.displayName)
                 CalibreBatchDraftItem(file = current, title = title, author = author)
+            }
+            _calibreBatchDraft.value = draft
+            prefetchBatchLocalPaths(draft)
+        }
+    }
+
+    /** Resolves each synced item's local_path in the background while the batch confirmation
+     *  sheet is still open for the user to review titles/authors/tags — a per-file stub-content
+     *  read, same as sendBatchToCalibre would otherwise do one-by-one only once Send is tapped.
+     *  Only prefetches the path; never creates a transfer or dispatches anything to Drive, so it's
+     *  safe to run purely from having the sheet open, before the user has committed to sending.
+     *  Chunked at 5 concurrent reads, mirroring FileSizeProgress.computeSizeProgress. Each read is
+     *  isolated in its own try/catch — coroutineScope+awaitAll would otherwise let one file's
+     *  exception (a network hiccup, say) cancel every sibling and abort the whole remaining
+     *  batch, silently, with no error surfaced anywhere. */
+    private fun prefetchBatchLocalPaths(items: List<CalibreBatchDraftItem>) {
+        viewModelScope.launch {
+            items.filter { it.file.isSynced }.chunked(5).forEach { chunk ->
+                coroutineScope {
+                    chunk.map { item ->
+                        async {
+                            val localPath = try {
+                                calibreRepository.readStubLocalPath(item.file)
+                            } catch (e: Exception) {
+                                null
+                            }
+                            if (localPath != null) {
+                                // Re-read current state instead of using the `item` snapshot
+                                // captured when this prefetch started — the user may have edited
+                                // title/author/tags on this row in the meantime, and blindly
+                                // writing back the stale snapshot (plus the new localPath) would
+                                // silently discard those edits.
+                                val current = _calibreBatchDraft.value?.firstOrNull { it.file.id == item.file.id }
+                                if (current != null) {
+                                    updateCalibreBatchDraftItem(current.copy(localPath = localPath))
+                                }
+                            }
+                        }
+                    }.awaitAll()
+                }
             }
         }
     }
@@ -294,6 +334,14 @@ class FilesViewModel @Inject constructor(
     // (filesDone, totalFiles) for the pack currently being gathered, when known. Backed by
     // CalibreRepository (not local state) so TransferPrepareService can observe it too.
     val transferPreparationProgress: StateFlow<Pair<Int, Int>?> = calibreRepository.prepareProgress
+
+    // Overrides the generic "Preparing files for Calibre…" banner text (FilesScreen.kt) for
+    // whichever flow is currently driving _pendingTransferPreparations — e.g. sendBatchToCalibre
+    // sets this to a "Sending…" label for its dispatch loop, since by then most items were
+    // already resolved via prefetchBatchLocalPaths and "Preparing" would misleadingly suggest
+    // resolution is starting over from scratch.
+    private val _transferPreparationLabel = MutableStateFlow("Preparing files for Calibre…")
+    val transferPreparationLabel: StateFlow<String> = _transferPreparationLabel.asStateFlow()
 
     private inline fun trackTransferPreparation(crossinline block: () -> Job): Job {
         // Foreground the process for the duration of this operation — otherwise Android can
@@ -974,53 +1022,89 @@ class FilesViewModel @Inject constructor(
         return null
     }
 
-    /** Batch send-to-Calibre: each item becomes its own independent add-book request.
-     *  Resolves every synced item's stub local_path up front, before placing ANY request —
-     *  a request dispatched with a still-unresolved path can never be fixed by the daemon
-     *  (the legacy sync-index fallback it would fall back to is dead), so a partial-batch
-     *  failure used to leave one book permanently stuck while the rest went out fine. Now
-     *  the whole batch either all sends or none of it does. */
+    /** Batch send-to-Calibre: each item becomes its own independent add-book/add-format request —
+     *  there's no ordering requirement between them on the daemon side, so items are dispatched
+     *  concurrently (bounded, 5 at a time, mirroring prefetchBatchLocalPaths) rather than one at a
+     *  time. The daemon's own processing order is a best-effort side effect of Drive's unordered
+     *  request-folder listing either way (see poll_and_process in putz_manager.py — no orderBy),
+     *  so there's nothing to lose by not serializing dispatch to influence it.
+     *
+     *  What IS guaranteed is the local transfer list's display order: each item's addedAt is
+     *  stamped up front, ascending by list position (the transfer list sorts addedAt DESC, newest
+     *  first) — matching what you'd see if every item were sent one at a time, in list order: the
+     *  LAST item in the Send-to-Calibre list ends up at the TOP of Calibre Transfers, since it
+     *  would have been "sent" most recently, letting you glance at the top of Transfers to see
+     *  where you left off in the selection screen. This holds regardless of which network call
+     *  actually finishes first.
+     *
+     *  Most items' local_path is usually already known by the time this runs —
+     *  prefetchBatchLocalPaths started resolving them in the background as soon as the
+     *  confirmation sheet opened, while the user was still reviewing titles/authors/tags — so this
+     *  mainly just has to catch up on whichever items hadn't finished resolving yet. */
     fun sendBatchToCalibre(items: List<CalibreBatchDraftItem>) {
         trackTransferPreparation { viewModelScope.launch {
-            _snackbarMessage.value = "Preparing ${items.size} book${if (items.size == 1) "" else "s"}..."
+            _snackbarMessage.value = "Sending ${items.size} book${if (items.size == 1) "" else "s"}..."
+            _transferPreparationLabel.value = "Sending to Calibre…"
 
-            val prepared = items.mapIndexed { index, item ->
-                calibreRepository.updatePrepareProgress((index + 1) to items.size)
-                item to if (item.file.isSynced) calibreRepository.readStubLocalPath(item.file) else null
-            }
-            val unresolved = prepared.filter { (item, path) -> item.file.isSynced && path == null }
-            if (unresolved.isNotEmpty()) {
-                _snackbarMessage.value = "Could not verify ${unresolved.size} of ${items.size} book(s) are " +
-                    "synced (check your connection) — nothing was sent: " +
-                    unresolved.joinToString(", ") { (item, _) -> item.title }
-                return@launch
-            }
-
-            prepared.forEach { (item, localPath) ->
-                sendToCalibre(
-                    item.file,
-                    item.title.trim(),
-                    item.author.trim().ifBlank { "Unknown" },
-                    isAltVersion = item.isAltVersion,
-                    calibreBookUuid = item.uuid.trim().ifBlank { null },
-                    isProtected = item.isProtected,
-                    tags = item.tags.trim().ifBlank { null },
-                    preresolvedLocalPath = localPath,
-                )
+            try {
+                val baseAddedAt = System.currentTimeMillis()
+                val completed = java.util.concurrent.atomic.AtomicInteger(0)
+                items.withIndex().toList().chunked(5).forEach { chunk ->
+                    coroutineScope {
+                        chunk.map { (index, item) ->
+                            async {
+                                // Isolated per item — an uncaught exception here would otherwise
+                                // cancel every sibling in this chunk via coroutineScope+awaitAll
+                                // (same failure mode fixed in prefetchBatchLocalPaths). A single
+                                // book failing to send should not take down the rest of the batch.
+                                try {
+                                    sendToCalibreSuspend(
+                                        item.file,
+                                        item.title.trim(),
+                                        item.author.trim().ifBlank { "Unknown" },
+                                        isAltVersion = item.isAltVersion,
+                                        calibreBookUuid = item.uuid.trim().ifBlank { null },
+                                        isProtected = item.isProtected,
+                                        tags = item.tags.trim().ifBlank { null },
+                                        preresolvedLocalPath = item.localPath,
+                                        addedAt = baseAddedAt + index,
+                                    )
+                                } catch (e: Exception) {
+                                    _snackbarMessage.value = "Failed to send '${item.title}': ${e.message}"
+                                }
+                                calibreRepository.updatePrepareProgress(completed.incrementAndGet() to items.size)
+                            }
+                        }.awaitAll()
+                    }
+                }
+            } finally {
+                _transferPreparationLabel.value = "Preparing files for Calibre…"
             }
         } }
     }
 
     fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null) {
         trackTransferPreparation { viewModelScope.launch {
+            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, tags, preresolvedLocalPath)
+        } }
+    }
+
+    /** Core of [sendToCalibre], as a plain suspend function so [sendBatchToCalibre] can call it
+     *  directly and run many of these concurrently (see sendBatchToCalibre — batch items are
+     *  independent add-book requests with no ordering requirement on the daemon side).
+     *  [preresolvedLocalPath], when supplied by a batch caller that already prefetched it (see
+     *  FilesViewModel.prefetchBatchLocalPaths), skips the stub-content read below entirely.
+     *  [addedAt], when supplied by a concurrent batch caller, overrides the real dispatch time
+     *  so the local transfer list's display order still matches list order despite the race. */
+    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addedAt: Long? = null) {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
-                return@launch
+                return
             }
 
             val putioToken = settingsRepository.authTokenFlow.first()
-            
+
             if (file.isSynced) {
                 val syncedFileName = if (isAltVersion) {
                     val ext = file.displayName.substringAfterLast('.', "")
@@ -1046,22 +1130,46 @@ class FilesViewModel @Inject constructor(
                         localPath = null,
                         isProtected = isProtected,
                         tags = tags,
+                        addedAt = addedAt,
                     )
                     _snackbarMessage.value = "Book assembled"
-                    val localPath = preresolvedLocalPath ?: calibreRepository.readStubLocalPath(file)
+                    val localPath = calibreRepository.readStubLocalPath(file)
                     calibreRepository.resolveLocalPathAndDispatch(file.syncedFileId, localPath, googleAccount)
-                    return@launch
+                    return
                 }
 
                 // Resolve the stub's local_path FIRST, before creating or dispatching
                 // anything — a use_local request sent without it can never be fixed by the
-                // daemon (the legacy sync-index fallback it falls back to is dead), so it's
-                // better to fail here, with the confirmation screen still fresh in the
-                // user's mind, than to queue a request that's silently doomed.
+                // daemon (the legacy sync-index fallback it falls back to is dead). If it can't
+                // be resolved, still record the transfer (useLocal + localPath = null, same
+                // shape addTransfer already supports for the assembleBook "park" case) and mark
+                // it FAILED immediately — so it shows up in the transfers list with a reason,
+                // and "Retry" there can re-resolve local_path later via retryTransfer's existing
+                // resolveMissingLocalPaths recovery, instead of this item just vanishing with a
+                // one-off snackbar.
                 val localPath = preresolvedLocalPath ?: calibreRepository.readStubLocalPath(file)
                 if (localPath == null) {
-                    _snackbarMessage.value = "Could not verify '$title' is synced — check your connection and try again"
-                    return@launch
+                    val reason = "Could not verify '$title' is synced — check your connection and try again"
+                    calibreRepository.addTransfer(
+                        putioFileId = file.syncedFileId,
+                        fileName = syncedFileName,
+                        title = title,
+                        author = author,
+                        googleAccount = googleAccount,
+                        downloadUrl = null,
+                        archiveMode = archiveMode,
+                        isTempUpload = false,
+                        assembleBook = false,
+                        calibreBookUuid = calibreBookUuid,
+                        useLocal = true,
+                        localPath = null,
+                        isProtected = isProtected,
+                        tags = tags,
+                        addedAt = addedAt,
+                    )
+                    calibreRepository.markPackUploadFailed(file.syncedFileId, reason)
+                    _snackbarMessage.value = reason
+                    return
                 }
                 calibreRepository.addTransfer(
                     putioFileId = file.syncedFileId,
@@ -1078,14 +1186,15 @@ class FilesViewModel @Inject constructor(
                     localPath = localPath,
                     isProtected = isProtected,
                     tags = tags,
+                    addedAt = addedAt,
                 )
                 _snackbarMessage.value = "Transfer requested for $title"
-                return@launch
+                return
             } else if (file.isLan) {
                 val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
                 if (conn == null || file.lanPath == null) {
                     _snackbarMessage.value = "LAN connection info missing"
-                    return@launch
+                    return
                 }
                 val targetFileName = if (isAltVersion) {
                     val ext = file.name.substringAfterLast('.', "")
@@ -1105,6 +1214,7 @@ class FilesViewModel @Inject constructor(
                     smbPath = buildUncPath(conn.host, conn.shareName, file.lanPath),
                     isProtected = isProtected,
                     tags = tags,
+                    addedAt = addedAt,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
             } else if (file.isLocal) {
@@ -1124,6 +1234,7 @@ class FilesViewModel @Inject constructor(
                     localUrisJson = file.localUri?.let { """["$it"]""" },
                     isProtected = isProtected,
                     tags = tags,
+                    addedAt = addedAt,
                 )
 
                 val uploadedId = uploadLocalFileIfNecessary(file, putioToken, progressKey = file.id)
@@ -1169,6 +1280,7 @@ class FilesViewModel @Inject constructor(
                                 calibreBookUuid = calibreBookUuid,
                                 isProtected = isProtected,
                                 tags = tags,
+                                addedAt = addedAt,
                             )
                         }
                     } else {
@@ -1193,7 +1305,7 @@ class FilesViewModel @Inject constructor(
                             targetFileName = newName
                         } else {
                             _snackbarMessage.value = "Failed to rename: ${(renameResult as NetworkResult.Error).message}"
-                            return@launch
+                            return
                         }
                     }
                 }
@@ -1213,10 +1325,10 @@ class FilesViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     isProtected = isProtected,
                     tags = tags,
+                    addedAt = addedAt,
                 )
                 _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
             }
-        } }
     }
 
     fun appendToAssembly(
