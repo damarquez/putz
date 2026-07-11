@@ -23,6 +23,38 @@ import javax.inject.Inject
 
 data class SearchState(val query: String, val inFiles: Boolean)
 
+/** Status bucket for the history search filter dropdown. History entry status is a loose
+ *  string (see [HistoryFileEntry.status]) sourced from whatever put.io/daemon status was
+ *  current when the entry was written, so this groups the many possible raw values into the
+ *  buckets a user actually cares about rather than listing every raw string. */
+enum class HistoryStatusFilter(val label: String) {
+    ALL("All"),
+    COMPLETED("Completed"),
+    ERROR("Error"),
+    WAITING("Waiting"),
+    DOWNLOADING("Downloading"),
+    OTHER("Other"),
+}
+
+private fun HistoryFileEntry.matchesStatusFilter(filter: HistoryStatusFilter): Boolean {
+    val isCompleted = status.equals("COMPLETED", ignoreCase = true)
+    val isError = status.equals("ERROR", ignoreCase = true) || status.equals("FAILED", ignoreCase = true)
+    val isWaiting = status.equals("WAITING", ignoreCase = true) ||
+        status.equals("IN_QUEUE", ignoreCase = true) ||
+        status.equals("QUEUED_OUTSIDE_PUTIO", ignoreCase = true)
+    val isDownloading = status.equals("DOWNLOADING", ignoreCase = true) ||
+        status.equals("PREPARING_DOWNLOAD", ignoreCase = true) ||
+        status.equals("COMPLETING", ignoreCase = true)
+    return when (filter) {
+        HistoryStatusFilter.ALL -> true
+        HistoryStatusFilter.COMPLETED -> isCompleted
+        HistoryStatusFilter.ERROR -> isError
+        HistoryStatusFilter.WAITING -> isWaiting
+        HistoryStatusFilter.DOWNLOADING -> isDownloading
+        HistoryStatusFilter.OTHER -> !isCompleted && !isError && !isWaiting && !isDownloading
+    }
+}
+
 sealed class HistoryUiState {
     data object Loading : HistoryUiState()
     data class Success(val entries: List<HistoryFileEntry>) : HistoryUiState()
@@ -47,15 +79,21 @@ class TransferHistoryViewModel @Inject constructor(
     private val _searchInFiles = MutableStateFlow(false)
     val searchInFiles: StateFlow<Boolean> = _searchInFiles.asStateFlow()
 
+    private val _statusFilter = MutableStateFlow(HistoryStatusFilter.ALL)
+    val statusFilter: StateFlow<HistoryStatusFilter> = _statusFilter.asStateFlow()
+
     private val _actionMessage = MutableStateFlow<String?>(null)
     val actionMessage: StateFlow<String?> = _actionMessage.asStateFlow()
 
-    val filteredEntries: StateFlow<List<HistoryFileEntry>> = combine(_uiState, _searchQuery, _searchInFiles) { state, query, inFiles ->
+    val filteredEntries: StateFlow<List<HistoryFileEntry>> = combine(
+        _uiState, _searchQuery, _searchInFiles, _statusFilter,
+    ) { state, query, inFiles, statusFilter ->
         val entries = (state as? HistoryUiState.Success)?.entries ?: return@combine emptyList()
-        if (query.isBlank()) entries
+        val statusMatched = entries.filter { it.matchesStatusFilter(statusFilter) }
+        if (query.isBlank()) statusMatched
         else {
             val q = query.trim().lowercase()
-            entries.filter { e ->
+            statusMatched.filter { e ->
                 e.label.lowercase().contains(q) ||
                 e.resolvedName?.lowercase()?.contains(q) == true ||
                 e.putioName?.lowercase()?.contains(q) == true ||
@@ -67,6 +105,7 @@ class TransferHistoryViewModel @Inject constructor(
 
     fun setSearchQuery(query: String) { _searchQuery.value = query }
     fun setSearchInFiles(enabled: Boolean) { _searchInFiles.value = enabled }
+    fun setStatusFilter(filter: HistoryStatusFilter) { _statusFilter.value = filter }
 
     init {
         // Trigger a load immediately and again whenever the daemon heartbeat delivers a new

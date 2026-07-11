@@ -19,10 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -91,9 +93,11 @@ fun TransferHistoryScreen(
     val filteredEntries by viewModel.filteredEntries.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchInFiles by viewModel.searchInFiles.collectAsState()
+    val statusFilter by viewModel.statusFilter.collectAsState()
     val actionMessage by viewModel.actionMessage.collectAsState()
 
     var isSearchActive by remember { mutableStateOf(false) }
+    var statusFilterMenuExpanded by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
 
     var editingEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
@@ -103,7 +107,10 @@ fun TransferHistoryScreen(
 
     LaunchedEffect(isSearchActive) {
         if (isSearchActive) runCatching { searchFocusRequester.requestFocus() }
-        else viewModel.setSearchQuery("")
+        else {
+            viewModel.setSearchQuery("")
+            viewModel.setStatusFilter(HistoryStatusFilter.ALL)
+        }
     }
 
     LaunchedEffect(actionMessage) {
@@ -214,6 +221,33 @@ fun TransferHistoryScreen(
                                        else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        Box {
+                            IconButton(onClick = { statusFilterMenuExpanded = true }) {
+                                Icon(
+                                    Icons.Default.FilterList,
+                                    contentDescription = "Filter by status (${statusFilter.label})",
+                                    tint = if (statusFilter != HistoryStatusFilter.ALL) MaterialTheme.colorScheme.primary
+                                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = statusFilterMenuExpanded,
+                                onDismissRequest = { statusFilterMenuExpanded = false },
+                            ) {
+                                HistoryStatusFilter.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        leadingIcon = if (option == statusFilter) {
+                                            { Icon(Icons.Default.Check, contentDescription = null) }
+                                        } else null,
+                                        onClick = {
+                                            viewModel.setStatusFilter(option)
+                                            statusFilterMenuExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.setSearchQuery("") }) {
                                 Icon(Icons.Default.Close, contentDescription = "Clear search")
@@ -283,8 +317,13 @@ fun TransferHistoryScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                if (searchQuery.isNotBlank()) "No results for \"$searchQuery\""
-                                else "No history yet",
+                                when {
+                                    searchQuery.isNotBlank() && statusFilter != HistoryStatusFilter.ALL ->
+                                        "No ${statusFilter.label.lowercase()} results for \"$searchQuery\""
+                                    searchQuery.isNotBlank() -> "No results for \"$searchQuery\""
+                                    statusFilter != HistoryStatusFilter.ALL -> "No ${statusFilter.label.lowercase()} history"
+                                    else -> "No history yet"
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
