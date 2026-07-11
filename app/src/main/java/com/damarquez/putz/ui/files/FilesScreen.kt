@@ -1750,6 +1750,41 @@ fun FilesScreen(
                                             }
                                         },
                                         onLongClick = { selectedFiles = selectedFiles + file },
+                                        // CONTRACT: bulk-select popup — only reached once already
+                                        // in selection mode (FileItem shows this instead of
+                                        // calling onLongClick directly in that case; see its own
+                                        // combinedClickable wiring).
+                                        selectionCount = selectedFiles.size,
+                                        onSelectNextN = {
+                                            // Selects the next N items after whichever selected
+                                            // item appears last in this list, where N is how many
+                                            // are currently selected — so 10 selected -> next 10
+                                            // (20 total) -> next 20 (40 total), etc. Lets a large
+                                            // contiguous range be selected in a handful of
+                                            // long-presses instead of one tap per file.
+                                            val n = selectedFiles.size
+                                            val lastSelectedIndex = files.indexOfLast { it in selectedFiles }
+                                            val nextBatch = if (lastSelectedIndex == -1) {
+                                                emptyList()
+                                            } else {
+                                                files.subList(
+                                                    (lastSelectedIndex + 1).coerceAtMost(files.size),
+                                                    (lastSelectedIndex + 1 + n).coerceAtMost(files.size),
+                                                )
+                                            }
+                                            selectedFiles = selectedFiles + file + nextBatch
+                                        },
+                                        onUnselectFromHere = {
+                                            // Unselects the long-pressed item and everything
+                                            // after it in this list, leaving only items above it
+                                            // selected.
+                                            val index = files.indexOf(file)
+                                            selectedFiles = if (index == -1) {
+                                                selectedFiles - file
+                                            } else {
+                                                selectedFiles - files.subList(index, files.size).toSet()
+                                            }
+                                        },
                                         onPreview = { viewModel.previewFile(it) },
                                         onReplaceCover = { selectedFileForCover = it },
                                         onSendAsImagePack = { imagePackTriggerFile = it },

@@ -1,6 +1,9 @@
 package com.damarquez.putz.ui.files
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +23,8 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -117,6 +122,18 @@ fun CalibreBatchConfirmationSheet(
                             checkPendingTransfer = checkPendingTransfer,
                             onChange = onItemChange,
                             onPreview = onPreview,
+                            // CONTRACT: bulk-select popup — long-pressing this row's checkbox
+                            // shows "select all / unselect all / unselect all from here" instead
+                            // of just toggling this one item, mirroring the same long-press
+                            // popup on the main files list (FileItem.kt). Implemented here (not
+                            // passed in from the caller) since this composable already owns the
+                            // full `items` list and the per-item onItemChange callback needed to
+                            // apply a bulk change — each just replays onItemChange per row.
+                            onSelectAll = { items.forEach { onItemChange(it.copy(included = true)) } },
+                            onUnselectAll = { items.forEach { onItemChange(it.copy(included = false)) } },
+                            onUnselectFromHere = {
+                                items.subList(index, items.size).forEach { onItemChange(it.copy(included = false)) }
+                            },
                         )
                         HorizontalDivider()
                     }
@@ -139,6 +156,7 @@ fun CalibreBatchConfirmationSheet(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CalibreBatchRow(
     item: CalibreBatchDraftItem,
@@ -147,10 +165,14 @@ private fun CalibreBatchRow(
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
     onChange: (CalibreBatchDraftItem) -> Unit,
     onPreview: (PutioFile) -> Unit,
+    onSelectAll: () -> Unit,
+    onUnselectAll: () -> Unit,
+    onUnselectFromHere: () -> Unit,
 ) {
     val context = LocalContext.current
     var matchedBookId by remember(item.file.id) { mutableStateOf<Long?>(null) }
     var pendingTransfer by remember(item.file.id) { mutableStateOf<CalibreTransferEntity?>(null) }
+    var showBulkMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(item.title, item.author, item.included) {
         matchedBookId = if (item.included && item.title.isNotBlank()) {
@@ -174,10 +196,33 @@ private fun CalibreBatchRow(
                     modifier = Modifier.width(24.dp),
                 )
             }
-            Checkbox(
-                checked = item.included,
-                onCheckedChange = { onChange(item.copy(included = it)) },
-            )
+            Box {
+                Row(
+                    modifier = Modifier.combinedClickable(
+                        onClick = { onChange(item.copy(included = !item.included)) },
+                        onLongClick = { showBulkMenu = true },
+                    ),
+                ) {
+                    Checkbox(checked = item.included, onCheckedChange = null)
+                }
+                DropdownMenu(
+                    expanded = showBulkMenu,
+                    onDismissRequest = { showBulkMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Select all") },
+                        onClick = { showBulkMenu = false; onSelectAll() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Unselect all") },
+                        onClick = { showBulkMenu = false; onUnselectAll() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Unselect all from here") },
+                        onClick = { showBulkMenu = false; onUnselectFromHere() },
+                    )
+                }
+            }
             Text(
                 text = item.file.displayName,
                 style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),

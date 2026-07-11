@@ -128,6 +128,9 @@ fun FileItem(
     onRename: ((PutioFile) -> Unit)? = null,
     isSelected: Boolean,
     isSelectionMode: Boolean,
+    selectionCount: Int = 0,
+    onSelectNextN: () -> Unit = {},
+    onUnselectFromHere: () -> Unit = {},
     isGoogleSignedIn: Boolean = false,
     isHighlighted: Boolean = false,
     isFolderAllSynced: Boolean = false,
@@ -156,6 +159,7 @@ fun FileItem(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    var showSelectionMenu by remember { mutableStateOf(false) }
 
     // CONTRACT: Putz file state — drives menu visibility; see CONTRACTS.md §19
     // Hidden-folder files are treated like regular remote (dimmed) but have a different menu
@@ -186,12 +190,23 @@ fun FileItem(
     Column(modifier = modifier.fillMaxWidth().background(backgroundColor).then(
         if (isRegularRemote) Modifier.alpha(0.45f) else Modifier
     )) {
+        Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = if (!isRegularRemote) onLongClick else { {} },
+                    onLongClick = if (isRegularRemote) {
+                        {}
+                    } else if (isSelectionMode) {
+                        // CONTRACT: bulk-select popup — a plain long-press while already in
+                        // selection mode used to just add this one file. Now it opens a popup
+                        // instead, since a single accidental long-press bulk-selecting or
+                        // bulk-unselecting a large contiguous range (see onSelectNextN/
+                        // onUnselectFromHere below) is too easy to trigger by mistake to fire
+                        // directly off a long-press with no confirmation step.
+                        { showSelectionMenu = true }
+                    } else onLongClick,
                 )
                 .padding(horizontal = 1.dp, vertical = 1.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -677,6 +692,27 @@ fun FileItem(
                 }
             }
         }
+
+        DropdownMenu(
+            expanded = showSelectionMenu,
+            onDismissRequest = { showSelectionMenu = false },
+        ) {
+            TightMenuItem(
+                text = { Text("Select next $selectionCount") },
+                onClick = {
+                    showSelectionMenu = false
+                    onSelectNextN()
+                },
+            )
+            TightMenuItem(
+                text = { Text("Unselect all from here") },
+                onClick = {
+                    showSelectionMenu = false
+                    onUnselectFromHere()
+                },
+            )
+        }
+        } // end Box (selection long-press menu anchor)
 
         if (styling.isEink) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)

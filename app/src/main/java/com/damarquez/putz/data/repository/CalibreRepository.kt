@@ -2538,11 +2538,24 @@ class CalibreRepository @Inject constructor(
         // Clear the Drive request too — otherwise a request the daemon hasn't picked up yet
         // survives on Drive after its local record is gone, and the daemon (which only looks
         // at Drive) will still pick it up and process it, e.g. on its next restart/poll.
+        //
+        // Only attempted for a non-terminal transfer, though: COMPLETED/FAILED are states the
+        // daemon only ever reaches after it has already trashed its own request file as part of
+        // normal processing (see putz_manager.py's process_book_batch — the request is trashed
+        // in a finally block on every path except a retry-needed one, which never reaches these
+        // statuses). So for a terminal transfer this call almost always just hits a 404 (see
+        // GDriveManager.deleteFile's "already gone" handling) while still paying a full network
+        // round-trip — the actual reason batch-clearing verified transfers was slow even with
+        // "also delete from put.io" unchecked, since that flag only gates the put.io API calls,
+        // not this one.
         val transfer = calibreTransferDao.getTransferById(fileId)
-        transfer?.gdriveRequestId?.let { requestId ->
-            val account = settingsRepository.googleTokenFlow.first()
-            if (account.isNotBlank()) {
-                gDriveManager.deleteFile(account, requestId)
+        val isTerminal = transfer?.status == CalibreTransferStatus.COMPLETED || transfer?.status == CalibreTransferStatus.FAILED
+        if (!isTerminal) {
+            transfer?.gdriveRequestId?.let { requestId ->
+                val account = settingsRepository.googleTokenFlow.first()
+                if (account.isNotBlank()) {
+                    gDriveManager.deleteFile(account, requestId)
+                }
             }
         }
         calibreTransferDao.deleteTransfer(fileId)
