@@ -455,8 +455,11 @@ class CalibreRepository @Inject constructor(
         googleAccount: String,
         calibreBookUuid: String? = null,
     ) {
-        // We use a fake putio_file_id for comments update as it doesn't involve a file
-        val putioFileId = System.currentTimeMillis()
+        // We use a fake putio_file_id for comments update as it doesn't involve a file.
+        // CONTRACT: negative sign marks it as a fileless/book-level request — the daemon
+        // serializes these one at a time (oldest-timestamp-first) instead of racing them
+        // against each other, so a quick "fix" sent right after a mistake always lands last.
+        val putioFileId = -System.currentTimeMillis()
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             action = "UPDATE_COMMENTS",
@@ -496,7 +499,7 @@ class CalibreRepository @Inject constructor(
 
     // CONTRACT: UPDATE_COMMENTS (edit_metadata variant — sends all non-null fields together)
     suspend fun sendEditMetadataRequest(pending: PendingEditMetadata, googleAccount: String) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
 
         @Serializable
@@ -550,7 +553,7 @@ class CalibreRepository @Inject constructor(
         tags: String,
         googleAccount: String,
     ) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = BatchAddTagsRequest(
             putio_file_id = putioFileId,
@@ -1985,7 +1988,7 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         googleAccount: String,
     ) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             action = "GENERATE_COVER",
@@ -2025,7 +2028,7 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         googleAccount: String,
     ) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             action = "PROTECT_BOOK",
@@ -2065,7 +2068,7 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         googleAccount: String,
     ) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = CalibreBatchRequest(
             action = "UNPROTECT_BOOK",
@@ -2106,7 +2109,7 @@ class CalibreRepository @Inject constructor(
         title: String? = null,
         author: String? = null,
     ) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = SetPageCountRequest(
             putio_file_id = putioFileId,
@@ -2138,7 +2141,7 @@ class CalibreRepository @Inject constructor(
 
     // CONTRACT: MARK_BOOK_FOR_DELETION
     suspend fun sendMarkBookForDeletionRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = MarkBookForDeletionRequest(
             putio_file_id = putioFileId,
@@ -2174,7 +2177,7 @@ class CalibreRepository @Inject constructor(
         title: String? = null,
         author: String? = null,
     ) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = MarkFormatsForDeletionRequest(
             putio_file_id = putioFileId,
@@ -2206,7 +2209,7 @@ class CalibreRepository @Inject constructor(
 
     // CONTRACT: CONFIRM_DELETE_BOOK
     suspend fun sendConfirmDeleteBookRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = ConfirmDeleteBookRequest(
             putio_file_id = putioFileId,
@@ -2242,7 +2245,7 @@ class CalibreRepository @Inject constructor(
         title: String? = null,
         author: String? = null,
     ) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = ConfirmDeleteFormatsRequest(
             putio_file_id = putioFileId,
@@ -2274,7 +2277,7 @@ class CalibreRepository @Inject constructor(
 
     // CONTRACT: CANCEL_DELETION
     suspend fun sendCancelDeletionRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
-        val putioFileId = System.currentTimeMillis()
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
         val request = CancelDeletionRequest(
             putio_file_id = putioFileId,

@@ -61,7 +61,7 @@ class ManageVirtualLibraryActivity : ComponentActivity() {
             if (operation.isBlank() || name.isBlank()) return null
 
             ManageVirtualLibraryRequest(
-                putio_file_id = System.currentTimeMillis(),
+                putio_file_id = -System.currentTimeMillis(),  // negative = fileless, daemon-serialized
                 operation = operation,
                 name = name,
                 new_name = root.optString("new_name").takeIf { it.isNotBlank() },

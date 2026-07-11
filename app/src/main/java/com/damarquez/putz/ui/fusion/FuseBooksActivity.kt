@@ -104,7 +104,7 @@ class FuseBooksActivity : ComponentActivity() {
             if (formats.isEmpty()) return null
 
             FuseBooksRequest(
-                putio_file_id = System.currentTimeMillis(),
+                putio_file_id = -System.currentTimeMillis(),  // negative = fileless, daemon-serialized
                 source_book_ids = sourceIds,
                 cover_source_book_id = coverSourceId,
                 metadata = metadata,
