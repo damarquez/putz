@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -164,6 +166,31 @@ fun CalibreBatchConfirmationSheet(
     }
 }
 
+/** A smaller-footprint IconButton for the batch row's dense layout — trades the default 48dp
+ *  touch target down to 32dp so several action icons can sit on one compact row. */
+@Composable
+private fun CompactIconButton(
+    onClick: () -> Unit,
+    contentDescription: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.size(32.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) tint else tint.copy(alpha = 0.38f),
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CalibreBatchRow(
@@ -226,7 +253,7 @@ private fun CalibreBatchRow(
         pendingTransfer = checkPendingTransfer(item.file.syncedFileId, item.file.displayName)
     }
 
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (index != null) {
                 Text(
@@ -276,159 +303,8 @@ private fun CalibreBatchRow(
         }
 
         if (item.included) {
-            // A UUID match only targets an existing book for a new format — the daemon never
-            // writes title/author back for it (see process_book_batch in putz_manager.py), so
-            // editing these fields once matched would be misleading. Lock them, mirroring the
-            // single-file dialog.
-            Spacer(Modifier.height(4.dp))
-            CompactOutlinedTextField(
-                value = item.title,
-                onValueChange = { onChange(item.copy(title = it)) },
-                label = "Title",
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isUuidMatched,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                trailingIcon = if (!isUuidMatched) {
-                    {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { onChange(item.copy(title = item.file.displayName.substringBeforeLast('.'))) },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FileOpen,
-                                    contentDescription = "Load filename as title",
-                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                                )
-                            }
-                            IconButton(
-                                onClick = { onChange(item.copy(title = MetadataUtils.fixTitleCapitalization(item.title))) },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoFixHigh,
-                                    contentDescription = "Fix title capitalisation",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    }
-                } else null,
-            )
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CompactOutlinedTextField(
-                    value = item.author,
-                    onValueChange = { onChange(item.copy(author = it)) },
-                    label = "Author",
-                    placeholder = "Unknown",
-                    modifier = Modifier.weight(1f),
-                    enabled = !isUuidMatched,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                )
-                Spacer(Modifier.width(4.dp))
-                IconButton(
-                    onClick = { onChange(item.copy(title = item.author, author = item.title)) },
-                    enabled = !isUuidMatched,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SwapVert,
-                        contentDescription = "Swap title and author",
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CompactOutlinedTextField(
-                    value = item.uuid,
-                    onValueChange = { onChange(item.copy(uuid = it)) },
-                    label = "Book UUID (Optional)",
-                    modifier = Modifier.weight(1f),
-                    placeholder = "Directly target an existing book",
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                )
-                Spacer(Modifier.width(4.dp))
-                IconButton(
-                    onClick = {
-                        val pasted = clipboardManager.getText()?.text.orEmpty().trim()
-                        if (pasted.isNotEmpty()) onChange(item.copy(uuid = pasted))
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentPaste,
-                        contentDescription = "Paste UUID from clipboard",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(4.dp))
-            CompactOutlinedTextField(
-                value = item.tags,
-                onValueChange = { onChange(item.copy(tags = it)) },
-                label = "Tags (optional)",
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = "Programming, Python, Reference",
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            )
-
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Encrypt book",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = item.isProtected,
-                    onCheckedChange = { onChange(item.copy(isProtected = it)) },
-                )
-            }
-
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Alternative version",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        text = "Append _bkp to extension (e.g. pdf → pdf_bkp)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = item.isAltVersion,
-                    onCheckedChange = { onChange(item.copy(isAltVersion = it)) },
-                )
-            }
-
-            if (pendingTransfer != null) {
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.height(16.dp).width(16.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Already has a pending transfer (${pendingTransfer!!.status})!",
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-
             if (matchedBookId != null) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -453,6 +329,134 @@ private fun CalibreBatchRow(
                             textDecoration = TextDecoration.Underline,
                         ),
                         color = if (isUuidMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            // A UUID match only targets an existing book for a new format — the daemon never
+            // writes title/author back for it (see process_book_batch in putz_manager.py), so
+            // editing these fields once matched would be misleading. Lock them, mirroring the
+            // single-file dialog.
+            Spacer(Modifier.height(2.dp))
+            CompactOutlinedTextField(
+                value = item.title,
+                onValueChange = { onChange(item.copy(title = it)) },
+                label = "Title",
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isUuidMatched,
+                dense = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                trailingIcon = if (!isUuidMatched) {
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CompactIconButton(
+                                onClick = { onChange(item.copy(title = item.file.displayName.substringBeforeLast('.'))) },
+                                contentDescription = "Load filename as title",
+                                icon = Icons.Default.FileOpen,
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            )
+                            CompactIconButton(
+                                onClick = { onChange(item.copy(title = MetadataUtils.fixTitleCapitalization(item.title))) },
+                                contentDescription = "Fix title capitalisation",
+                                icon = Icons.Default.AutoFixHigh,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                } else null,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CompactOutlinedTextField(
+                    value = item.author,
+                    onValueChange = { onChange(item.copy(author = it)) },
+                    label = "Author",
+                    placeholder = "Unknown",
+                    modifier = Modifier.weight(1f),
+                    enabled = !isUuidMatched,
+                    dense = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                )
+                CompactIconButton(
+                    onClick = { onChange(item.copy(title = item.author, author = item.title)) },
+                    contentDescription = "Swap title and author",
+                    icon = Icons.Default.SwapVert,
+                    enabled = !isUuidMatched,
+                )
+            }
+
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CompactOutlinedTextField(
+                    value = item.uuid,
+                    onValueChange = { onChange(item.copy(uuid = it)) },
+                    label = "Book UUID (Optional)",
+                    modifier = Modifier.weight(1f),
+                    placeholder = "Directly target an existing book",
+                    dense = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                )
+                CompactIconButton(
+                    onClick = {
+                        val pasted = clipboardManager.getText()?.text.orEmpty().trim()
+                        if (pasted.isNotEmpty()) onChange(item.copy(uuid = pasted))
+                    },
+                    contentDescription = "Paste UUID from clipboard",
+                    icon = Icons.Default.ContentPaste,
+                )
+            }
+
+            Spacer(Modifier.height(2.dp))
+            CompactOutlinedTextField(
+                value = item.tags,
+                onValueChange = { onChange(item.copy(tags = it)) },
+                label = "Tags (optional)",
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = "Programming, Python, Reference",
+                dense = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            )
+
+            Spacer(Modifier.height(2.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Encrypt",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Switch(
+                    checked = item.isProtected,
+                    onCheckedChange = { onChange(item.copy(isProtected = it)) },
+                    modifier = Modifier.scale(0.75f),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "Alt. version",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Switch(
+                    checked = item.isAltVersion,
+                    onCheckedChange = { onChange(item.copy(isAltVersion = it)) },
+                    modifier = Modifier.scale(0.75f),
+                )
+            }
+
+            if (pendingTransfer != null) {
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.height(16.dp).width(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "Already has a pending transfer (${pendingTransfer!!.status})!",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
