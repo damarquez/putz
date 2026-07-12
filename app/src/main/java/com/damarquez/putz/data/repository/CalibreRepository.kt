@@ -76,6 +76,8 @@ data class CalibreBatchRequest(
     val calibre_book_uuid: String? = null, // For targeting existing book
     val comments: String? = null, // For UPDATE_COMMENTS
     val tags: String? = null, // For UPDATE_COMMENTS
+    val source_format: String? = null, // For CONVERT_FORMAT
+    val target_format: String? = null, // For CONVERT_FORMAT
     val app_id: String? = null, // Device ID — daemon echoes back so each device only reads its own responses
 )
 
@@ -2107,6 +2109,50 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
+    // CONTRACT: CONVERT_FORMAT
+    suspend fun sendConvertFormatRequest(
+        title: String,
+        author: String,
+        calibreBookUuid: String,
+        sourceFormat: String,
+        targetFormat: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            action = "CONVERT_FORMAT",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = emptyList(),
+            calibre_book_uuid = calibreBookUuid,
+            source_format = sourceFormat,
+            target_format = targetFormat,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_convert_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Convert $title to $targetFormat",
+            title = "Convert $title to $targetFormat",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+            hasPutioFile = false,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
     // CONTRACT: SET_PAGE_COUNT
     suspend fun sendSetPageCountRequest(
         calibreBookUuid: String,
@@ -2361,6 +2407,8 @@ class CalibreRepository @Inject constructor(
             is_probe = true,
             calibre_book_id = originalRequest?.calibre_book_id,
             calibre_book_uuid = transfer.calibreBookUuid,
+            source_format = originalRequest?.source_format,
+            target_format = originalRequest?.target_format,
             app_id = appId,
         )
 

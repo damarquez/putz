@@ -149,6 +149,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="unprotect_book" />
             </intent-filter>
+
+            <!-- CONTRACT: CONVERT_FORMAT — putz://convert_format?uuid=UUID&source_format=EPUB&target_format=PDF&title=TITLE&author=AUTHOR -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="convert_format" />
+            </intent-filter>
         </activity>
 
         <!-- CONTRACT: FUSE_BOOKS — receives fusion intents from CalibreAnywhere -->

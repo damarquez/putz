@@ -46,6 +46,7 @@ import com.damarquez.putz.ui.GlobalSyncViewModel
 
 import androidx.compose.runtime.LaunchedEffect
 import com.damarquez.putz.data.repository.PendingCommentsRepository
+import com.damarquez.putz.data.repository.PendingConvertFormatRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
@@ -63,6 +64,7 @@ fun AppNavGraph(
     pendingCommentsRepository: PendingCommentsRepository,
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
+    pendingConvertFormatRepository: PendingConvertFormatRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
     pendingProtectBookRepository: PendingProtectBookRepository,
@@ -83,6 +85,7 @@ fun AppNavGraph(
                 pendingProtectBookRepository.flow,
                 pendingUnprotectBookRepository.flow,
                 pendingSetPageCountRepository.flow,
+                pendingConvertFormatRepository.flow,
                 pendingDeletionActionRepository.flow,
                 pendingEditMetadataRepository.flow,
             )
@@ -447,6 +450,7 @@ fun AppNavGraph(
                     pendingProtectBookRepository = pendingProtectBookRepository,
                     pendingUnprotectBookRepository = pendingUnprotectBookRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
+                    pendingConvertFormatRepository = pendingConvertFormatRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
                     pendingEditMetadataRepository = pendingEditMetadataRepository,
                     syncViewModel = syncViewModel,

@@ -69,6 +69,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import com.damarquez.putz.data.repository.PendingCommentsRepository
+import com.damarquez.putz.data.repository.PendingConvertFormatRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
@@ -92,6 +93,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     pendingCommentsRepository: PendingCommentsRepository,
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
+    pendingConvertFormatRepository: PendingConvertFormatRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
     pendingProtectBookRepository: PendingProtectBookRepository,
@@ -187,6 +189,15 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             if (pending != null) {
                 pendingGenerateCoverRepository.clear()
                 viewModel.generateCover(pending.uuid, pending.title, pending.author)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingConvertFormatRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingConvertFormatRepository.clear()
+                viewModel.convertFormat(pending.uuid, pending.sourceFormat, pending.targetFormat, pending.title, pending.author)
             }
         }
     }

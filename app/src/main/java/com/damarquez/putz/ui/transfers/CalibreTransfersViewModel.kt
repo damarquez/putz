@@ -148,6 +148,21 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    fun convertFormat(uuid: String, sourceFormat: String, targetFormat: String, title: String, author: String) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            calibreRepository.sendConvertFormatRequest(
+                title = title,
+                author = author,
+                calibreBookUuid = uuid,
+                sourceFormat = sourceFormat,
+                targetFormat = targetFormat,
+                googleAccount = account,
+            )
+        }
+    }
+
     fun protectBook(uuid: String, title: String, author: String) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
