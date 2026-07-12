@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -419,6 +420,23 @@ private fun CalibreBatchRow(
                     icon = Icons.Default.SwapVert,
                     enabled = !isUuidMatched,
                 )
+                if (item.author.count { it == ',' } == 1) {
+                    CompactIconButton(
+                        onClick = {
+                            val (surname, given) = item.author.split(",", limit = 2)
+                            val fixed = "${given.trim()} ${surname.trim()}"
+                                .split(" ")
+                                .joinToString(" ") { word ->
+                                    word.lowercase().replaceFirstChar { it.uppercaseChar() }
+                                }
+                            onChange(item.copy(author = fixed))
+                        },
+                        contentDescription = "Swap surname and given name",
+                        icon = Icons.Default.PersonSearch,
+                        enabled = !isUuidMatched,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             Spacer(Modifier.height(6.dp))
