@@ -24,11 +24,22 @@ class GDriveManager @Inject constructor(
     private val jsonFactory = GsonFactory.getDefaultInstance()
     private val scopes = listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE_METADATA_READONLY)
 
-    internal fun getDriveService(accountName: String): Drive {
+    // Keyed by account name so switching Google accounts still gets its own client. Building a
+    // Drive service spins up its own credential + HTTP client machinery; pollResponses fetches a
+    // backlog of response files in 20-way concurrent bursts (GDriveDaemonTransport.pollResponses),
+    // and each of those calls used to rebuild a brand-new service from scratch — a large backlog
+    // meant dozens of these piling up simultaneously, which was observed driving the app to a
+    // native OOM crash. Caching means concurrent calls for the same account reuse one instance.
+    private val driveServiceCache = java.util.concurrent.ConcurrentHashMap<String, Drive>()
+
+    internal fun getDriveService(accountName: String): Drive =
+        driveServiceCache.computeIfAbsent(accountName, ::buildDriveService)
+
+    private fun buildDriveService(accountName: String): Drive {
         Log.d("GDriveManager", "Creating Drive service for account: '$accountName'")
-        
+
         val credential = GoogleAccountCredential.usingOAuth2(context, scopes)
-        
+
         // 1. Try to get account from GoogleSignIn (best way as it's already authorized)
         val lastAccount = com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(context)
         if (lastAccount?.email?.equals(accountName, ignoreCase = true) == true) {
@@ -44,15 +55,15 @@ class GDriveManager @Inject constructor(
 
         // 2. Fallback to finding the actual Account object in AccountManager
         val accountManager = android.accounts.AccountManager.get(context)
-        val googleAccounts = try { 
-            accountManager.getAccountsByType("com.google") 
-        } catch (e: Exception) { 
+        val googleAccounts = try {
+            accountManager.getAccountsByType("com.google")
+        } catch (e: Exception) {
             Log.e("GDriveManager", "Failed to list accounts", e)
-            emptyArray<android.accounts.Account>() 
+            emptyArray<android.accounts.Account>()
         }
-        
+
         val matchingAccount = googleAccounts.find { it.name.equals(accountName, ignoreCase = true) }
-        
+
         if (matchingAccount != null) {
             Log.d("GDriveManager", "Found matching Account object via AccountManager: ${matchingAccount.name}")
             credential.selectedAccount = matchingAccount
