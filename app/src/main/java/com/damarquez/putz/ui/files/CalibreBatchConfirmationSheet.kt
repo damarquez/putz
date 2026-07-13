@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,6 +79,35 @@ data class CalibreBatchDraftItem(
     // resolved instead of waiting on a fresh stub-content read for every file.
     val localPath: String? = null,
 )
+
+/** Collects [FilesViewModel.calibreBatchDraft] in its own small composable rather than at the
+ *  top of the (huge) FilesScreen function. Every keystroke in the sheet below replaces the whole
+ *  draft list (see FilesViewModel.updateCalibreBatchDraftItem) — collecting the flow inside
+ *  FilesScreen itself forced Compose to recompose that entire function on every keystroke, which
+ *  ART can't even JIT-compile (it exceeds the method-size limit), so each recomposition ran
+ *  interpreted. Editing a ~30-item batch got progressively slower and eventually OOM-crashed the
+ *  app from the accumulated GC pressure. Scoping the read to this small composable instead means
+ *  only this call site recomposes per keystroke. */
+@Composable
+fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
+    val calibreBatchDraft by viewModel.calibreBatchDraft.collectAsState()
+    calibreBatchDraft?.let { draft ->
+        CalibreBatchConfirmationSheet(
+            items = draft,
+            onDismiss = { viewModel.dismissCalibreBatchDraft() },
+            onConfirm = { finalItems ->
+                viewModel.sendBatchToCalibre(finalItems)
+                viewModel.dismissCalibreBatchDraft()
+            },
+            onItemChange = { updated -> viewModel.updateCalibreBatchDraftItem(updated) },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            checkPendingTransfer = { fileId, fileName -> viewModel.findPendingTransfer(fileId, fileName) },
+            readStubFileSize = { file -> viewModel.readStubFileSize(file) },
+            onPreview = { file -> viewModel.previewFile(file) },
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

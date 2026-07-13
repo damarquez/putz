@@ -182,7 +182,6 @@ fun FilesScreen(
     var fileDetailsLoading by remember { mutableStateOf(false) }
     var renameValue by remember { mutableStateOf("") }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
-    val calibreBatchDraft by viewModel.calibreBatchDraft.collectAsState()
     var showSignOutConfirm by remember { mutableStateOf(false) }
     val isInHiddenScope = viewModel.isInHiddenScope
 
@@ -538,22 +537,7 @@ fun FilesScreen(
         )
     }
 
-    calibreBatchDraft?.let { draft ->
-        CalibreBatchConfirmationSheet(
-            items = draft,
-            onDismiss = { viewModel.dismissCalibreBatchDraft() },
-            onConfirm = { finalItems ->
-                viewModel.sendBatchToCalibre(finalItems)
-                viewModel.dismissCalibreBatchDraft()
-            },
-            onItemChange = { updated -> viewModel.updateCalibreBatchDraftItem(updated) },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
-            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
-            checkPendingTransfer = { fileId, fileName -> viewModel.findPendingTransfer(fileId, fileName) },
-            readStubFileSize = { file -> viewModel.readStubFileSize(file) },
-            onPreview = { file -> viewModel.previewFile(file) },
-        )
-    }
+    CalibreBatchDraftHost(viewModel)
 
     if (selectedFileForCover != null) {
         val imageFile = selectedFileForCover!!
