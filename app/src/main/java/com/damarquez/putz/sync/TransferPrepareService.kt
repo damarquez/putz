@@ -41,6 +41,13 @@ class TransferPrepareService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
 
+    // Tracked so it can be cancelled before stopForeground below — otherwise its sample(500L)
+    // ticker can fire a stale, buffered progress value right around teardown and repost a fresh
+    // ongoing notification that races the service's own destruction, sometimes leaving a
+    // non-dismissable notification behind with nothing left to remove it (this was the "Putz is
+    // sending a file to Calibre" notification getting stuck after the send finished).
+    private var progressJob: Job? = null
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -49,7 +56,7 @@ class TransferPrepareService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("Preparing files..."))
 
-        serviceScope.launch {
+        progressJob = serviceScope.launch {
             calibreRepository.prepareProgress.sample(500L).collectLatest { progress ->
                 val text = if (progress != null) "Resolving file ${progress.first}/${progress.second}" else "Sending to Calibre..."
                 getNotificationManager().notify(NOTIFICATION_ID, buildNotification(text))
@@ -60,6 +67,11 @@ class TransferPrepareService : Service() {
     }
 
     override fun onDestroy() {
+        progressJob?.cancel()
+        // Explicitly remove the notification here rather than relying on the implicit cleanup
+        // Android normally does when a foreground service stops — that implicit path is exactly
+        // what raced against the stale progress emission above.
+        stopForeground(STOP_FOREGROUND_REMOVE)
         serviceScope.cancel()
         super.onDestroy()
     }

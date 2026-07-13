@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.sample
@@ -51,11 +52,17 @@ class TransferDeleteService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
 
+    // Tracked so it can be cancelled+joined before the final notification is posted (see
+    // clearGreenTransfers) — otherwise its sample(500L) ticker can fire a stale, buffered
+    // progress value right around completion and clobber the final summary with a
+    // non-dismissable "Deleting..." notification that nothing ever replaces afterward.
+    private var progressJob: Job? = null
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
 
-        serviceScope.launch {
+        progressJob = serviceScope.launch {
             calibreRepository.deleteProgress.sample(500L).collectLatest { progress ->
                 if (progress != null) {
                     getNotificationManager().notify(NOTIFICATION_ID, buildNotification(progress.message))
@@ -142,6 +149,10 @@ class TransferDeleteService : Service() {
         } else {
             "$clearedCount cleared, $failedCount failed to delete from put.io — see the transfer list"
         }
+        // Stop (and wait for) the progress collector first so a stale sampled emission can't
+        // race past this point and overwrite the final summary below — see progressJob's comment.
+        progressJob?.cancelAndJoin()
+
         // Detach from the foreground state instead of just re-notifying: once this service calls
         // stopSelf(), Android removes any notification still tied to startForeground(), so without
         // detaching, the summary (especially a failure count) would flash and disappear before
@@ -173,6 +184,12 @@ class TransferDeleteService : Service() {
             .setAutoCancel(!ongoing)
             .setOnlyAlertOnce(true)
             .setContentIntent(openAppIntent)
+            .apply {
+                // The final "N cleared" summary is a fire-and-forget confirmation, not something
+                // that needs an explicit tap/swipe to go away — auto-dismiss it a few seconds
+                // after showing instead of leaving it sitting in the shade indefinitely.
+                if (!ongoing) setTimeoutAfter(5000L)
+            }
             .build()
     }
 
