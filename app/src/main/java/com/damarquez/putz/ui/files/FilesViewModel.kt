@@ -193,6 +193,16 @@ class FilesViewModel @Inject constructor(
     private val _calibreBatchDraft = MutableStateFlow<List<CalibreBatchDraftItem>?>(null)
     val calibreBatchDraft: StateFlow<List<CalibreBatchDraftItem>?> = _calibreBatchDraft.asStateFlow()
 
+    // ViewModel-backed for the same reason as calibreBatchDraft above: this FilesViewModel
+    // instance is scoped to this folder's NavBackStackEntry and stays alive (selection intact)
+    // as long as that entry remains on the back stack, e.g. switching to another bottom-nav tab
+    // and back. Plain `remember` state in the screen gets disposed on that round-trip instead.
+    private val _selectedFiles = MutableStateFlow<Set<PutioFile>>(emptySet())
+    val selectedFiles: StateFlow<Set<PutioFile>> = _selectedFiles.asStateFlow()
+    fun setSelectedFiles(files: Set<PutioFile>) {
+        _selectedFiles.value = files
+    }
+
     /** Re-fetches the live current PutioFile for a synced stub (its put.io ID drifts whenever the
      *  daemon re-syncs it — see [startCalibreBatchDraft]), matched by displayName within its
      *  parent folder. Falls back to [file] unchanged if it isn't synced, the fetch fails, or no

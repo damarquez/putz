@@ -173,7 +173,7 @@ fun FilesScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showMenu by remember { mutableStateOf(false) }
-    var selectedFiles by remember { mutableStateOf<Set<PutioFile>>(emptySet()) }
+    val selectedFiles by viewModel.selectedFiles.collectAsState()
     val isSelectionMode = selectedFiles.isNotEmpty()
     var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
     var fileToRename by remember { mutableStateOf<PutioFile?>(null) }
@@ -202,8 +202,13 @@ fun FilesScreen(
 
     val searchFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(isSearchMode) {
-        if (isSearchMode) {
+    LaunchedEffect(isSearchMode, isSelectionMode) {
+        // The search TextField (which owns searchFocusRequester) is only in the composition
+        // when isSearchMode is true AND isSelectionMode is false — see the topBar title
+        // branching below, which shows a plain "N selected of M found" Text instead while a
+        // selection is active. Requesting focus outside that branch throws since the
+        // FocusRequester has no attached node.
+        if (isSearchMode && !isSelectionMode) {
             searchFocusRequester.requestFocus()
         }
     }
@@ -216,7 +221,7 @@ fun FilesScreen(
 
     BackHandler(enabled = isSelectionMode || isSearchMode) {
         if (isSelectionMode) {
-            selectedFiles = emptySet()
+            viewModel.setSelectedFiles(emptySet())
         } else if (isSearchMode) {
             viewModel.toggleSearch()
         }
@@ -1252,7 +1257,7 @@ fun FilesScreen(
                 Button(
                     onClick = {
                         viewModel.deleteFiles(selectedFiles.toList())
-                        selectedFiles = emptySet()
+                        viewModel.setSelectedFiles(emptySet())
                         showBatchDeleteConfirm = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
@@ -1395,7 +1400,7 @@ fun FilesScreen(
                         isSearchMode -> IconButton(onClick = { viewModel.toggleSearch() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
                         }
-                        isSelectionMode -> IconButton(onClick = { selectedFiles = emptySet() }) {
+                        isSelectionMode -> IconButton(onClick = { viewModel.setSelectedFiles(emptySet()) }) {
                             Icon(Icons.Default.Close, contentDescription = "Cancel selection")
                         }
                         !isRoot -> IconButton(onClick = onNavigateUp) {
@@ -1409,7 +1414,7 @@ fun FilesScreen(
                             selectedFiles.size == packCandidateFiles.size
                         IconButton(
                             onClick = {
-                                selectedFiles = if (isAllSelected) emptySet() else packCandidateFiles.toSet()
+                                viewModel.setSelectedFiles(if (isAllSelected) emptySet() else packCandidateFiles.toSet())
                             },
                         ) {
                             Icon(
@@ -1726,8 +1731,10 @@ fun FilesScreen(
                                         file = file,
                                         onClick = {
                                             if (isSelectionMode) {
-                                                selectedFiles = if (file in selectedFiles)
-                                                    selectedFiles - file else selectedFiles + file
+                                                viewModel.setSelectedFiles(
+                                                    if (file in selectedFiles)
+                                                        selectedFiles - file else selectedFiles + file
+                                                )
                                             } else if (file.isTrash) {
                                                 onNavigateToTrash()
                                             } else if (file.isFolder) {
@@ -1751,7 +1758,7 @@ fun FilesScreen(
                                                 }
                                             }
                                         },
-                                        onLongClick = { selectedFiles = selectedFiles + file },
+                                        onLongClick = { viewModel.setSelectedFiles(selectedFiles + file) },
                                         // CONTRACT: bulk-select popup — only reached once already
                                         // in selection mode (FileItem shows this instead of
                                         // calling onLongClick directly in that case; see its own
@@ -1774,7 +1781,7 @@ fun FilesScreen(
                                                     (lastSelectedIndex + 1 + n).coerceAtMost(files.size),
                                                 )
                                             }
-                                            selectedFiles = selectedFiles + file + nextBatch
+                                            viewModel.setSelectedFiles(selectedFiles + file + nextBatch)
                                         },
                                         onUnselectBeforeHere = {
                                             // Unselects everything above the long-pressed item in
@@ -1782,7 +1789,7 @@ fun FilesScreen(
                                             // after it selected.
                                             val index = files.indexOf(file)
                                             if (index > 0) {
-                                                selectedFiles = selectedFiles - files.subList(0, index).toSet()
+                                                viewModel.setSelectedFiles(selectedFiles - files.subList(0, index).toSet())
                                             }
                                         },
                                         onUnselectFromHere = {
@@ -1790,11 +1797,13 @@ fun FilesScreen(
                                             // after it in this list, leaving only items above it
                                             // selected.
                                             val index = files.indexOf(file)
-                                            selectedFiles = if (index == -1) {
-                                                selectedFiles - file
-                                            } else {
-                                                selectedFiles - files.subList(index, files.size).toSet()
-                                            }
+                                            viewModel.setSelectedFiles(
+                                                if (index == -1) {
+                                                    selectedFiles - file
+                                                } else {
+                                                    selectedFiles - files.subList(index, files.size).toSet()
+                                                }
+                                            )
                                         },
                                         onPreview = { viewModel.previewFile(it) },
                                         onReplaceCover = { selectedFileForCover = it },
