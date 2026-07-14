@@ -23,6 +23,15 @@ object MetadataUtils {
         return fileName.removeSuffix(".sk_synced").removeSuffix(".sk_sync")
     }
 
+    /** Strips parenthetical groups that are just a format/extension tag (e.g. "(epub)") or a known
+     * junk word (e.g. "(retail)"). Shared by the automatic title parser and the manual "fix title" button. */
+    private fun stripJunkParens(title: String): String {
+        val junkTokens = EBOOK_EXTENSIONS + PLEXAMP_AUDIO_EXTENSIONS + JUNK_PAREN_WORDS
+        return Regex("""\(\s*([A-Za-z0-9]+)\s*\)""").replace(title) { match ->
+            if (match.groupValues[1].lowercase() in junkTokens) "" else match.value
+        }
+    }
+
     /** Strips `.sk_synced[.id]` / `.sk_sync` suffixes from a raw file name for display. */
     fun stripStubExtension(fileName: String): String =
         if (".sk_synced" in fileName) fileName.substringBefore(".sk_synced")
@@ -160,11 +169,21 @@ object MetadataUtils {
 
     fun extractMetadata(fileName: String): Pair<String, String> {
         val nameWithoutExt = cleanStubSuffix(fileName).substringBeforeLast('.')
-        
-        // Pattern: Author - Title
+
+        // Pattern: Author - Title (Title may itself contain " - " separated parts,
+        // e.g. a "[Series NN]" tag between the author and the real title)
         val dashParts = nameWithoutExt.split(" - ")
         if (dashParts.size >= 2) {
-            return Pair(dashParts[1].trim(), dashParts[0].trim())
+            val rawTitle = dashParts.drop(1).joinToString(" - ") { it.trim() }
+            val cleanedTitle = stripJunkParens(rawTitle)
+                .replace("[", "")
+                .replace("]", "")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .replace(Regex("^-+\\s*"), "")
+                .replace(Regex("\\s*-+$"), "")
+                .trim()
+            return Pair(cleanedTitle, dashParts[0].trim())
         }
         
         // Pattern: Title (Author)
@@ -198,11 +217,7 @@ object MetadataUtils {
      * or they immediately follow a "-" standing alone between spaces (treated like a clause break).
      */
     fun fixTitleCapitalization(title: String): String {
-        val junkTokens = EBOOK_EXTENSIONS + PLEXAMP_AUDIO_EXTENSIONS + JUNK_PAREN_WORDS
-        val withoutJunkParens = Regex("""\(\s*([A-Za-z0-9]+)\s*\)""").replace(title) { match ->
-            if (match.groupValues[1].lowercase() in junkTokens) "" else match.value
-        }
-        val words = withoutJunkParens
+        val words = stripJunkParens(title)
             .replace('_', ' ')
             .replace(Regex("\\s+"), " ")
             .trim()

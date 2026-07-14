@@ -100,6 +100,12 @@ class SettingsRepository @Inject constructor(
         prefs[AppSettingsKeys.LAN_API_KEY] ?: ""
     }
 
+    // CONTRACT: self-update — 0 means "never announced" (fresh install), distinct from any
+    // real versionCode (a build timestamp, always a large positive number).
+    val lastAnnouncedVersionCodeFlow: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[AppSettingsKeys.LAST_ANNOUNCED_VERSION_CODE] ?: 0
+    }
+
     fun saveAuthToken(token: String) = secureStorage.saveAuthToken(token)
 
     fun clearAuth() = secureStorage.clearAuthToken()
@@ -136,6 +142,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun saveLastSyncTimestamp(timestamp: Long) {
         dataStore.edit { prefs -> prefs[AppSettingsKeys.LAST_SYNC_TIMESTAMP] = timestamp }
+    }
+
+    suspend fun saveLastAnnouncedVersionCode(versionCode: Int) {
+        dataStore.edit { prefs -> prefs[AppSettingsKeys.LAST_ANNOUNCED_VERSION_CODE] = versionCode }
     }
 
     suspend fun saveDaemonStatus(status: String?) {

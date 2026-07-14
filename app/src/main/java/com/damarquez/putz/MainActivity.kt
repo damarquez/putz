@@ -6,10 +6,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
@@ -28,6 +30,7 @@ import com.damarquez.putz.oauth.OAuthManager
 import com.damarquez.putz.oauth.PendingMagnetRepository
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.navigation.AppNavGraph
+import com.damarquez.putz.update.AppUpdateManager
 import com.damarquez.putz.ui.theme.AppCategory
 import com.damarquez.putz.ui.theme.AppMode
 import com.damarquez.putz.ui.theme.PutzTheme
@@ -61,6 +64,7 @@ private sealed class PendingClipboardAction {
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var appUpdateManager: AppUpdateManager
     @Inject lateinit var oAuthManager: OAuthManager
     @Inject lateinit var pendingMagnetRepository: PendingMagnetRepository
     @Inject lateinit var pendingCoverRepository: PendingCoverRepository
@@ -98,6 +102,14 @@ class MainActivity : ComponentActivity() {
                 .collectAsState(initial = AppCategory.NORMAL)
             val appMode by settingsRepository.appModeFlow
                 .collectAsState(initial = AppMode.SYSTEM)
+
+            // CONTRACT: self-update — one-time "Updated to X" toast on the first launch after a
+            // self-update installs a newer build; silent otherwise (including a fresh install).
+            LaunchedEffect(Unit) {
+                appUpdateManager.checkVersionAnnouncement()?.let { message ->
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
 
             PutzTheme(category = appCategory, mode = appMode) {
                 AppNavGraph(

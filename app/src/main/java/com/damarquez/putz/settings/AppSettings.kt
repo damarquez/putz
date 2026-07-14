@@ -43,4 +43,7 @@ object AppSettingsKeys {
     // Last successfully fetched history JSON — survives process death so the screen
     // never shows an error on first open after restart while awaiting a fresh heartbeat
     val TRANSFER_HISTORY_CACHE = stringPreferencesKey("transfer_history_cache")
+    // CONTRACT: self-update — the last versionCode this install announced itself as, so it can
+    // show a one-time "Updated to X" message on the first launch after a self-update installs.
+    val LAST_ANNOUNCED_VERSION_CODE = intPreferencesKey("last_announced_version_code")
 }

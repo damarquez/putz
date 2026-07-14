@@ -137,26 +137,35 @@ class SettingsViewModel @Inject constructor(
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
     // CONTRACT: self-update — manual "Check for update" trigger only; no background polling.
+    // Doesn't require Google sign-in: the LAN path (daemon on the NAS) needs no account at all,
+    // and only the Drive fallback does — if that's reached without one, it just reports an error.
     private val _updateCheckResult = MutableStateFlow<UpdateCheckResult?>(null)
     val updateCheckResult: StateFlow<UpdateCheckResult?> = _updateCheckResult.asStateFlow()
     private val _isCheckingForUpdate = MutableStateFlow(false)
     val isCheckingForUpdate: StateFlow<Boolean> = _isCheckingForUpdate.asStateFlow()
+    private val _isDownloadingUpdate = MutableStateFlow(false)
+    val isDownloadingUpdate: StateFlow<Boolean> = _isDownloadingUpdate.asStateFlow()
 
     fun checkForUpdate() {
-        val account = googleAccount.value
-        if (account.isBlank()) {
-            _snackbarMessage.value = "Sign in with Google to check for updates"
-            return
-        }
         viewModelScope.launch {
             _isCheckingForUpdate.value = true
-            _updateCheckResult.value = appUpdateManager.checkForUpdate(account)
+            _updateCheckResult.value = appUpdateManager.checkForUpdate(googleAccount.value)
             _isCheckingForUpdate.value = false
         }
     }
 
     fun clearUpdateCheckResult() {
         _updateCheckResult.value = null
+    }
+
+    /** Downloads the update found by [checkForUpdate] from whichever source it reported. */
+    suspend fun downloadUpdateApk(): java.io.File? {
+        val result = _updateCheckResult.value as? UpdateCheckResult.UpdateAvailable ?: return null
+        _isDownloadingUpdate.value = true
+        val file = appUpdateManager.downloadUpdate(result.source, googleAccount.value)
+        _isDownloadingUpdate.value = false
+        if (file == null) _snackbarMessage.value = "Failed to download update"
+        return file
     }
 
     fun canRequestInstalls(): Boolean = appUpdateManager.canRequestInstalls()

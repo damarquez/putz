@@ -1,3 +1,5 @@
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Properties
 
 plugins {
@@ -9,14 +11,16 @@ plugins {
     kotlin("kapt")
 }
 
-// CONTRACT: self-update — versionCode/versionName are normally hardcoded, but the sidekick
-// daemon's `build-apk` CLI command bumps update.versionCode/update.versionName in
-// local.properties before triggering a build, so the app can detect "is the build in the Drive
-// folder newer than what's installed." Plain Studio builds fall back to the hardcoded defaults.
 val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) load(f.inputStream())
 }
+
+// CONTRACT: self-update — versionCode is the build's Unix timestamp (seconds), so every build
+// (Studio's or the daemon's) is automatically newer than the last with no manual bump anywhere.
+// The daemon's LAN /api/putz/version endpoint reports the live build output APK's mtime, which
+// the app compares directly against BuildConfig.VERSION_CODE — same "epoch seconds" currency.
+val buildTimestamp = (System.currentTimeMillis() / 1000).toInt()
 
 android {
     namespace = "com.damarquez.putz"
@@ -26,8 +30,8 @@ android {
         applicationId = "com.damarquez.putz"
         minSdk = 31
         targetSdk = 35
-        versionCode = localProps.getProperty("update.versionCode")?.toIntOrNull() ?: 1
-        versionName = localProps.getProperty("update.versionName") ?: "1.0"
+        versionCode = buildTimestamp
+        versionName = SimpleDateFormat("yyyy-MM-dd HH:mm").format(Date())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -89,6 +93,12 @@ android {
     // clobber each other in the shared Drive apk.outputDir folder.
     val apkOutputName = (project.findProperty("apk.outputName") as? String) ?: "putz-debug.apk"
     val apkOutputDir = localProps.getProperty("apk.outputDir")
+    // CONTRACT: self-update — the sidekick daemon runs as a Docker container on the NAS (see
+    // 4_deploy_to_nas.bat), with no visibility into this PC's Gradle build output, so the LAN
+    // self-update path needs its own delivery copy here (Drive above remains an independent
+    // fallback). Must match the daemon's apk_lan_delivery_path (sidekick.config.json) — see
+    // app_updater.py's _DEFAULT_APK_LAN_DELIVERY_PATH.
+    val apkLanOutputDir = localProps.getProperty("apk.lanOutputDir")
 
     applicationVariants.all {
         val variant = this
@@ -97,13 +107,36 @@ android {
             .forEach { output ->
                 output.outputFileName = apkOutputName
             }
-        if (apkOutputDir != null) {
-            variant.assembleProvider.get().doLast {
-                val apkDir = variant.outputs.first().outputFile.parentFile
+        variant.assembleProvider.get().doLast {
+            val apkDir = variant.outputs.first().outputFile.parentFile
+            // CONTRACT: self-update — a small sidecar file holding the exact same integer as
+            // this build's versionCode. The daemon's LAN endpoint (and, via Drive sync, the
+            // Drive fallback) reports THIS number rather than the APK file's mtime — mtime is
+            // stamped when the file finishes being written (after compile/package/copy, minutes
+            // after configuration time), so comparing it against BuildConfig.VERSION_CODE (which
+            // is fixed at configuration time) made even the just-installed build look "older"
+            // than itself and update-checks would never settle on "up to date".
+            val versionSidecar = File(apkDir, "$apkOutputName.version")
+            versionSidecar.writeText(buildTimestamp.toString())
+            if (apkOutputDir != null) {
                 copy {
                     from(apkDir)
                     into(file(apkOutputDir))
-                    include(apkOutputName)
+                    include(apkOutputName, "$apkOutputName.version")
+                }
+            }
+            if (apkLanOutputDir != null) {
+                // CONTRACT: self-update — best-effort: an unreachable NAS/network must never
+                // fail an otherwise-successful build (unlike apkOutputDir's Drive-desktop-backed
+                // drive letter, this is a raw UNC path with no local caching layer).
+                try {
+                    copy {
+                        from(apkDir)
+                        into(file(apkLanOutputDir))
+                        include(apkOutputName, "$apkOutputName.version")
+                    }
+                } catch (e: Exception) {
+                    project.logger.warn("self-update: could not deliver APK to apk.lanOutputDir ($apkLanOutputDir): ${e.message}")
                 }
             }
         }

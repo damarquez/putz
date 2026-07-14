@@ -216,6 +216,41 @@ class LanDaemonTransport @Inject constructor(
             }
         }
 
+    // CONTRACT: self-update — cheap check (no download): the daemon reports the NAS-delivered
+    // APK's mtime, an epoch-seconds int directly comparable to BuildConfig.VERSION_CODE.
+    suspend fun getAppVersion(appName: String): Long? =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${baseUrl()}/apps/$appName/version")
+                .header("X-Sidekick-Key", apiKey())
+                .get()
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    json.parseToJsonElement(body).jsonObject["version"]?.jsonPrimitive?.content?.toLongOrNull()
+                }
+            }.getOrNull()
+        }
+
+    suspend fun downloadAppApk(appName: String, destination: File): Boolean =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${baseUrl()}/apps/$appName/apk")
+                .header("X-Sidekick-Key", apiKey())
+                .get()
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use false
+                    val body = response.body ?: return@use false
+                    destination.outputStream().use { out -> body.byteStream().copyTo(out) }
+                    true
+                }
+            }.getOrDefault(false)
+        }
+
     suspend fun downloadAssetsDb(destination: File): Boolean =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
