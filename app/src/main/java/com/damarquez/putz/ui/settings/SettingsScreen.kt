@@ -41,9 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.ui.theme.AppCategory
 import com.damarquez.putz.ui.theme.AppMode
+import com.damarquez.putz.update.UpdateCheckResult
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
@@ -68,6 +70,9 @@ fun SettingsScreen(
     val plexampLibraryLanConnectionId by viewModel.plexampLibraryLanConnectionId.collectAsState()
     val plexampLibraryLanPath by viewModel.plexampLibraryLanPath.collectAsState()
     val lanConnections by viewModel.lanConnections.collectAsState()
+    val updateCheckResult by viewModel.updateCheckResult.collectAsState()
+    val isCheckingForUpdate by viewModel.isCheckingForUpdate.collectAsState()
+    val context = LocalContext.current
     var showLanConnectionPicker by remember { mutableStateOf(false) }
     var editingLanPath by remember { mutableStateOf<String?>(null) }
     var showPlexLanConnectionPicker by remember { mutableStateOf(false) }
@@ -541,7 +546,52 @@ fun SettingsScreen(
                     isError = true
                 )
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            SettingsSectionHeader("App Update")
+            ButtonRow(
+                label = if (isCheckingForUpdate) "Checking..." else "Check for update",
+                onClick = { if (!isCheckingForUpdate) viewModel.checkForUpdate() },
+            )
         }
+    }
+
+    // CONTRACT: self-update — tap-to-confirm only; Android's own install dialog is the
+    // confirmation step, this just surfaces the result of the Drive check.
+    updateCheckResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearUpdateCheckResult,
+            title = { Text("Update check") },
+            text = {
+                Text(
+                    when (result) {
+                        is UpdateCheckResult.UpdateAvailable -> "Version ${result.versionName ?: result.versionCode} is available."
+                        UpdateCheckResult.UpToDate -> "Putz is up to date."
+                        is UpdateCheckResult.Error -> "Couldn't check for updates: ${result.message}"
+                    }
+                )
+            },
+            confirmButton = {
+                if (result is UpdateCheckResult.UpdateAvailable) {
+                    TextButton(onClick = {
+                        viewModel.clearUpdateCheckResult()
+                        if (viewModel.canRequestInstalls()) {
+                            context.startActivity(viewModel.buildInstallIntent(result.apkFile))
+                        } else {
+                            context.startActivity(viewModel.installSettingsIntent())
+                        }
+                    }) { Text("Install") }
+                } else {
+                    TextButton(onClick = viewModel::clearUpdateCheckResult) { Text("OK") }
+                }
+            },
+            dismissButton = {
+                if (result is UpdateCheckResult.UpdateAvailable) {
+                    TextButton(onClick = viewModel::clearUpdateCheckResult) { Text("Later") }
+                }
+            },
+        )
     }
 
     plexRootPickerState?.let { pickerState ->

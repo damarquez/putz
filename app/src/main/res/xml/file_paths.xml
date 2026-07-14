@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="previews" path="previews/" />
+    <!-- CONTRACT: self-update — downloaded update APKs, exposed to the system installer. -->
+    <cache-path name="updates" path="updates/" />
 </paths>

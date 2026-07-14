@@ -9,6 +9,15 @@ plugins {
     kotlin("kapt")
 }
 
+// CONTRACT: self-update — versionCode/versionName are normally hardcoded, but the sidekick
+// daemon's `build-apk` CLI command bumps update.versionCode/update.versionName in
+// local.properties before triggering a build, so the app can detect "is the build in the Drive
+// folder newer than what's installed." Plain Studio builds fall back to the hardcoded defaults.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) load(f.inputStream())
+}
+
 android {
     namespace = "com.damarquez.putz"
     compileSdk = 35
@@ -17,10 +26,24 @@ android {
         applicationId = "com.damarquez.putz"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = localProps.getProperty("update.versionCode")?.toIntOrNull() ?: 1
+        versionName = localProps.getProperty("update.versionName") ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // CONTRACT: self-update — pinned explicitly (rather than relying on AGP's implicit
+    // machine-default debug keystore) so every build — Studio's and the daemon's headless
+    // `gradlew assembleDebug` — signs with the exact same certificate. A signature mismatch
+    // between builds makes Android treat an update as a different app and wipe its data; see
+    // debug.keystore backup at H:\My backups\debug.keystore.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -33,6 +56,7 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -61,11 +85,9 @@ android {
         }
     }
 
-    val localProps = Properties().apply {
-        val f = rootProject.file("local.properties")
-        if (f.exists()) load(f.inputStream())
-    }
-    val apkOutputName = (project.findProperty("apk.outputName") as? String) ?: "app.apk"
+    // CONTRACT: self-update — distinct default filename so putz and calibreAnywhere don't
+    // clobber each other in the shared Drive apk.outputDir folder.
+    val apkOutputName = (project.findProperty("apk.outputName") as? String) ?: "putz-debug.apk"
     val apkOutputDir = localProps.getProperty("apk.outputDir")
 
     applicationVariants.all {

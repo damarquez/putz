@@ -282,6 +282,35 @@ class GDriveManager @Inject constructor(
         }
     }
 
+    // CONTRACT: self-update — generic (not library-folder-scoped) lookup, unlike getFileMetadata.
+    suspend fun findFileInFolder(service: Drive, folderId: String, fileName: String): com.google.api.services.drive.model.File? = withContext(Dispatchers.IO) {
+        try {
+            val result = service.files().list()
+                .setQ("name = '$fileName' and '$folderId' in parents and trashed = false")
+                .setFields("files(id, name, modifiedTime)")
+                .execute()
+            result.files.firstOrNull()
+        } catch (e: Exception) {
+            Log.e("GDriveManager", "findFileInFolder: FAILED for '$fileName' in $folderId", e)
+            null
+        }
+    }
+
+    // CONTRACT: self-update — generic binary download to an arbitrary destination, unlike
+    // downloadMetadataDb which is hardcoded to fetch "metadata.db" from the library folder.
+    suspend fun downloadFileToDisk(accountName: String, fileId: String, destination: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val service = getDriveService(accountName)
+            FileOutputStream(destination).use { output ->
+                service.files().get(fileId).executeMediaAndDownloadTo(output)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("GDriveManager", "downloadFileToDisk: FAILED for fileId=$fileId", e)
+            false
+        }
+    }
+
     suspend fun deleteFile(accountName: String, fileId: String) = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)

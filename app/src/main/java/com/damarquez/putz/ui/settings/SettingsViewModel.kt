@@ -9,6 +9,8 @@ import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.files.LanFolderPickerState
 import com.damarquez.putz.ui.theme.AppCategory
 import com.damarquez.putz.ui.theme.AppMode
+import com.damarquez.putz.update.AppUpdateManager
+import com.damarquez.putz.update.UpdateCheckResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +28,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val lanFilesRepository: LanFilesRepository,
     private val lanDaemonTransport: LanDaemonTransport,
+    private val appUpdateManager: AppUpdateManager,
 ) : AndroidViewModel(application) {
 
     val appCategory = settingsRepository.appCategoryFlow
@@ -132,6 +135,33 @@ class SettingsViewModel @Inject constructor(
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
+    // CONTRACT: self-update — manual "Check for update" trigger only; no background polling.
+    private val _updateCheckResult = MutableStateFlow<UpdateCheckResult?>(null)
+    val updateCheckResult: StateFlow<UpdateCheckResult?> = _updateCheckResult.asStateFlow()
+    private val _isCheckingForUpdate = MutableStateFlow(false)
+    val isCheckingForUpdate: StateFlow<Boolean> = _isCheckingForUpdate.asStateFlow()
+
+    fun checkForUpdate() {
+        val account = googleAccount.value
+        if (account.isBlank()) {
+            _snackbarMessage.value = "Sign in with Google to check for updates"
+            return
+        }
+        viewModelScope.launch {
+            _isCheckingForUpdate.value = true
+            _updateCheckResult.value = appUpdateManager.checkForUpdate(account)
+            _isCheckingForUpdate.value = false
+        }
+    }
+
+    fun clearUpdateCheckResult() {
+        _updateCheckResult.value = null
+    }
+
+    fun canRequestInstalls(): Boolean = appUpdateManager.canRequestInstalls()
+    fun installSettingsIntent() = appUpdateManager.installSettingsIntent()
+    fun buildInstallIntent(apkFile: java.io.File) = appUpdateManager.buildInstallIntent(apkFile)
 
     fun setAppCategory(category: AppCategory) {
         viewModelScope.launch { settingsRepository.saveAppCategory(category) }
