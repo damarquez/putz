@@ -128,6 +128,11 @@ fun FileItem(
     onRename: ((PutioFile) -> Unit)? = null,
     isSelected: Boolean,
     isSelectionMode: Boolean,
+    // CONTRACT: selection-type invariant — whether this file is allowed to join the selection
+    // in progress (stubs/regular files and "regular remote" (non-stub, undownloaded) files can
+    // never be selected together, since they have no bulk operations in common). Irrelevant when
+    // isSelectionMode is false. See FilesScreen.kt's selectionIsRemoteOnly.
+    isSelectable: Boolean = true,
     selectionCount: Int = 0,
     onSelectNextN: () -> Unit = {},
     onUnselectBeforeHere: () -> Unit = {},
@@ -164,8 +169,11 @@ fun FileItem(
 
     // CONTRACT: Putz file state — drives menu visibility; see CONTRACTS.md §19
     // Hidden-folder files are treated like regular remote (dimmed) but have a different menu
-    val isRegularRemote = !file.isLocal && !file.isLan && !file.isTrash && !file.isFolder
-        && !file.isSpecialRootFolder && !file.isSynced && !file.isPutzAttachments
+    val isRegularRemote = file.isRegularRemote
+
+    // Grayed out and non-interactive: either a plain undownloaded remote file (always dimmed) or,
+    // while selecting, any file whose type doesn't match the in-progress selection's type.
+    val isDimmed = isRegularRemote || (isSelectionMode && !isSelectable)
 
     val formatLabel = file.displayName
         .substringAfterLast('.', "")
@@ -188,25 +196,31 @@ fun FileItem(
         else -> Color.Transparent
     }
 
+    // CONTRACT: selection-type invariant — an incompatible-with-selection file ignores taps
+    // entirely (no toggling, no navigation) while a selection of the other type is in progress.
+    val effectiveOnClick = if (isSelectionMode && !isSelectable) { {} } else onClick
+
     Column(modifier = modifier.fillMaxWidth().background(backgroundColor).then(
-        if (isRegularRemote) Modifier.alpha(0.45f) else Modifier
+        if (isDimmed) Modifier.alpha(0.45f) else Modifier
     )) {
         Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = if (isRegularRemote) {
-                        {}
-                    } else if (isSelectionMode) {
-                        // CONTRACT: bulk-select popup — a plain long-press while already in
-                        // selection mode used to just add this one file. Now it opens a popup
-                        // instead, since a single accidental long-press bulk-selecting or
-                        // bulk-unselecting a large contiguous range (see onSelectNextN/
-                        // onUnselectFromHere below) is too easy to trigger by mistake to fire
-                        // directly off a long-press with no confirmation step.
-                        { showSelectionMenu = true }
+                    onClick = effectiveOnClick,
+                    onLongClick = if (isSelectionMode) {
+                        if (isSelectable) {
+                            // CONTRACT: bulk-select popup — a plain long-press while already in
+                            // selection mode used to just add this one file. Now it opens a popup
+                            // instead, since a single accidental long-press bulk-selecting or
+                            // bulk-unselecting a large contiguous range (see onSelectNextN/
+                            // onUnselectFromHere below) is too easy to trigger by mistake to fire
+                            // directly off a long-press with no confirmation step.
+                            { showSelectionMenu = true }
+                        } else {
+                            {}
+                        }
                     } else onLongClick,
                 )
                 .padding(horizontal = 1.dp, vertical = 1.dp),
@@ -215,7 +229,8 @@ fun FileItem(
             if (isSelectionMode) {
                 Checkbox(
                     checked = isSelected,
-                    onCheckedChange = { onClick() },
+                    enabled = isSelectable,
+                    onCheckedChange = { effectiveOnClick() },
                 )
                 Spacer(modifier = Modifier.width(4.dp))
             }

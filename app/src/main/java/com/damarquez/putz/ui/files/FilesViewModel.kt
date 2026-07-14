@@ -880,6 +880,21 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    // CONTRACT: PRIORITY_PUTIO_SYNC — bulk variant for the multi-select toolbar (only offered for
+    // an all-"regular remote" selection; see FilesScreen.kt's selectionIsRemoteOnly).
+    fun requestPrioritySync(files: List<PutioFile>) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+            val successCount = files.count { calibreRepository.sendPrioritySyncRequest(it, googleAccount) }
+            _snackbarMessage.value = "Priority sync requested for $successCount/${files.size} file(s)"
+            setSelectedFiles(emptySet())
+        }
+    }
+
     fun copyStubJson(file: PutioFile) {
         viewModelScope.launch {
             val rawJson = calibreRepository.readStubRawJson(file)

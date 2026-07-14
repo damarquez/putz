@@ -258,8 +258,13 @@ private fun CalibreBatchRow(
 
     // A UUID match takes over title/author (like the single-file dialog) and owns matchedBookId
     // while present; the text-based match below only runs when there's no UUID to match on.
+    // Debounced: LaunchedEffect cancels+restarts this block on every keystroke (key = item.uuid),
+    // so the delay below means only the keystroke that ends a pause actually reaches the query —
+    // rapid typing keeps cancelling it before checkExistsByUuid ever runs. See the debounce
+    // comment on the title/author check below for why this matters.
     LaunchedEffect(item.uuid) {
         if (item.uuid.isNotBlank()) {
+            kotlinx.coroutines.delay(400)
             val match = checkExistsByUuid(item.uuid.trim())
             if (match != null) {
                 matchedBookId = match.id
@@ -282,12 +287,19 @@ private fun CalibreBatchRow(
         }
     }
 
+    // Debounced (see comment above) — checkExists opens the entire Calibre metadata.db and scans
+    // every book/author row (Unicode-normalizing each one) to find a title match. Running that on
+    // every keystroke while editing a title, across a multi-book batch-send list, made editing
+    // measurably slower the further down the list you went and was severe enough to OOM-crash the
+    // app on a large-ish library. A 400ms pause-in-typing debounce turns "one full library scan
+    // per character typed" into "one scan per row, once you stop typing it."
     LaunchedEffect(item.title, item.author, item.included, item.uuid) {
         if (item.uuid.isNotBlank()) return@LaunchedEffect
-        matchedBookId = if (item.included && item.title.isNotBlank()) {
-            checkExists(item.title, item.author.ifBlank { "Unknown" })
+        if (item.included && item.title.isNotBlank()) {
+            kotlinx.coroutines.delay(400)
+            matchedBookId = checkExists(item.title, item.author.ifBlank { "Unknown" })
         } else {
-            null
+            matchedBookId = null
         }
     }
 

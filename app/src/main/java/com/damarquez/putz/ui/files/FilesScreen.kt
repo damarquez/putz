@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
@@ -136,9 +137,6 @@ fun FilesScreen(
     val completedTransfersWithUuid by viewModel.completedTransfersWithUuid.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
-    val isPreparingTransfer by viewModel.isPreparingTransfer.collectAsState()
-    val transferPreparationProgress by viewModel.transferPreparationProgress.collectAsState()
-    val transferPreparationLabel by viewModel.transferPreparationLabel.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchScope by viewModel.searchScope.collectAsState()
@@ -175,6 +173,10 @@ fun FilesScreen(
     var showMenu by remember { mutableStateOf(false) }
     val selectedFiles by viewModel.selectedFiles.collectAsState()
     val isSelectionMode = selectedFiles.isNotEmpty()
+    // CONTRACT: selection-type invariant — "regular remote" (dimmed, undownloaded) files have no
+    // bulk operations in common with stubs/regular files, so a selection is either all
+    // regular-remote or all not; mixing is disallowed everywhere selection is mutated below.
+    val selectionIsRemoteOnly = selectedFiles.isNotEmpty() && selectedFiles.first().isRegularRemote
     var fileToDelete by remember { mutableStateOf<PutioFile?>(null) }
     var fileToRename by remember { mutableStateOf<PutioFile?>(null) }
     var fileForDetails by remember { mutableStateOf<PutioFile?>(null) }
@@ -1394,11 +1396,14 @@ fun FilesScreen(
                 },
                 actions = {
                     if (isSelectionMode) {
-                        val isAllSelected = packCandidateFiles.isNotEmpty() &&
-                            selectedFiles.size == packCandidateFiles.size
+                        // CONTRACT: selection-type invariant — "select all" only selects files of
+                        // the same regular-remote-ness as the in-progress selection.
+                        val selectAllCandidates = packCandidateFiles.filter { it.isRegularRemote == selectionIsRemoteOnly }
+                        val isAllSelected = selectAllCandidates.isNotEmpty() &&
+                            selectedFiles.size == selectAllCandidates.size
                         IconButton(
                             onClick = {
-                                viewModel.setSelectedFiles(if (isAllSelected) emptySet() else packCandidateFiles.toSet())
+                                viewModel.setSelectedFiles(if (isAllSelected) emptySet() else selectAllCandidates.toSet())
                             },
                         ) {
                             Icon(
@@ -1406,15 +1411,23 @@ fun FilesScreen(
                                 contentDescription = if (isAllSelected) "Deselect all" else "Select all",
                             )
                         }
-                        val hasFolderSelected = selectedFiles.any { it.isFolder }
-                        IconButton(
-                            onClick = { viewModel.startCalibreBatchDraft(selectedFiles.toList()) },
-                            enabled = !hasFolderSelected,
-                        ) {
-                            Icon(Icons.Default.LibraryAdd, contentDescription = "Send selected to Calibre")
-                        }
-                        IconButton(onClick = { showBatchDeleteConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                        if (selectionIsRemoteOnly) {
+                            // CONTRACT: PRIORITY_PUTIO_SYNC — the only bulk operation available
+                            // for a selection of undownloaded remote files.
+                            IconButton(onClick = { viewModel.requestPrioritySync(selectedFiles.toList()) }) {
+                                Icon(Icons.Default.Sync, contentDescription = "Priority sync selected")
+                            }
+                        } else {
+                            val hasFolderSelected = selectedFiles.any { it.isFolder }
+                            IconButton(
+                                onClick = { viewModel.startCalibreBatchDraft(selectedFiles.toList()) },
+                                enabled = !hasFolderSelected,
+                            ) {
+                                Icon(Icons.Default.LibraryAdd, contentDescription = "Send selected to Calibre")
+                            }
+                            IconButton(onClick = { showBatchDeleteConfirm = true }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                            }
                         }
                     } else if (isSearchMode) {
                         if (searchQuery.isNotEmpty()) {
@@ -1517,29 +1530,7 @@ fun FilesScreen(
                             )
                         }
 
-                        if (isPreparingTransfer) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = transferPreparationProgress?.let { (done, total) ->
-                                        "$transferPreparationLabel ($done/$total)"
-                                    } ?: transferPreparationLabel,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
-                            }
-                        }
+                        TransferPreparationBanner(viewModel)
 
                         // Sort Toggles (shown in search mode too, so results can be sorted)
                         Row(
@@ -1747,6 +1738,10 @@ fun FilesScreen(
                                         // in selection mode (FileItem shows this instead of
                                         // calling onLongClick directly in that case; see its own
                                         // combinedClickable wiring).
+                                        // CONTRACT: selection-type invariant — a file whose
+                                        // regular-remote-ness doesn't match the in-progress
+                                        // selection is inert (no tap toggle, no long-press popup).
+                                        isSelectable = !isSelectionMode || file.isRegularRemote == selectionIsRemoteOnly,
                                         selectionCount = selectedFiles.size,
                                         onSelectNextN = {
                                             // Selects the next N items after whichever selected
@@ -1754,7 +1749,9 @@ fun FilesScreen(
                                             // are currently selected — so 10 selected -> next 10
                                             // (20 total) -> next 20 (40 total), etc. Lets a large
                                             // contiguous range be selected in a handful of
-                                            // long-presses instead of one tap per file.
+                                            // long-presses instead of one tap per file. Filtered to
+                                            // the selection's type so it can't pull in incompatible
+                                            // files (see selectionIsRemoteOnly).
                                             val n = selectedFiles.size
                                             val lastSelectedIndex = files.indexOfLast { it in selectedFiles }
                                             val nextBatch = if (lastSelectedIndex == -1) {
@@ -1763,7 +1760,7 @@ fun FilesScreen(
                                                 files.subList(
                                                     (lastSelectedIndex + 1).coerceAtMost(files.size),
                                                     (lastSelectedIndex + 1 + n).coerceAtMost(files.size),
-                                                )
+                                                ).filter { it.isRegularRemote == selectionIsRemoteOnly }
                                             }
                                             viewModel.setSelectedFiles(selectedFiles + file + nextBatch)
                                         },
@@ -1848,6 +1845,44 @@ fun FilesScreen(
         }
     }
 }
+}
+
+/** Collects the transfer-preparation progress flows in its own small composable rather than at
+ *  the top of the (huge) FilesScreen function. These tick on every file completed during a batch
+ *  send (FilesViewModel.sendBatchToCalibre calls updatePrepareProgress per item) — collecting them
+ *  inside FilesScreen itself forced Compose to recompose that entire function on every tick, which
+ *  ART can't even JIT-compile (it exceeds the method-size limit), so each recomposition ran
+ *  interpreted. A batch send running for tens of seconds meant tens of seconds of continuous
+ *  full-function recomposition, compounding with any other work (e.g. editing a second batch
+ *  draft) closely enough to OOM-crash the app. Scoping the read to this small composable instead
+ *  means only this call site recomposes per tick. */
+@Composable
+private fun TransferPreparationBanner(viewModel: FilesViewModel) {
+    val isPreparingTransfer by viewModel.isPreparingTransfer.collectAsState()
+    if (!isPreparingTransfer) return
+    val transferPreparationProgress by viewModel.transferPreparationProgress.collectAsState()
+    val transferPreparationLabel by viewModel.transferPreparationLabel.collectAsState()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(16.dp),
+            strokeWidth = 2.dp,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = transferPreparationProgress?.let { (done, total) ->
+                "$transferPreparationLabel ($done/$total)"
+            } ?: transferPreparationLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
 }
 
 @Composable

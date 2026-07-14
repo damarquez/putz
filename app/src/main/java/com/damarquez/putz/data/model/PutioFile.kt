@@ -39,6 +39,13 @@ data class PutioFile(
     // CONTRACT: stub convention, Putz file state
     val isSynced: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder && ".sk_synced" in name
 
+    // CONTRACT: Putz file state — a plain remote put.io file that hasn't been synced/downloaded
+    // at all yet (no local stub, no local copy, no LAN copy). Shown dimmed in the file list and,
+    // per the file-selection invariant, can never be selected alongside a non-"regular remote"
+    // file — see FilesScreen.kt's selectionIsRemoteOnly.
+    val isRegularRemote: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder &&
+        !isSpecialRootFolder && !isSynced && !isPutzAttachments
+
     // CONTRACT: stub convention — always use displayName (not name) with MetadataUtils.
     // Strips a leading "<size>~~" size-prefix marker (if present), then everything from
     // ".sk_synced" onward.
