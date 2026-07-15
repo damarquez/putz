@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.SwapVert
@@ -500,62 +502,89 @@ private fun CalibreBatchRow(
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CompactOutlinedTextField(
-                    value = item.uuid,
-                    onValueChange = { onChange(item.copy(uuid = it)) },
-                    label = "Book UUID (Optional)",
-                    modifier = Modifier.weight(1f),
-                    placeholder = "Directly target an existing book",
-                    dense = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                )
-                CompactIconButton(
-                    onClick = {
-                        val pasted = clipboardManager.getText()?.text.orEmpty().trim()
-                        if (pasted.isNotEmpty()) onChange(item.copy(uuid = pasted))
-                    },
-                    contentDescription = "Paste UUID from clipboard",
-                    icon = Icons.Default.ContentPaste,
+            // UUID/tags/toggles are rarely touched, so they start collapsed behind this chevron —
+            // keeping a multi-file batch scannable down to just title/author per row — but default
+            // to expanded whenever a row already carries a non-default value in one of them (e.g.
+            // a draft restored from a previous edit), so nothing is silently hidden from view.
+            var expanded by remember(item.file.id) {
+                mutableStateOf(
+                    item.uuid.isNotBlank() || item.tags.isNotBlank() || item.isProtected || item.isAltVersion,
                 )
             }
-
-            Spacer(Modifier.height(6.dp))
-            CompactOutlinedTextField(
-                value = item.tags,
-                onValueChange = { onChange(item.copy(tags = it)) },
-                label = "Tags (optional)",
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = "Programming, Python, Reference",
-                dense = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            )
-
-            Spacer(Modifier.height(6.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "Encrypt",
-                    style = MaterialTheme.typography.bodySmall,
+                HorizontalDivider(modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Hide UUID/tags/options" else "Show UUID/tags/options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
                 )
-                Switch(
-                    checked = item.isProtected,
-                    onCheckedChange = { onChange(item.copy(isProtected = it)) },
-                    modifier = Modifier.scale(0.75f),
+                HorizontalDivider(modifier = Modifier.weight(1f))
+            }
+
+            if (expanded) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CompactOutlinedTextField(
+                        value = item.uuid,
+                        onValueChange = { onChange(item.copy(uuid = it)) },
+                        label = "Book UUID (Optional)",
+                        modifier = Modifier.weight(1f),
+                        placeholder = "Directly target an existing book",
+                        dense = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    )
+                    CompactIconButton(
+                        onClick = {
+                            val pasted = clipboardManager.getText()?.text.orEmpty().trim()
+                            if (pasted.isNotEmpty()) onChange(item.copy(uuid = pasted))
+                        },
+                        contentDescription = "Paste UUID from clipboard",
+                        icon = Icons.Default.ContentPaste,
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+                CompactOutlinedTextField(
+                    value = item.tags,
+                    onValueChange = { onChange(item.copy(tags = it)) },
+                    label = "Tags (optional)",
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Programming, Python, Reference",
+                    dense = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = "Alt. version",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Switch(
-                    checked = item.isAltVersion,
-                    onCheckedChange = { onChange(item.copy(isAltVersion = it)) },
-                    modifier = Modifier.scale(0.75f),
-                )
+
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Encrypt",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Switch(
+                        checked = item.isProtected,
+                        onCheckedChange = { onChange(item.copy(isProtected = it)) },
+                        modifier = Modifier.scale(0.75f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Alt. version",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Switch(
+                        checked = item.isAltVersion,
+                        onCheckedChange = { onChange(item.copy(isAltVersion = it)) },
+                        modifier = Modifier.scale(0.75f),
+                    )
+                }
             }
 
         }
