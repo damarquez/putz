@@ -1,6 +1,7 @@
 package com.damarquez.putz.ui.files
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -168,6 +169,7 @@ fun CalibreBatchConfirmationSheet(
                             item = item,
                             index = if (items.size > 1) index + 1 else null,
                             sizeBytes = sizeProgress?.sizesById?.get(item.file.id) ?: item.file.size,
+                            previousAuthor = items.getOrNull(index - 1)?.author,
                             checkExists = checkExists,
                             checkExistsByUuid = checkExistsByUuid,
                             checkPendingTransfer = checkPendingTransfer,
@@ -238,6 +240,7 @@ private fun CalibreBatchRow(
     item: CalibreBatchDraftItem,
     index: Int?,
     sizeBytes: Long,
+    previousAuthor: String?,
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
@@ -445,13 +448,29 @@ private fun CalibreBatchRow(
                 } else null,
             )
             Spacer(Modifier.height(6.dp))
+            // Highlights an author that repeats the immediately preceding row's author (e.g. a
+            // multi-volume set added in one batch), using the same salmon/dark-foreground pairing
+            // as the primary "Send" action, so a long run of identical authors is easy to spot at
+            // a glance while scrolling.
+            val isRepeatAuthor = previousAuthor != null &&
+                item.author.isNotBlank() &&
+                item.author.trim() == previousAuthor.trim()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CompactOutlinedTextField(
                     value = item.author,
                     onValueChange = { onChange(item.copy(author = it)) },
                     label = "Author",
                     placeholder = "Unknown",
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(
+                            if (isRepeatAuthor) {
+                                Modifier.background(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = MaterialTheme.shapes.extraSmall,
+                                )
+                            } else Modifier
+                        ),
                     enabled = !isUuidMatched,
                     dense = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
