@@ -335,6 +335,8 @@ fun TransferHistoryScreen(
                                     entry = entry,
                                     onClick = { selectedEntry = entry },
                                     onActivate = { viewModel.activateEntry(entry) },
+                                    onMarkAsCompleted = { viewModel.markAsCompleted(entry) },
+                                    onForgetTransfer = { viewModel.forgetTransfer(entry) },
                                 )
                                 HorizontalDivider()
                             }
@@ -352,9 +354,12 @@ private fun HistoryEntryRow(
     entry: HistoryFileEntry,
     onClick: () -> Unit,
     onActivate: () -> Unit,
+    onMarkAsCompleted: () -> Unit,
+    onForgetTransfer: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val isCompleted = entry.status == "COMPLETED"
 
     ListItem(
         modifier = Modifier.combinedClickable(
@@ -369,12 +374,32 @@ private fun HistoryEntryRow(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
             ) {
-                if (entry.magnetUri != null) {
+                // Activate re-submits the magnet and would re-download everything — never offer
+                // it for an entry that's already completed once.
+                if (entry.magnetUri != null && !isCompleted) {
                     DropdownMenuItem(
                         text = { Text("Activate") },
                         onClick = {
                             showMenu = false
                             onActivate()
+                        },
+                    )
+                }
+                if (!isCompleted) {
+                    DropdownMenuItem(
+                        text = { Text("Mark as Completed") },
+                        onClick = {
+                            showMenu = false
+                            onMarkAsCompleted()
+                        },
+                    )
+                }
+                if (isCompleted) {
+                    DropdownMenuItem(
+                        text = { Text("Forget transfer") },
+                        onClick = {
+                            showMenu = false
+                            onForgetTransfer()
                         },
                     )
                 }

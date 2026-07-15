@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.model.AddTransferOutcome
 import com.damarquez.putz.data.model.HistoryFileEntry
+import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.TransferHistoryRepository
 import com.damarquez.putz.data.repository.TransfersRepository
@@ -213,6 +214,59 @@ class TransferHistoryViewModel @Inject constructor(
                 is AddTransferOutcome.Failed -> {
                     _actionMessage.value = outcome.message
                 }
+            }
+        }
+    }
+
+    /** Manual correction for entries stuck showing a stale non-terminal status even though the
+     *  transfer actually completed (e.g. rows written before the daemon's sticky-COMPLETED guard
+     *  existed). Once set, COMPLETED can never be downgraded again by any later poll/scan. */
+    fun markAsCompleted(entry: HistoryFileEntry) {
+        if (entry.status == "COMPLETED") return
+        val previous = entry
+        applyEntryUpdate(entry.copy(status = "COMPLETED"))
+
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                applyEntryUpdate(previous)
+                _actionMessage.value = "Not authenticated with Google Drive"
+                return@launch
+            }
+
+            val confirmed = calibreRepository.registerTransferHistory(
+                putioTransferId = entry.putioId ?: System.currentTimeMillis(),
+                infoHash = entry.infoHash,
+                label = entry.label,
+                putioName = entry.putioName,
+                magnetUri = entry.magnetUri,
+                putioId = entry.putioId,
+                status = "COMPLETED",
+                googleAccount = googleAccount,
+            )
+            if (!confirmed) {
+                applyEntryUpdate(previous)
+                _actionMessage.value = "Couldn't mark as completed — check your connection and try again"
+            } else {
+                _actionMessage.value = "Marked as completed"
+            }
+        }
+    }
+
+    /** Cancels the put.io transfer job behind a COMPLETED entry so it can't resurface as WAITING
+     *  through some other path — never touches the downloaded files or stubs. */
+    fun forgetTransfer(entry: HistoryFileEntry) {
+        if (entry.status != "COMPLETED") return
+        viewModelScope.launch {
+            val token = secureStorage.authTokenFlow.value
+            if (token.isBlank()) {
+                _actionMessage.value = "Not authenticated with put.io"
+                return@launch
+            }
+            _actionMessage.value = when (val result = transfersRepository.forgetCompletedTransfer(token, entry)) {
+                is NetworkResult.Success -> "Removed from put.io's transfer list"
+                is NetworkResult.Error -> result.message
+                NetworkResult.Loading -> null
             }
         }
     }

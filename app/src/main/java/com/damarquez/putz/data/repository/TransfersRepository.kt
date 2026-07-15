@@ -23,6 +23,7 @@ class TransfersRepository @Inject constructor(
     private val dao: AppTransferDao,
     private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
+    private val historyRepository: TransferHistoryRepository,
 ) {
 
     // IDs the user just deleted. Kept until put.io stops reporting them so a slow cancel
@@ -151,6 +152,12 @@ class TransfersRepository @Inject constructor(
             return@withContext AddTransferOutcome.Failed("This transfer is already in the queue")
         }
 
+        if (infoHash != null && isCompletedInHistory(infoHash)) {
+            return@withContext AddTransferOutcome.Failed(
+                "This was already completed previously — adding it again would re-download everything from scratch"
+            )
+        }
+
         when (val result = apiClient.addTransfer(token, magnetOrUrl, saveParentId)) {
             is NetworkResult.Success -> {
                 val transfer = result.data
@@ -197,6 +204,12 @@ class TransfersRepository @Inject constructor(
      *  put.io's own queue manages everything below the limit; above it, the user decides when to retry. */
     suspend fun activateHistoryEntry(token: String, entry: HistoryFileEntry): AddTransferOutcome =
         withContext(Dispatchers.IO) {
+            if (entry.status == HISTORY_STATUS_COMPLETED) {
+                return@withContext AddTransferOutcome.Failed(
+                    "Already completed — activating would re-download this torrent from scratch"
+                )
+            }
+
             val magnet = entry.magnetUri
                 ?: return@withContext AddTransferOutcome.Failed("No magnet link stored for this entry")
 
@@ -243,6 +256,20 @@ class TransfersRepository @Inject constructor(
                 }
                 NetworkResult.Loading -> AddTransferOutcome.Failed("Loading")
             }
+        }
+
+    /** Cancels the put.io transfer JOB for an already-COMPLETED history entry — this only makes
+     *  put.io forget/stop tracking that transfer so it can't resurface as WAITING/re-add itself;
+     *  it never touches the downloaded files or the daemon's stubs. Safe to call even if the job
+     *  is already gone from put.io (e.g. auto-cleared) — that's just treated as success. */
+    suspend fun forgetCompletedTransfer(token: String, entry: HistoryFileEntry): NetworkResult<Unit> =
+        withContext(Dispatchers.IO) {
+            if (entry.status != HISTORY_STATUS_COMPLETED) {
+                return@withContext NetworkResult.Error("Only completed transfers can be forgotten")
+            }
+            val putioId = entry.putioId
+                ?: return@withContext NetworkResult.Error("No put.io transfer ID stored for this entry")
+            apiClient.cancelTransfers(token, listOf(putioId))
         }
 
     /** Drops a never-added entry out of the "Waiting for a free slot" list. There's no delete
@@ -297,6 +324,14 @@ class TransfersRepository @Inject constructor(
 
     private fun placeholderTransferId(infoHash: String): Long =
         (infoHash.hashCode().toLong() and 0x7fffffffL)
+
+    /** Checks the locally cached shared history (no network call) for a COMPLETED entry with
+     *  this info hash, so any add-transfer path can refuse to resubmit a torrent whose content
+     *  has already been fully downloaded and processed once before. */
+    private suspend fun isCompletedInHistory(infoHash: String): Boolean {
+        val entries = historyRepository.getCachedHistory()?.entries ?: return false
+        return entries.any { it.infoHash.equals(infoHash, ignoreCase = true) && it.status == HISTORY_STATUS_COMPLETED }
+    }
 
     private fun buildEntity(
         transfer: PutioTransfer,
@@ -426,6 +461,7 @@ class TransfersRepository @Inject constructor(
         private const val TRANSFER_ADD_LIMIT_ERROR_TYPE = "TRANSFER_ADD_LIMIT_REACHED"
         const val HISTORY_STATUS_QUEUED_OUTSIDE_PUTIO = "QUEUED_OUTSIDE_PUTIO"
         const val HISTORY_STATUS_CANCELLED_OUTSIDE_PUTIO = "CANCELLED_OUTSIDE_PUTIO"
+        const val HISTORY_STATUS_COMPLETED = "COMPLETED"
 
         private val RESOLVING_STATUSES = setOf(
             TransferStatus.DOWNLOADING,

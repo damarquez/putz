@@ -237,6 +237,19 @@ fun TransferItem(
                     }
                 }
 
+                // History already recorded this torrent as fully completed once before, yet
+                // it's showing up live in a non-completed state — this should no longer happen
+                // through any path Putz/the daemon control (see the sticky-COMPLETED guard and
+                // the re-add blocks), so surface it as a signal something outside our control
+                // (e.g. a manual re-add on put.io's own site) put it back.
+                if (merged.historyEntry?.status == "COMPLETED" && status != TransferStatus.COMPLETED) {
+                    Text(
+                        text = "⚠ Already completed previously — check before letting this finish again",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
                 Spacer(Modifier.height(6.dp))
 
                 if (merged.isPendingLocal) {
