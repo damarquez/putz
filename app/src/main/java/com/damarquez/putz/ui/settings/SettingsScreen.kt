@@ -9,8 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -44,6 +47,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.ui.components.transientVerticalScrollbar
 import com.damarquez.putz.ui.theme.AppCategory
 import com.damarquez.putz.ui.theme.AppMode
 import com.damarquez.putz.update.UpdateCheckResult
@@ -163,11 +167,13 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets(0),
     ) { paddingValues ->
+        val settingsScrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(settingsScrollState)
+                .transientVerticalScrollbar(settingsScrollState)
         ) {
             SettingsSectionHeader("Appearance Type")
             RadioRow(
@@ -559,6 +565,9 @@ fun SettingsScreen(
                 label = if (isCheckingForUpdate) "Checking..." else "Check for update",
                 onClick = { if (!isCheckingForUpdate) viewModel.checkForUpdate() },
             )
+
+            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         }
     }
 

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
@@ -64,6 +65,7 @@ import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.ui.components.CompactOutlinedTextField
+import com.damarquez.putz.ui.components.transientVerticalScrollbar
 import com.damarquez.putz.util.MetadataUtils
 
 /** One row of the batch send-to-Calibre draft: a selected file plus its editable title/author. */
@@ -165,7 +167,13 @@ fun CalibreBatchConfirmationSheet(
 
                 Spacer(Modifier.height(8.dp))
 
-                LazyColumn(modifier = Modifier.weight(1f)) {
+                val batchListState = rememberLazyListState()
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .transientVerticalScrollbar(batchListState),
+                    state = batchListState,
+                ) {
                     itemsIndexed(items, key = { _, item -> item.file.id }) { index, item ->
                         CalibreBatchRow(
                             item = item,

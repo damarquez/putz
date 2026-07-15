@@ -64,6 +64,7 @@ import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileItem
+import com.damarquez.putz.ui.components.transientVerticalScrollbar
 import com.damarquez.putz.ui.navigation.Screen
 import com.damarquez.putz.util.MetadataUtils
 
@@ -1695,7 +1696,9 @@ fun FilesScreen(
                             }
                         } else {
                             LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .transientVerticalScrollbar(listState),
                                 state = listState
                             ) {
                                 items(
