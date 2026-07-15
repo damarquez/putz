@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -95,6 +96,9 @@ fun TransferHistoryScreen(
     val searchInFiles by viewModel.searchInFiles.collectAsState()
     val statusFilter by viewModel.statusFilter.collectAsState()
     val actionMessage by viewModel.actionMessage.collectAsState()
+    val fileSearchInProgress by viewModel.fileSearchInProgress.collectAsState()
+    val entryFiles by viewModel.entryFiles.collectAsState()
+    val entryFilesLoading by viewModel.entryFilesLoading.collectAsState()
 
     var isSearchActive by remember { mutableStateOf(false) }
     var statusFilterMenuExpanded by remember { mutableStateOf(false) }
@@ -152,6 +156,9 @@ fun TransferHistoryScreen(
     }
 
     if (selectedEntry != null) {
+        val entryHash = selectedEntry!!.infoHash.lowercase()
+        LaunchedEffect(entryHash) { viewModel.loadFilesForEntry(entryHash) }
+
         Dialog(
             onDismissRequest = { selectedEntry = null },
             properties = DialogProperties(
@@ -172,6 +179,8 @@ fun TransferHistoryScreen(
                         editLabelValue = selectedEntry!!.label
                         editingEntry = selectedEntry
                     },
+                    files = entryFiles[entryHash],
+                    filesLoading = entryHash in entryFilesLoading,
                 )
             }
         }
@@ -206,6 +215,15 @@ fun TransferHistoryScreen(
                         }
                     },
                     actions = {
+                        // Per-file data is fetched server-side on demand (SEARCH_HISTORY_FILES)
+                        // rather than filtered from an in-memory list — LAN is near-instant, but
+                        // a Drive-only fallback can take up to ~30s, hence this indicator.
+                        if (searchInFiles && fileSearchInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
                         val toggleBg = if (searchInFiles)
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                                 .compositeOver(MaterialTheme.colorScheme.surface)
@@ -464,6 +482,8 @@ internal fun HistoryDetailSheet(
     entry: HistoryFileEntry,
     searchQuery: String = "",
     onEditLabel: () -> Unit,
+    files: List<HistoryEntryFile>? = null,
+    filesLoading: Boolean = false,
 ) {
     val clipboard = LocalClipboardManager.current
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.getDefault()) }
@@ -582,8 +602,15 @@ internal fun HistoryDetailSheet(
             )
         }
 
-        val files = entry.files
-        if (!files.isNullOrEmpty()) {
+        // Per-file listing is fetched on demand (FETCH_HISTORY_FILES) — never shipped in the
+        // routine history sync, since some torrents are packs with thousands of files.
+        if (filesLoading) {
+            HorizontalDivider()
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator(modifier = Modifier.size(20.dp)) }
+        } else if (!files.isNullOrEmpty()) {
             HorizontalDivider()
             ListItem(
                 headlineContent = {

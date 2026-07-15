@@ -1,15 +1,22 @@
 package com.damarquez.putz.data.transport
 
+import com.damarquez.putz.data.model.HistoryEntryFile
+import com.damarquez.putz.data.model.HistoryFileSearchResult
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.remote.GDriveManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.Json
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -101,5 +108,68 @@ class GDriveDaemonTransport @Inject constructor(
     override suspend fun downloadMetadataDb(googleAccount: String, destination: File): Boolean {
         val result = gDriveManager.downloadMetadataDb(googleAccount, destination)
         return result is NetworkResult.Success
+    }
+
+    // CONTRACT: FETCH_HISTORY_FILES — Drive-only fallback (LanDaemonTransport handles the fast
+    // path); this daemon action needs real computation, so it goes through the generic
+    // submit+poll queue like REGISTER_TRANSFER_HISTORY, just waited-on here instead of
+    // fire-and-forget.
+    override suspend fun getHistoryEntryFiles(googleAccount: String, appId: String, infoHash: String): List<HistoryEntryFile>? {
+        val requestId = System.currentTimeMillis()
+        val body = JsonObject(mapOf(
+            "action" to JsonPrimitive("FETCH_HISTORY_FILES"),
+            "putio_file_id" to JsonPrimitive(requestId),
+            "info_hash" to JsonPrimitive(infoHash),
+            "app_id" to JsonPrimitive(appId),
+        ))
+        submitRequest(googleAccount, "req_hist_files_$requestId.json", json.encodeToString(JsonObject.serializer(), body))
+            ?: return null
+        val content = awaitResponse(googleAccount, appId, requestId) ?: return null
+        return runCatching {
+            json.parseToJsonElement(content).jsonObject["files"]?.let {
+                json.decodeFromJsonElement(ListSerializer(HistoryEntryFile.serializer()), it)
+            }
+        }.getOrNull()
+    }
+
+    // CONTRACT: SEARCH_HISTORY_FILES — same Drive-only fallback pattern as above.
+    override suspend fun searchHistoryFiles(googleAccount: String, appId: String, query: String): List<HistoryFileSearchResult>? {
+        val requestId = System.currentTimeMillis()
+        val body = JsonObject(mapOf(
+            "action" to JsonPrimitive("SEARCH_HISTORY_FILES"),
+            "putio_file_id" to JsonPrimitive(requestId),
+            "query" to JsonPrimitive(query),
+            "app_id" to JsonPrimitive(appId),
+        ))
+        submitRequest(googleAccount, "req_hist_search_$requestId.json", json.encodeToString(JsonObject.serializer(), body))
+            ?: return null
+        val content = awaitResponse(googleAccount, appId, requestId) ?: return null
+        return runCatching {
+            json.parseToJsonElement(content).jsonObject["results"]?.let {
+                json.decodeFromJsonElement(ListSerializer(HistoryFileSearchResult.serializer()), it)
+            }
+        }.getOrNull()
+    }
+
+    /** Bounded poll for a response matching [requestId] (the `putio_file_id` anchor this class
+     *  mints for one-off computed requests that aren't tied to a real put.io transfer). Drive
+     *  round-trips are inherently slow — this is only reached when LAN is unavailable. */
+    private suspend fun awaitResponse(
+        googleAccount: String,
+        appId: String,
+        requestId: Long,
+        timeoutMs: Long = 30_000,
+        pollIntervalMs: Long = 2_000,
+    ): String? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val match = pollResponses(googleAccount, appId).firstOrNull { it.putioFileId == requestId }
+            if (match != null) {
+                acknowledgeResponse(googleAccount, match, appId)
+                return match.content
+            }
+            delay(pollIntervalMs)
+        }
+        return null
     }
 }

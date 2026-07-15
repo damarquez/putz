@@ -3,6 +3,7 @@ package com.damarquez.putz.ui.transfers
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.model.AddTransferOutcome
+import com.damarquez.putz.data.model.HistoryEntryFile
 import com.damarquez.putz.data.model.HistoryFileEntry
 import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.repository.CalibreRepository
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -86,9 +88,23 @@ class TransferHistoryViewModel @Inject constructor(
     private val _actionMessage = MutableStateFlow<String?>(null)
     val actionMessage: StateFlow<String?> = _actionMessage.asStateFlow()
 
+    // Info hashes matched by the last server-side file search (SEARCH_HISTORY_FILES) — per-file
+    // data is never shipped in the routine history JSON, so "search in files" is pushed down to
+    // the daemon's SQLite instead of filtering an in-memory list. Null = no search in flight/needed.
+    private val _fileSearchMatches = MutableStateFlow<Set<String>?>(null)
+    private val _fileSearchInProgress = MutableStateFlow(false)
+    val fileSearchInProgress: StateFlow<Boolean> = _fileSearchInProgress.asStateFlow()
+
+    // Per-entry file listings fetched on demand (FETCH_HISTORY_FILES) for the detail view,
+    // cached for the session so reopening an entry doesn't refetch.
+    private val _entryFiles = MutableStateFlow<Map<String, List<HistoryEntryFile>>>(emptyMap())
+    val entryFiles: StateFlow<Map<String, List<HistoryEntryFile>>> = _entryFiles.asStateFlow()
+    private val _entryFilesLoading = MutableStateFlow<Set<String>>(emptySet())
+    val entryFilesLoading: StateFlow<Set<String>> = _entryFilesLoading.asStateFlow()
+
     val filteredEntries: StateFlow<List<HistoryFileEntry>> = combine(
-        _uiState, _searchQuery, _searchInFiles, _statusFilter,
-    ) { state, query, inFiles, statusFilter ->
+        _uiState, _searchQuery, _searchInFiles, _statusFilter, _fileSearchMatches,
+    ) { state, query, inFiles, statusFilter, fileMatches ->
         val entries = (state as? HistoryUiState.Success)?.entries ?: return@combine emptyList()
         val statusMatched = entries.filter { it.matchesStatusFilter(statusFilter) }
         if (query.isBlank()) statusMatched
@@ -99,7 +115,7 @@ class TransferHistoryViewModel @Inject constructor(
                 e.resolvedName?.lowercase()?.contains(q) == true ||
                 e.putioName?.lowercase()?.contains(q) == true ||
                 e.infoHash.lowercase().contains(q) ||
-                (inFiles && e.files?.any { it.name.lowercase().contains(q) } == true)
+                (inFiles && fileMatches?.contains(e.infoHash.lowercase()) == true)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -115,6 +131,39 @@ class TransferHistoryViewModel @Inject constructor(
             settingsRepository.historyFileIdFlow
                 .distinctUntilChanged()
                 .collect { loadHistory() }
+        }
+
+        // Debounced server-side file search — only fires while "search in files" is on and the
+        // query is non-blank. LAN responses are near-instant; a Drive-only fallback can take up
+        // to ~30s, hence the in-progress flag rather than blocking the list.
+        viewModelScope.launch {
+            combine(_searchQuery, _searchInFiles) { query, inFiles -> query to inFiles }
+                .debounce(400)
+                .distinctUntilChanged()
+                .collect { (query, inFiles) ->
+                    if (!inFiles || query.isBlank()) {
+                        _fileSearchMatches.value = null
+                        _fileSearchInProgress.value = false
+                        return@collect
+                    }
+                    _fileSearchInProgress.value = true
+                    val results = historyRepository.searchFiles(query.trim())
+                    _fileSearchMatches.value = results?.map { it.infoHash.lowercase() }?.toSet() ?: emptySet()
+                    _fileSearchInProgress.value = false
+                }
+        }
+    }
+
+    /** Fetches (and caches for the session) the file listing for one entry — called when the
+     *  detail sheet opens, since per-file data is never included in the routine history sync. */
+    fun loadFilesForEntry(infoHash: String) {
+        val hash = infoHash.lowercase()
+        if (_entryFiles.value.containsKey(hash) || hash in _entryFilesLoading.value) return
+        _entryFilesLoading.value = _entryFilesLoading.value + hash
+        viewModelScope.launch {
+            val files = historyRepository.fetchEntryFiles(hash)
+            _entryFiles.value = _entryFiles.value + (hash to (files ?: emptyList()))
+            _entryFilesLoading.value = _entryFilesLoading.value - hash
         }
     }
 

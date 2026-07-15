@@ -1,10 +1,14 @@
 package com.damarquez.putz.data.transport
 
+import com.damarquez.putz.data.model.HistoryEntryFile
+import com.damarquez.putz.data.model.HistoryFileSearchResult
 import com.damarquez.putz.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -165,6 +169,45 @@ class LanDaemonTransport @Inject constructor(
                     true
                 }
             }.getOrDefault(false)
+        }
+
+    // CONTRACT: FETCH_HISTORY_FILES
+    override suspend fun getHistoryEntryFiles(googleAccount: String, appId: String, infoHash: String): List<HistoryEntryFile>? =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${baseUrl()}/history/$infoHash/files")
+                .header("X-Sidekick-Key", apiKey())
+                .get()
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    json.parseToJsonElement(body).jsonObject["files"]?.let {
+                        json.decodeFromJsonElement(ListSerializer(HistoryEntryFile.serializer()), it)
+                    }
+                }
+            }.getOrNull()
+        }
+
+    // CONTRACT: SEARCH_HISTORY_FILES
+    override suspend fun searchHistoryFiles(googleAccount: String, appId: String, query: String): List<HistoryFileSearchResult>? =
+        withContext(Dispatchers.IO) {
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val request = Request.Builder()
+                .url("${baseUrl()}/history/search?q=$encodedQuery")
+                .header("X-Sidekick-Key", apiKey())
+                .get()
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    json.parseToJsonElement(body).jsonObject["results"]?.let {
+                        json.decodeFromJsonElement(ListSerializer(HistoryFileSearchResult.serializer()), it)
+                    }
+                }
+            }.getOrNull()
         }
 
     /** Download a book file directly from the library. */

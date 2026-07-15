@@ -1,5 +1,7 @@
 package com.damarquez.putz.data.transport
 
+import com.damarquez.putz.data.model.HistoryEntryFile
+import com.damarquez.putz.data.model.HistoryFileSearchResult
 import java.io.File
 
 /**
@@ -28,6 +30,14 @@ interface DaemonTransport {
 
     /** Download the Calibre metadata.db to [destination]; returns true on success. */
     suspend fun downloadMetadataDb(googleAccount: String, destination: File): Boolean
+
+    // CONTRACT: FETCH_HISTORY_FILES — per-file listing is never in the routine history JSON
+    // (see TransferHistoryRepository/history sync); fetched on demand for the detail view.
+    suspend fun getHistoryEntryFiles(googleAccount: String, appId: String, infoHash: String): List<HistoryEntryFile>?
+
+    // CONTRACT: SEARCH_HISTORY_FILES — server-side (daemon SQLite) file-name search, backing the
+    // History screen's "search in files" toggle.
+    suspend fun searchHistoryFiles(googleAccount: String, appId: String, query: String): List<HistoryFileSearchResult>?
 }
 
 data class ResponseEnvelope(

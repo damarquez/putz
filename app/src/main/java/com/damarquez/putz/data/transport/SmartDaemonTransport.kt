@@ -1,5 +1,7 @@
 package com.damarquez.putz.data.transport
 
+import com.damarquez.putz.data.model.HistoryEntryFile
+import com.damarquez.putz.data.model.HistoryFileSearchResult
 import com.damarquez.putz.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
@@ -96,6 +98,20 @@ class SmartDaemonTransport @Inject constructor(
             }
         }
         return drive.downloadMetadataDb(googleAccount, destination)
+    }
+
+    override suspend fun getHistoryEntryFiles(googleAccount: String, appId: String, infoHash: String): List<HistoryEntryFile>? {
+        if (lanEnabled() && lan.isReachable()) {
+            runCatching { lan.getHistoryEntryFiles(googleAccount, appId, infoHash) }.getOrNull()?.let { return it }
+        }
+        return drive.getHistoryEntryFiles(googleAccount, appId, infoHash)
+    }
+
+    override suspend fun searchHistoryFiles(googleAccount: String, appId: String, query: String): List<HistoryFileSearchResult>? {
+        if (lanEnabled() && lan.isReachable()) {
+            runCatching { lan.searchHistoryFiles(googleAccount, appId, query) }.getOrNull()?.let { return it }
+        }
+        return drive.searchHistoryFiles(googleAccount, appId, query)
     }
 
     private fun injectLanFlag(content: String): String = try {

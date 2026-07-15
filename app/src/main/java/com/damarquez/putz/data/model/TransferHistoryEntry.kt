@@ -29,3 +29,12 @@ data class TransferHistoryJson(
     @SerialName("updated_at") val updatedAt: Long,
     val entries: List<HistoryFileEntry>,
 )
+
+/** Result row for an on-demand file-name search (SEARCH_HISTORY_FILES) — the daemon does the
+ *  searching against its SQLite `files_json`, this is just the matched entries + filenames. */
+@Serializable
+data class HistoryFileSearchResult(
+    @SerialName("info_hash") val infoHash: String,
+    val label: String,
+    val matches: List<String>,
+)
