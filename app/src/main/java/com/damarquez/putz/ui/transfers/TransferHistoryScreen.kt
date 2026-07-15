@@ -518,7 +518,7 @@ internal fun HistoryDetailSheet(
             trailingContent = {
                 val color = when (entry.status.uppercase()) {
                     "COMPLETED" -> MaterialTheme.colorScheme.primary
-                    "ERROR", "FAILED" -> MaterialTheme.colorScheme.error
+                    "ERROR", "FAILED", "ABANDONED" -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Text(

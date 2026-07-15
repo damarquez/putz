@@ -41,7 +41,11 @@ enum class HistoryStatusFilter(val label: String) {
 
 private fun HistoryFileEntry.matchesStatusFilter(filter: HistoryStatusFilter): Boolean {
     val isCompleted = status.equals("COMPLETED", ignoreCase = true)
-    val isError = status.equals("ERROR", ignoreCase = true) || status.equals("FAILED", ignoreCase = true)
+    // ABANDONED: the daemon's staleness sweep concluded this entry is no longer an active
+    // put.io transfer (unseen for several scan cycles) without ever reaching a real terminal
+    // status — closest in meaning to an error/dead entry for filtering purposes.
+    val isError = status.equals("ERROR", ignoreCase = true) || status.equals("FAILED", ignoreCase = true) ||
+        status.equals("ABANDONED", ignoreCase = true)
     val isWaiting = status.equals("WAITING", ignoreCase = true) ||
         status.equals("IN_QUEUE", ignoreCase = true) ||
         status.equals("QUEUED_OUTSIDE_PUTIO", ignoreCase = true)
