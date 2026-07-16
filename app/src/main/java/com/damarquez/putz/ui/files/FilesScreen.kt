@@ -1760,10 +1760,14 @@ fun FilesScreen(
                                             val nextBatch = if (lastSelectedIndex == -1) {
                                                 emptyList()
                                             } else {
-                                                files.subList(
-                                                    (lastSelectedIndex + 1).coerceAtMost(files.size),
-                                                    (lastSelectedIndex + 1 + n).coerceAtMost(files.size),
-                                                ).filter { it.isRegularRemote == selectionIsRemoteOnly }
+                                                // Filter to matching-type candidates first, THEN take N —
+                                                // taking N positionally and filtering afterward (the past
+                                                // bug here) let interleaved wrong-type files consume slots
+                                                // in the count without being selected, so N stubs mixed
+                                                // with non-stubs picked up far fewer than N stubs.
+                                                files.subList((lastSelectedIndex + 1).coerceAtMost(files.size), files.size)
+                                                    .filter { it.isRegularRemote == selectionIsRemoteOnly }
+                                                    .take(n)
                                             }
                                             viewModel.setSelectedFiles(selectedFiles + file + nextBatch)
                                         },
