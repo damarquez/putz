@@ -193,6 +193,14 @@ class FilesViewModel @Inject constructor(
     private val _calibreBatchDraft = MutableStateFlow<List<CalibreBatchDraftItem>?>(null)
     val calibreBatchDraft: StateFlow<List<CalibreBatchDraftItem>?> = _calibreBatchDraft.asStateFlow()
 
+    // Plain vars, not a StateFlow — nothing needs to react to scroll position, it only needs to
+    // survive the sheet's Dialog leaving composition. Tapping a filename to preview it navigates
+    // to a separate viewer screen (see viewerEvent in FilesScreen), which disposes the Dialog
+    // along with its rememberLazyListState; without this ViewModel-backed copy to seed the new
+    // LazyListState from, returning from the preview always snapped the list back to the top.
+    var calibreBatchScrollIndex: Int = 0
+    var calibreBatchScrollOffset: Int = 0
+
     // ViewModel-backed for the same reason as calibreBatchDraft above: this FilesViewModel
     // instance is scoped to this folder's NavBackStackEntry and stays alive (selection intact)
     // as long as that entry remains on the back stack, e.g. switching to another bottom-nav tab
@@ -312,6 +320,8 @@ class FilesViewModel @Inject constructor(
 
     fun dismissCalibreBatchDraft() {
         _calibreBatchDraft.value = null
+        calibreBatchScrollIndex = 0
+        calibreBatchScrollOffset = 0
     }
 
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)

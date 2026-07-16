@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -112,6 +113,12 @@ fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
             onPreview = { file -> viewModel.previewFile(file) },
             onMirrorSelection = { deselected -> viewModel.deselectFiles(deselected) },
             onReverseSelectionToFileList = { toDeselect, toSelect -> viewModel.reverseFileSelection(toDeselect, toSelect) },
+            initialScrollIndex = viewModel.calibreBatchScrollIndex,
+            initialScrollOffset = viewModel.calibreBatchScrollOffset,
+            onScrollPositionChanged = { index, offset ->
+                viewModel.calibreBatchScrollIndex = index
+                viewModel.calibreBatchScrollOffset = offset
+            },
         )
     }
 }
@@ -130,6 +137,9 @@ fun CalibreBatchConfirmationSheet(
     onPreview: (PutioFile) -> Unit,
     onMirrorSelection: (List<PutioFile>) -> Unit = {},
     onReverseSelectionToFileList: (toDeselect: List<PutioFile>, toSelect: List<PutioFile>) -> Unit = { _, _ -> },
+    initialScrollIndex: Int = 0,
+    initialScrollOffset: Int = 0,
+    onScrollPositionChanged: (index: Int, offset: Int) -> Unit = { _, _ -> },
 ) {
     val includedItems = items.filter { it.included }
     // The sheet opens as a mirror of the Files screen's selection (every item starts included —
@@ -175,7 +185,11 @@ fun CalibreBatchConfirmationSheet(
 
                 Spacer(Modifier.height(8.dp))
 
-                val batchListState = rememberLazyListState()
+                val batchListState = rememberLazyListState(initialScrollIndex, initialScrollOffset)
+                LaunchedEffect(batchListState) {
+                    snapshotFlow { batchListState.firstVisibleItemIndex to batchListState.firstVisibleItemScrollOffset }
+                        .collect { (index, offset) -> onScrollPositionChanged(index, offset) }
+                }
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
