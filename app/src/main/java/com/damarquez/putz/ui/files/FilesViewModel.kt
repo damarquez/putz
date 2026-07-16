@@ -203,6 +203,16 @@ class FilesViewModel @Inject constructor(
         _selectedFiles.value = files
     }
 
+    /** Removes [files] from the Files screen selection by id, not object equality — a batch
+     *  draft item's file can be a "fresh" refetched PutioFile with a different embedded
+     *  syncedFileId than the instance originally selected (see startCalibreBatchDraft), so a
+     *  plain set subtraction would silently no-op. Used by the batch sheet's "Mirror selection"
+     *  button to push deselections in the sheet back to the underlying file list. */
+    fun deselectFiles(files: List<PutioFile>) {
+        val idsToRemove = files.mapTo(HashSet()) { it.id }
+        _selectedFiles.value = _selectedFiles.value.filterNot { it.id in idsToRemove }.toSet()
+    }
+
     /** Re-fetches the live current PutioFile for a synced stub (its put.io ID drifts whenever the
      *  daemon re-syncs it — see [startCalibreBatchDraft]), matched by displayName within its
      *  parent folder. Falls back to [file] unchanged if it isn't synced, the fetch fails, or no

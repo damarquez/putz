@@ -110,6 +110,7 @@ fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
             checkPendingTransfer = { fileId, fileName -> viewModel.findPendingTransfer(fileId, fileName) },
             readStubFileSize = { file -> viewModel.readStubFileSize(file) },
             onPreview = { file -> viewModel.previewFile(file) },
+            onMirrorSelection = { deselected -> viewModel.deselectFiles(deselected) },
         )
     }
 }
@@ -126,8 +127,13 @@ fun CalibreBatchConfirmationSheet(
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity? = { _, _ -> null },
     readStubFileSize: suspend (PutioFile) -> Long? = { null },
     onPreview: (PutioFile) -> Unit,
+    onMirrorSelection: (List<PutioFile>) -> Unit = {},
 ) {
     val includedItems = items.filter { it.included }
+    // The sheet opens as a mirror of the Files screen's selection (every item starts included —
+    // see startCalibreBatchDraft). Deselecting a row here only affects this draft; "Mirror
+    // selection" pushes those deselections back so the underlying file list stays in sync too.
+    val deselectedFiles = items.filterNot { it.included }.map { it.file }
     val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() }
     // Resolved once for the whole list (not per row) so synced stubs' real sizes are fetched a
     // single time and shared, rather than re-fetched by every row's own effect.
@@ -210,6 +216,13 @@ fun CalibreBatchConfirmationSheet(
                     enabled = canSend,
                 ) {
                     Text("Send (${includedItems.size})")
+                }
+                TextButton(
+                    onClick = { onMirrorSelection(deselectedFiles) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = deselectedFiles.isNotEmpty(),
+                ) {
+                    Text("Mirror selection to file list (${deselectedFiles.size} to deselect)")
                 }
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("Cancel")
