@@ -1776,6 +1776,14 @@ fun FilesScreen(
                                                 viewModel.setSelectedFiles(selectedFiles - files.subList(0, index).toSet())
                                             }
                                         },
+                                        onReverseSelection = {
+                                            // Flips selected/unselected for every candidate of the
+                                            // same isRegularRemote type as the in-progress selection
+                                            // (CONTRACT: selection-type invariant) — never crosses
+                                            // into files that can't join this selection anyway.
+                                            val sameTypeCandidates = packCandidateFiles.filter { it.isRegularRemote == selectionIsRemoteOnly }
+                                            viewModel.setSelectedFiles(sameTypeCandidates.toSet() - selectedFiles)
+                                        },
                                         onUnselectFromHere = {
                                             // Unselects the long-pressed item and everything
                                             // after it in this list, leaving only items above it

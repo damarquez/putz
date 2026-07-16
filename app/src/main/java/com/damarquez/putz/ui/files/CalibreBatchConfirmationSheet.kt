@@ -203,6 +203,7 @@ fun CalibreBatchConfirmationSheet(
                             onUnselectFromHere = {
                                 items.subList(index, items.size).forEach { onItemChange(it.copy(included = false)) }
                             },
+                            onReverseSelection = { items.forEach { onItemChange(it.copy(included = !it.included)) } },
                         )
                         HorizontalDivider()
                     }
@@ -272,6 +273,7 @@ private fun CalibreBatchRow(
     onSelectAll: () -> Unit,
     onUnselectAll: () -> Unit,
     onUnselectFromHere: () -> Unit,
+    onReverseSelection: () -> Unit,
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -374,6 +376,10 @@ private fun CalibreBatchRow(
                     DropdownMenuItem(
                         text = { Text("Unselect all from here") },
                         onClick = { showBulkMenu = false; onUnselectFromHere() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Reverse selection") },
+                        onClick = { showBulkMenu = false; onReverseSelection() },
                     )
                 }
             }

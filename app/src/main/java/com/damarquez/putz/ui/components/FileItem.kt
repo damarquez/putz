@@ -137,6 +137,7 @@ fun FileItem(
     onSelectNextN: () -> Unit = {},
     onUnselectBeforeHere: () -> Unit = {},
     onUnselectFromHere: () -> Unit = {},
+    onReverseSelection: () -> Unit = {},
     isGoogleSignedIn: Boolean = false,
     isHighlighted: Boolean = false,
     isFolderAllSynced: Boolean = false,
@@ -227,10 +228,18 @@ fun FileItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isSelectionMode) {
+                // onCheckedChange = null: the Checkbox is purely visual here — giving it its own
+                // tap handler made it run a second, independent gesture detector alongside the
+                // parent Row's combinedClickable above. Long-pressing exactly on the checkbox fired
+                // both: this Checkbox's tap-toggle (toggleable doesn't understand "long press", so
+                // it toggled anyway) plus the Row's onLongClick opening the selection menu — so an
+                // action picked from that menu (e.g. "Reverse selection") applied on top of a
+                // selection state the long-press itself had already silently mutated. All taps must
+                // route through the Row's own combinedClickable instead.
                 Checkbox(
                     checked = isSelected,
                     enabled = isSelectable,
-                    onCheckedChange = { effectiveOnClick() },
+                    onCheckedChange = null,
                 )
                 Spacer(modifier = Modifier.width(4.dp))
             }
@@ -732,6 +741,13 @@ fun FileItem(
                 onClick = {
                     showSelectionMenu = false
                     onUnselectFromHere()
+                },
+            )
+            TightMenuItem(
+                text = { Text("Reverse selection") },
+                onClick = {
+                    showSelectionMenu = false
+                    onReverseSelection()
                 },
             )
         }
