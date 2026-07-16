@@ -213,6 +213,19 @@ class FilesViewModel @Inject constructor(
         _selectedFiles.value = _selectedFiles.value.filterNot { it.id in idsToRemove }.toSet()
     }
 
+    /** Applies the batch sheet's reversed selection back to the Files screen: [toDeselect] (the
+     *  draft's currently-included files) drop out of the selection, [toSelect] (the draft's
+     *  currently-deselected files) join it — same id-based matching as [deselectFiles], for the
+     *  same reason (a batch draft item's file can be a re-fetched instance). Used by the batch
+     *  sheet's "Reverse selection" button. */
+    fun reverseFileSelection(toDeselect: List<PutioFile>, toSelect: List<PutioFile>) {
+        val idsToDeselect = toDeselect.mapTo(HashSet()) { it.id }
+        val merged = LinkedHashMap<Long, PutioFile>()
+        _selectedFiles.value.forEach { if (it.id !in idsToDeselect) merged[it.id] = it }
+        toSelect.forEach { merged[it.id] = it }
+        _selectedFiles.value = merged.values.toSet()
+    }
+
     /** Re-fetches the live current PutioFile for a synced stub (its put.io ID drifts whenever the
      *  daemon re-syncs it — see [startCalibreBatchDraft]), matched by displayName within its
      *  parent folder. Falls back to [file] unchanged if it isn't synced, the fetch fails, or no

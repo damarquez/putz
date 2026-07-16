@@ -111,6 +111,7 @@ fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
             readStubFileSize = { file -> viewModel.readStubFileSize(file) },
             onPreview = { file -> viewModel.previewFile(file) },
             onMirrorSelection = { deselected -> viewModel.deselectFiles(deselected) },
+            onReverseSelectionToFileList = { toDeselect, toSelect -> viewModel.reverseFileSelection(toDeselect, toSelect) },
         )
     }
 }
@@ -128,6 +129,7 @@ fun CalibreBatchConfirmationSheet(
     readStubFileSize: suspend (PutioFile) -> Long? = { null },
     onPreview: (PutioFile) -> Unit,
     onMirrorSelection: (List<PutioFile>) -> Unit = {},
+    onReverseSelectionToFileList: (toDeselect: List<PutioFile>, toSelect: List<PutioFile>) -> Unit = { _, _ -> },
 ) {
     val includedItems = items.filter { it.included }
     // The sheet opens as a mirror of the Files screen's selection (every item starts included —
@@ -207,26 +209,38 @@ fun CalibreBatchConfirmationSheet(
                         )
                         HorizontalDivider()
                     }
-                }
 
-                Spacer(Modifier.height(16.dp))
-
-                Button(
-                    onClick = { onConfirm(includedItems) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = canSend,
-                ) {
-                    Text("Send (${includedItems.size})")
-                }
-                TextButton(
-                    onClick = { onMirrorSelection(deselectedFiles) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = deselectedFiles.isNotEmpty(),
-                ) {
-                    Text("Mirror selection to file list (${deselectedFiles.size} to deselect)")
-                }
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                    Text("Cancel")
+                    // Actions live as the last scrollable row rather than a static footer — they're
+                    // only ever taken after reviewing the whole list, and pinning them wasted screen
+                    // real estate for the entire review. Scrolling to the bottom before sending is
+                    // already the habit, so this just meets that habit instead of fighting it.
+                    item {
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            onClick = { onConfirm(includedItems) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = canSend,
+                        ) {
+                            Text("Send (${includedItems.size})")
+                        }
+                        TextButton(
+                            onClick = { onMirrorSelection(deselectedFiles) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = deselectedFiles.isNotEmpty(),
+                        ) {
+                            Text("Mirror selection to file list (${deselectedFiles.size} to deselect)")
+                        }
+                        TextButton(
+                            onClick = { onReverseSelectionToFileList(includedItems.map { it.file }, deselectedFiles) },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = items.isNotEmpty(),
+                        ) {
+                            Text("Reverse selection to file list")
+                        }
+                        TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                            Text("Cancel")
+                        }
+                    }
                 }
             }
         }
