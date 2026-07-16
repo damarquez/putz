@@ -691,6 +691,7 @@ fun CalibreConfirmationSheet(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = title.isNotBlank() &&
                         !authorHasAnd &&
+                        pendingTransfer == null &&
                         (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
                         (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
                         (!requiresUuidMatch || isUuidMatched || uuidFromTransfer),

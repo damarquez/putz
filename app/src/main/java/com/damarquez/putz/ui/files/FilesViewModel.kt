@@ -1172,9 +1172,21 @@ class FilesViewModel @Inject constructor(
                 // and "Retry" there can re-resolve local_path later via retryTransfer's existing
                 // resolveMissingLocalPaths recovery, instead of this item just vanishing with a
                 // one-off snackbar.
-                val localPath = preresolvedLocalPath ?: calibreRepository.readStubLocalPath(file)
+                // preresolvedLocalPath (from prefetchBatchLocalPaths) already succeeded, so wrap it
+                // as Resolved rather than re-issuing the network call this function runs concurrently
+                // for batch sends (see kdoc above) — a second fetch per item would double the traffic.
+                val stubLookup = preresolvedLocalPath?.let { CalibreRepository.StubLocalPathResult.Resolved(it) }
+                    ?: calibreRepository.readStubLocalPathOrError(file)
+                val localPath = (stubLookup as? CalibreRepository.StubLocalPathResult.Resolved)?.localPath
                 if (localPath == null) {
-                    val reason = "Could not verify '$title' is synced — check your connection and try again"
+                    val reason = when (stubLookup) {
+                        is CalibreRepository.StubLocalPathResult.NotFound ->
+                            "'$title' isn't synced anymore — its local stub was removed (already processed or deleted). Refresh the file list and try again"
+                        is CalibreRepository.StubLocalPathResult.Failed ->
+                            "Could not verify '$title' is synced — check your connection and try again"
+                        else ->
+                            "'$title' is synced but its local path hasn't been recorded yet — try again shortly"
+                    }
                     calibreRepository.addTransfer(
                         putioFileId = file.syncedFileId,
                         fileName = syncedFileName,

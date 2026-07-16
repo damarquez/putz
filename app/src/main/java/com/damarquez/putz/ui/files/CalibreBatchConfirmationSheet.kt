@@ -317,7 +317,14 @@ private fun CalibreBatchRow(
     }
 
     LaunchedEffect(item.file.id) {
-        pendingTransfer = checkPendingTransfer(item.file.syncedFileId, item.file.displayName)
+        val pending = checkPendingTransfer(item.file.syncedFileId, item.file.displayName)
+        pendingTransfer = pending
+        // Auto-deselect: an item already in flight must not be resubmitted just because it
+        // happened to be checked when the batch sheet opened — the checkbox alone previously
+        // let it through with only a visual warning next to it, easy to miss in a long batch.
+        if (pending != null && item.included) {
+            onChange(item.copy(included = false))
+        }
     }
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -376,25 +383,25 @@ private fun CalibreBatchRow(
             )
         }
 
-        if (item.included) {
-            if (pendingTransfer != null) {
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.height(16.dp).width(16.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Already has a pending transfer (${pendingTransfer!!.status})!",
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+        if (pendingTransfer != null) {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.height(16.dp).width(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "Already has a pending transfer (${pendingTransfer!!.status}) — deselected",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
+        }
 
+        if (item.included) {
             if (matchedBookId != null) {
                 Spacer(Modifier.height(6.dp))
                 Row(

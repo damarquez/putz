@@ -1820,6 +1820,16 @@ class CalibreRepository @Inject constructor(
     @Serializable
     data class StubContent(val local_path: String? = null, val file_size: Long? = null)
 
+    /** Distinguishes *why* a stub couldn't be resolved, so callers can tell "this file's stub
+     *  is gone (already processed / deleted, list is stale)" apart from "transient network or
+     *  auth failure" instead of collapsing both into the same generic message. */
+    sealed class StubFetchResult {
+        data class Success(val content: StubContent) : StubFetchResult()
+        /** The put.io file id for this stub returned 404/410 — it no longer exists server-side. */
+        data class NotFound(val code: Int) : StubFetchResult()
+        data class Failed(val message: String, val code: Int? = null) : StubFetchResult()
+    }
+
     // Stub content is immutable once written (CONTRACT: stub convention), so the resolved
     // content for a given stub's put.io ID never changes — cache it for the process lifetime
     // to avoid re-fetching it every time the Files screen reloads the same folder.
@@ -1828,20 +1838,33 @@ class CalibreRepository @Inject constructor(
 
     // CONTRACT: stub convention — read raw stub JSON by put.io file ID; the single network call
     // backing readStubLocalPath(By Id)/readStubFileSize/readStubContent below
-    private suspend fun fetchStubContent(stubFileId: Long): StubContent? {
-        stubContentCache[stubFileId]?.let { return it }
+    private suspend fun fetchStubContentResult(stubFileId: Long): StubFetchResult {
+        stubContentCache[stubFileId]?.let { return StubFetchResult.Success(it) }
         val token = secureStorage.authTokenFlow.value
-        if (token.isBlank()) return null
+        if (token.isBlank()) return StubFetchResult.Failed("Not signed in to put.io")
         return withContext(Dispatchers.IO) {
-            val result = putioApiClient.downloadFileAsString(token, stubFileId)
-            (result as? NetworkResult.Success)?.data?.let { body ->
-                stubRawJsonCache[stubFileId] = body
-                try {
-                    json.decodeFromString<StubContent>(body).also { stubContentCache[stubFileId] = it }
-                } catch (_: Exception) { null }
+            when (val result = putioApiClient.downloadFileAsString(token, stubFileId)) {
+                is NetworkResult.Success -> {
+                    stubRawJsonCache[stubFileId] = result.data
+                    try {
+                        val content = json.decodeFromString<StubContent>(result.data)
+                        stubContentCache[stubFileId] = content
+                        StubFetchResult.Success(content)
+                    } catch (e: Exception) {
+                        StubFetchResult.Failed(e.message ?: "Stub content could not be parsed")
+                    }
+                }
+                is NetworkResult.Error -> {
+                    if (result.code == 404 || result.code == 410) StubFetchResult.NotFound(result.code)
+                    else StubFetchResult.Failed(result.message, result.code)
+                }
+                is NetworkResult.Loading -> StubFetchResult.Failed("Unexpected loading state")
             }
         }
     }
+
+    private suspend fun fetchStubContent(stubFileId: Long): StubContent? =
+        (fetchStubContentResult(stubFileId) as? StubFetchResult.Success)?.content
 
     // CONTRACT: stub convention — read the stub's JSON body exactly as the daemon wrote it
     // (includes fields StubContent doesn't model, e.g. synced_at). Used by "Copy JSON" in the
@@ -1860,6 +1883,24 @@ class CalibreRepository @Inject constructor(
     suspend fun readStubLocalPath(file: com.damarquez.putz.data.model.PutioFile): String? {
         if (!file.isSynced) return null
         return fetchStubContent(file.id)?.local_path
+    }
+
+    /** Distinguishes why local_path couldn't be resolved (see [StubFetchResult]) — used at
+     *  send-to-Calibre dispatch time, where showing "check your connection" for a stub that's
+     *  actually 404 (already processed/deleted, list just hasn't refreshed) is misleading. */
+    sealed class StubLocalPathResult {
+        data class Resolved(val localPath: String?) : StubLocalPathResult()
+        data class NotFound(val code: Int) : StubLocalPathResult()
+        data class Failed(val message: String) : StubLocalPathResult()
+    }
+
+    suspend fun readStubLocalPathOrError(file: com.damarquez.putz.data.model.PutioFile): StubLocalPathResult {
+        if (!file.isSynced) return StubLocalPathResult.Failed("File is not synced")
+        return when (val result = fetchStubContentResult(file.id)) {
+            is StubFetchResult.Success -> StubLocalPathResult.Resolved(result.content.local_path)
+            is StubFetchResult.NotFound -> StubLocalPathResult.NotFound(result.code)
+            is StubFetchResult.Failed -> StubLocalPathResult.Failed(result.message)
+        }
     }
 
     // CONTRACT: stub convention — read the original file's real size, not the tiny stub's
