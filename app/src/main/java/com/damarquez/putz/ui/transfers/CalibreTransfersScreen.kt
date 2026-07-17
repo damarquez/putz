@@ -574,8 +574,11 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                     )
                 }
             } else {
-                val activeTransfers = transfers.filter { it.status != CalibreTransferStatus.COMPLETED }
-                val completedTransfers = transfers.filter { it.status == CalibreTransferStatus.COMPLETED }
+                // distinctBy guards against a duplicate putioFileId from upstream crashing
+                // LazyColumn with "Key already used" (putioFileId is used as the item key below).
+                val dedupedTransfers = transfers.distinctBy { it.putioFileId }
+                val activeTransfers = dedupedTransfers.filter { it.status != CalibreTransferStatus.COMPLETED }
+                val completedTransfers = dedupedTransfers.filter { it.status == CalibreTransferStatus.COMPLETED }
 
                 val listState = rememberLazyListState()
 

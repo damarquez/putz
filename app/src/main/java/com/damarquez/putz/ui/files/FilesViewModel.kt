@@ -48,6 +48,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import com.damarquez.putz.util.MetadataUtils
 import com.damarquez.putz.util.SearchQuery
 import java.io.File
@@ -1932,9 +1934,18 @@ class FilesViewModel @Inject constructor(
         _snackbarMessage.value = null
     }
 
-    suspend fun checkBookExists(title: String, author: String): Long? {
+    // checkExists does a full table scan of metadata.db with per-row Unicode normalization —
+    // cheap for one row, but CalibreBatchConfirmationSheet fires it from every batch row's
+    // LaunchedEffect once its 400ms debounce elapses, uncoordinated across rows. Scrolling a
+    // ~100-item batch let dozens of those debounces land in the same window, and that many
+    // concurrent full-library scans (each allocating ICU regex matchers over every book/author
+    // string) exhausted native heap and crashed the app with a Scudo/std::bad_alloc OOM. Capping
+    // concurrency here mirrors prefetchBatchLocalPaths's chunked(5) fix for the same class of bug.
+    private val checkExistsSemaphore = Semaphore(3)
+
+    suspend fun checkBookExists(title: String, author: String): Long? = checkExistsSemaphore.withPermit {
         val dbFile = File(context.filesDir, "metadata.db")
-        return calibreRepository.checkExists(dbFile, title, author)
+        calibreRepository.checkExists(dbFile, title, author)
     }
 
     suspend fun checkBookExistsByUuid(uuid: String): CalibreBookMatch? {

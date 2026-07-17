@@ -1702,7 +1702,9 @@ fun FilesScreen(
                                 state = listState
                             ) {
                                 items(
-                                    items = files,
+                                    // Guards against a duplicate id from upstream (e.g. a repeated
+                                    // API entry) crashing LazyColumn with "Key already used".
+                                    items = files.distinctBy { it.id },
                                     key = { it.id },
                                 ) { file ->
                                     FileItem(

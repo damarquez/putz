@@ -208,7 +208,11 @@ fun CalibreBatchConfirmationSheet(
                         .transientVerticalScrollbar(batchListState),
                     state = batchListState,
                 ) {
-                    itemsIndexed(items, key = { _, item -> item.file.id }) { index, item ->
+                    // Composite key, not just item.file.id: two selected files with the same
+                    // displayName both resolve to the same "fresh" synced PutioFile in
+                    // startCalibreBatchDraft's freshByName lookup, so their file.id can collide —
+                    // a bare file.id key then crashes LazyColumn with "Key already used".
+                    itemsIndexed(items, key = { index, item -> "$index-${item.file.id}" }) { index, item ->
                         CalibreBatchRow(
                             item = item,
                             index = if (items.size > 1) index + 1 else null,
