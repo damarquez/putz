@@ -1,5 +1,6 @@
 package com.damarquez.putz.ui.viewer
 
+import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -34,6 +35,19 @@ import androidx.webkit.WebViewAssetLoader
 import java.io.File
 
 private const val PAGED_HTML_DOMAIN = "appassets.androidplatform.net"
+
+// Some EPUB/MOBI producers write chapter filenames containing spaces/parentheses (e.g. an
+// Adobe InDesign or Wildside Press-style retail export: "Here (retail).xhtml"). WebViewAssetLoader
+// serves pages through a real https:// URL, and a raw unencoded space/paren there makes Chromium's
+// URL parser mis-parse the request, which then misses WebViewAssetLoader's path match and falls
+// through to an actual (failing) network fetch — surfacing as WebView's "webpage not available"
+// page instead of any Kotlin-level error. Percent-encode each path segment (never the "/"
+// separators) to keep the URL valid while still resolving to the right on-disk file.
+private fun File.encodedRelativePathIn(base: File): String =
+    relativeTo(base).path
+        .replace(File.separatorChar, '/')
+        .split('/')
+        .joinToString("/") { Uri.encode(it) }
 
 /**
  * Shared "list of static HTML files, browsed one at a time through a WebView" shell used by
@@ -93,7 +107,7 @@ fun PagedHtmlViewer(
             .build()
     }
     val pageUrl = "https://$PAGED_HTML_DOMAIN$pathPrefix" +
-        pages[currentIndex].relativeTo(destDir).path.replace(File.separatorChar, '/')
+        pages[currentIndex].encodedRelativePathIn(destDir)
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -157,7 +171,7 @@ fun PagedHtmlViewer(
                             // the page counter/PageNavBar reflect what's actually on screen.
                             val visitedPath = url.substringBefore('#')
                             val matchedIndex = pages.indexOfFirst { page ->
-                                visitedPath.endsWith(page.relativeTo(destDir).path.replace(File.separatorChar, '/'))
+                                visitedPath.endsWith(page.encodedRelativePathIn(destDir))
                             }
                             if (matchedIndex >= 0) currentIndex = matchedIndex
                         }
@@ -203,9 +217,15 @@ private fun fixSelfClosingScriptTags(response: WebResourceResponse): WebResource
     val mimeType = response.mimeType ?: return response
     if (!mimeType.contains("html")) return response
     val original = response.data ?: return response
+    // `.use {}` closes `original` once this finishes reading it — response.data must always be
+    // replaced with a fresh stream below, even when no self-closing tag is found, or Chromium
+    // ends up reading from the now-closed original and every page fails with "Stream Closed".
     val html = original.use { it.readBytes() }.toString(Charsets.UTF_8)
-    if (!SELF_CLOSING_SCRIPT_REGEX.containsMatchIn(html)) return response
-    val fixed = SELF_CLOSING_SCRIPT_REGEX.replace(html) { match -> "<script${match.groupValues[1]}></script>" }
+    val fixed = if (SELF_CLOSING_SCRIPT_REGEX.containsMatchIn(html)) {
+        SELF_CLOSING_SCRIPT_REGEX.replace(html) { match -> "<script${match.groupValues[1]}></script>" }
+    } else {
+        html
+    }
     response.data = ByteArrayInputStream(fixed.toByteArray(Charsets.UTF_8))
     return response
 }
