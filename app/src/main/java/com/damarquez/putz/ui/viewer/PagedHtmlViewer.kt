@@ -4,6 +4,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.io.ByteArrayInputStream
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -144,6 +145,7 @@ fun PagedHtmlViewer(
                             request: WebResourceRequest,
                         ): WebResourceResponse? =
                             assetLoader.shouldInterceptRequest(request.url)?.apply { encoding = "utf-8" }
+                                ?.let(::fixSelfClosingScriptTags)
 
                         // Page navigation clears WebView's find state; let the engine re-apply
                         // the active query (and land on the right occurrence) on the new page.
@@ -184,4 +186,26 @@ fun PagedHtmlViewer(
             onDismiss = { showDetails = false },
         )
     }
+}
+
+private val SELF_CLOSING_SCRIPT_REGEX = Regex("""<script\b([^>]*?)/>""", RegexOption.IGNORE_CASE)
+
+/**
+ * Chromium's HTML5 parser treats `<script>` as a raw-text element and only exits on a
+ * literal `</script>` — it does not honor XML self-closing syntax. Some XHTML producers
+ * (e.g. Kobo-style EPUB exports) emit `<script src="..."/>`, which is valid XML but invalid
+ * HTML5: the parser swallows everything after it (including the entire `<body>`) as inert
+ * script text, rendering the page blank while navigation still works fine. Scripts never
+ * execute in this viewer (javaScriptEnabled = false), so rewriting them to an explicitly
+ * closed, empty tag is always safe.
+ */
+private fun fixSelfClosingScriptTags(response: WebResourceResponse): WebResourceResponse {
+    val mimeType = response.mimeType ?: return response
+    if (!mimeType.contains("html")) return response
+    val original = response.data ?: return response
+    val html = original.use { it.readBytes() }.toString(Charsets.UTF_8)
+    if (!SELF_CLOSING_SCRIPT_REGEX.containsMatchIn(html)) return response
+    val fixed = SELF_CLOSING_SCRIPT_REGEX.replace(html) { match -> "<script${match.groupValues[1]}></script>" }
+    response.data = ByteArrayInputStream(fixed.toByteArray(Charsets.UTF_8))
+    return response
 }

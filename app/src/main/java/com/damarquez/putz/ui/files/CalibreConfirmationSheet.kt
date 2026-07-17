@@ -151,6 +151,7 @@ fun CalibreConfirmationSheet(
     var uuidFromTransfer by remember { mutableStateOf(false) }
     var selectedTransferRef by remember { mutableStateOf<TransferRef?>(null) }
     var showTransferPicker by remember { mutableStateOf(false) }
+    var transferPickerQuery by remember { mutableStateOf("") }
 
     var archiveMode by remember { mutableStateOf("default") }
     var assembleBook by remember { mutableStateOf(false) }
@@ -417,39 +418,75 @@ fun CalibreConfirmationSheet(
                 }
 
                 if (showTransferPicker) {
+                    val filteredTransferRefs = remember(transferRefs, transferPickerQuery) {
+                        if (transferPickerQuery.isBlank()) {
+                            transferRefs
+                        } else {
+                            transferRefs.filter {
+                                it.title.contains(transferPickerQuery, ignoreCase = true) ||
+                                    it.author.contains(transferPickerQuery, ignoreCase = true)
+                            }
+                        }
+                    }
                     AlertDialog(
-                        onDismissRequest = { showTransferPicker = false },
+                        onDismissRequest = {
+                            showTransferPicker = false
+                            transferPickerQuery = ""
+                        },
                         title = { Text("Pick completed transfer") },
                         text = {
-                            LazyColumn {
-                                items(transferRefs) { ref ->
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                uuid = ref.uuid
-                                                title = ref.title
-                                                author = ref.author
-                                                uuidFromTransfer = true
-                                                isUuidMatched = true
-                                                selectedTransferRef = ref
-                                                matchedBookId = null
-                                                matchedBookTitle = null
-                                                matchedBookAuthor = null
-                                                showTransferPicker = false
-                                            }
-                                            .padding(vertical = 12.dp, horizontal = 4.dp)
-                                    ) {
-                                        Text(ref.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                        Text(ref.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column {
+                                CompactOutlinedTextField(
+                                    value = transferPickerQuery,
+                                    onValueChange = { transferPickerQuery = it },
+                                    label = "Search",
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                LazyColumn {
+                                    items(filteredTransferRefs) { ref ->
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    uuid = ref.uuid
+                                                    title = ref.title
+                                                    author = ref.author
+                                                    uuidFromTransfer = true
+                                                    isUuidMatched = true
+                                                    selectedTransferRef = ref
+                                                    matchedBookId = null
+                                                    matchedBookTitle = null
+                                                    matchedBookAuthor = null
+                                                    showTransferPicker = false
+                                                    transferPickerQuery = ""
+                                                }
+                                                .padding(vertical = 12.dp, horizontal = 4.dp)
+                                        ) {
+                                            Text(ref.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                            Text(ref.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        HorizontalDivider()
                                     }
-                                    HorizontalDivider()
+                                    if (filteredTransferRefs.isEmpty()) {
+                                        item {
+                                            Text(
+                                                "No matches",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         },
                         confirmButton = {},
                         dismissButton = {
-                            TextButton(onClick = { showTransferPicker = false }) { Text("Cancel") }
+                            TextButton(onClick = {
+                                showTransferPicker = false
+                                transferPickerQuery = ""
+                            }) { Text("Cancel") }
                         },
                     )
                 }
