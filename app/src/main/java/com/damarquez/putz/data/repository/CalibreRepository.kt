@@ -1957,9 +1957,40 @@ class CalibreRepository @Inject constructor(
         return fetchStubContent(file.id)
     }
 
+    // CONTRACT: book duplicate matching (see CONTRACTS.md). Normalization and author-token
+    // matching here must stay behaviorally equivalent to the daemon's _normalize_text()/
+    // _author_name_tokens()/find_book_any_author() in putz_manager.py — this is the
+    // client-side "might already exist" prediction, the daemon's dedup check is the actual
+    // decision, and if they disagree the UI warning stops meaning anything.
     private fun normalize(text: String): String {
         val normalized = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
-        return normalized.replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "").lowercase()
+        return normalized.replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
+            .lowercase()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private val authorSeparatorRegex = Regex("[&,;/.()\\[\\]]|\\band\\b")
+
+    // Splits an already-normalized author string into a set of lowercase word tokens,
+    // ignoring punctuation/diacritics — mirrors the daemon's _author_name_tokens().
+    private fun authorTokens(normalizedAuthor: String): Set<String> =
+        authorSeparatorRegex.replace(normalizedAuthor, " ")
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+            .toSet()
+
+    // Match if either author string is missing/"unknown", one normalized string contains
+    // the other, or the two author-token sets overlap at all (handles Calibre's own author
+    // normalization, e.g. "Shadow and Claw" stored as "Claw, Shadow and", as well as
+    // differently formatted multi-author strings, e.g. "A, B (ed)" vs "A & B (ed)").
+    private fun authorsMatch(author: String, dbAuthor: String): Boolean {
+        val normAuthor = normalize(author)
+        val normDbAuthor = normalize(dbAuthor)
+        if (normDbAuthor.isBlank() || normDbAuthor == "unknown") return true
+        if (normAuthor.isBlank() || normAuthor == "unknown") return true
+        if (normDbAuthor.contains(normAuthor) || normAuthor.contains(normDbAuthor)) return true
+        return authorTokens(normAuthor).intersect(authorTokens(normDbAuthor)).isNotEmpty()
     }
 
     suspend fun checkExists(dbFile: File, title: String, author: String): Long? = withContext(Dispatchers.IO) {
@@ -1972,32 +2003,30 @@ class CalibreRepository @Inject constructor(
             ).use { db ->
                 // First, try direct search with accents
                 val query = """
-                    SELECT books.id, books.title, authors.name FROM books 
-                    JOIN books_authors_link ON books.id = books_authors_link.book 
-                    JOIN authors ON authors.id = books_authors_link.author 
+                    SELECT books.id, books.title, authors.name FROM books
+                    JOIN books_authors_link ON books.id = books_authors_link.book
+                    JOIN authors ON authors.id = books_authors_link.author
                 """.trimIndent()
-                
+
                 db.rawQuery(query, null).use { cursor ->
                     val normTitle = normalize(title)
-                    val normAuthor = normalize(author)
 
                     if (cursor.moveToFirst()) {
                         do {
                             val id = cursor.getLong(0)
                             val dbTitle = cursor.getString(1)
                             val dbAuthor = cursor.getString(2)
-                            
+
                             val normDbTitle = normalize(dbTitle)
-                            val normDbAuthor = normalize(dbAuthor)
-                            
-                            // Title must match exactly (after accent/case normalization) — a
-                            // substring/contains check here previously matched any title that
-                            // merely *mentioned* the search title elsewhere, e.g. searching
-                            // "The Willows" matching the anthology "Ancient Sorceries (The
-                            // Listener; The Sea Fit; The Willows)" and wrongly warning it might
-                            // already exist. Author still allows contains(), for the case where
-                            // the same book was stored under a slightly different author string.
-                            if (normDbTitle == normTitle && (author.isBlank() || normDbAuthor.contains(normAuthor))) {
+
+                            // Title must match exactly (after accent/case/whitespace
+                            // normalization) — a substring/contains check here previously
+                            // matched any title that merely *mentioned* the search title
+                            // elsewhere, e.g. searching "The Willows" matching the anthology
+                            // "Ancient Sorceries (The Listener; The Sea Fit; The Willows)" and
+                            // wrongly warning it might already exist. Author matching is
+                            // token-based — see authorsMatch().
+                            if (normDbTitle == normTitle && authorsMatch(author, dbAuthor)) {
                                 return@withContext id
                             }
                         } while (cursor.moveToNext())

@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,6 +85,24 @@ data class CalibreBatchDraftItem(
     // row is still open for review, so Send can dispatch immediately for items that already
     // resolved instead of waiting on a fresh stub-content read for every file.
     val localPath: String? = null,
+)
+
+// Per-row "already exists" / pending-transfer check results, hoisted out of CalibreBatchRow
+// (see rowMatchCache below) so they survive LazyColumn recycling instead of resetting every
+// time a row scrolls out of and back into the visible window.
+private data class RowMatchCache(
+    val matchedBookId: Long? = null,
+    val matchedBookTitle: String? = null,
+    val matchedBookAuthor: String? = null,
+    val isUuidMatched: Boolean = false,
+    val pendingTransfer: CalibreTransferEntity? = null,
+    val pendingTransferChecked: Boolean = false,
+    // Inputs the current matchedBook* fields were computed from — lets the LaunchedEffects
+    // below skip a redundant metadata.db scan when a row remounts with unchanged inputs.
+    val checkedUuid: String? = null,
+    val checkedTitle: String? = null,
+    val checkedAuthor: String? = null,
+    val checkedIncluded: Boolean? = null,
 )
 
 /** Collects [FilesViewModel.calibreBatchDraft] in its own small composable rather than at the
@@ -162,6 +181,9 @@ fun CalibreBatchConfirmationSheet(
     // Resolved once for the whole list (not per row) so synced stubs' real sizes are fetched a
     // single time and shared, rather than re-fetched by every row's own effect.
     val sizeProgress = rememberSizeProgress(items.map { it.file }, readStubFileSize)
+    // Hoisted above the LazyColumn (not inside CalibreBatchRow) so it isn't disposed when a row
+    // scrolls out of the visible window — see RowMatchCache.
+    val rowMatchCache = remember { mutableStateMapOf<String, RowMatchCache>() }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -213,7 +235,10 @@ fun CalibreBatchConfirmationSheet(
                     // startCalibreBatchDraft's freshByName lookup, so their file.id can collide —
                     // a bare file.id key then crashes LazyColumn with "Key already used".
                     itemsIndexed(items, key = { index, item -> "$index-${item.file.id}" }) { index, item ->
+                        val rowKey = "$index-${item.file.id}"
                         CalibreBatchRow(
+                            rowKey = rowKey,
+                            rowMatchCache = rowMatchCache,
                             item = item,
                             index = if (items.size > 1) index + 1 else null,
                             sizeBytes = sizeProgress?.sizesById?.get(item.file.id) ?: item.file.size,
@@ -312,6 +337,8 @@ private fun CompactIconButton(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CalibreBatchRow(
+    rowKey: String,
+    rowMatchCache: androidx.compose.runtime.snapshots.SnapshotStateMap<String, RowMatchCache>,
     item: CalibreBatchDraftItem,
     index: Int?,
     sizeBytes: Long,
@@ -328,11 +355,14 @@ private fun CalibreBatchRow(
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    var matchedBookId by remember(item.file.id) { mutableStateOf<Long?>(null) }
-    var matchedBookTitle by remember(item.file.id) { mutableStateOf<String?>(null) }
-    var matchedBookAuthor by remember(item.file.id) { mutableStateOf<String?>(null) }
-    var isUuidMatched by remember(item.file.id) { mutableStateOf(false) }
-    var pendingTransfer by remember(item.file.id) { mutableStateOf<CalibreTransferEntity?>(null) }
+    // Backed by rowMatchCache (hoisted above the LazyColumn), not local remember(), so these
+    // survive the row being disposed and recomposed as it scrolls out of and back into view.
+    val cache = rowMatchCache[rowKey]
+    val matchedBookId = cache?.matchedBookId
+    val matchedBookTitle = cache?.matchedBookTitle
+    val matchedBookAuthor = cache?.matchedBookAuthor
+    val isUuidMatched = cache?.isUuidMatched ?: false
+    val pendingTransfer = cache?.pendingTransfer
     var showBulkMenu by remember { mutableStateOf(false) }
 
     // A UUID match takes over title/author (like the single-file dialog) and owns matchedBookId
@@ -341,28 +371,42 @@ private fun CalibreBatchRow(
     // so the delay below means only the keystroke that ends a pause actually reaches the query —
     // rapid typing keeps cancelling it before checkExistsByUuid ever runs. See the debounce
     // comment on the title/author check below for why this matters.
-    LaunchedEffect(item.uuid) {
+    LaunchedEffect(rowKey, item.uuid) {
         if (item.uuid.isNotBlank()) {
+            // Row remounted (e.g. scrolled back into view) with the same uuid already resolved —
+            // reuse the cached result instead of re-querying.
+            if (rowMatchCache[rowKey]?.checkedUuid == item.uuid) return@LaunchedEffect
             kotlinx.coroutines.delay(400)
             val match = checkExistsByUuid(item.uuid.trim())
+            val prev = rowMatchCache[rowKey] ?: RowMatchCache()
             if (match != null) {
-                matchedBookId = match.id
-                matchedBookTitle = match.title
-                matchedBookAuthor = match.author
-                isUuidMatched = true
+                rowMatchCache[rowKey] = prev.copy(
+                    matchedBookId = match.id,
+                    matchedBookTitle = match.title,
+                    matchedBookAuthor = match.author,
+                    isUuidMatched = true,
+                    checkedUuid = item.uuid,
+                )
                 if (item.title != match.title || item.author != match.author) {
                     onChange(item.copy(title = match.title, author = match.author))
                 }
             } else {
-                matchedBookId = null
-                matchedBookTitle = null
-                matchedBookAuthor = null
-                isUuidMatched = false
+                rowMatchCache[rowKey] = prev.copy(
+                    matchedBookId = null,
+                    matchedBookTitle = null,
+                    matchedBookAuthor = null,
+                    isUuidMatched = false,
+                    checkedUuid = item.uuid,
+                )
             }
         } else {
-            isUuidMatched = false
-            matchedBookTitle = null
-            matchedBookAuthor = null
+            val prev = rowMatchCache[rowKey] ?: RowMatchCache()
+            rowMatchCache[rowKey] = prev.copy(
+                isUuidMatched = false,
+                matchedBookTitle = null,
+                matchedBookAuthor = null,
+                checkedUuid = "",
+            )
         }
     }
 
@@ -371,20 +415,37 @@ private fun CalibreBatchRow(
     // every keystroke while editing a title, across a multi-book batch-send list, made editing
     // measurably slower the further down the list you went and was severe enough to OOM-crash the
     // app on a large-ish library. A 400ms pause-in-typing debounce turns "one full library scan
-    // per character typed" into "one scan per row, once you stop typing it."
-    LaunchedEffect(item.title, item.author, item.included, item.uuid) {
+    // per character typed" into "one scan per row, once you stop typing it." The cache check below
+    // does the same for scrolling: a row that remounts with the exact same title/author/included
+    // it was last checked with reuses the cached answer instead of re-scanning the library.
+    LaunchedEffect(rowKey, item.title, item.author, item.included, item.uuid) {
         if (item.uuid.isNotBlank()) return@LaunchedEffect
         if (item.included && item.title.isNotBlank()) {
+            val prev = rowMatchCache[rowKey] ?: RowMatchCache()
+            if (prev.checkedTitle == item.title && prev.checkedAuthor == item.author && prev.checkedIncluded == item.included) {
+                return@LaunchedEffect
+            }
             kotlinx.coroutines.delay(400)
-            matchedBookId = checkExists(item.title, item.author.ifBlank { "Unknown" })
+            val result = checkExists(item.title, item.author.ifBlank { "Unknown" })
+            rowMatchCache[rowKey] = (rowMatchCache[rowKey] ?: RowMatchCache()).copy(
+                matchedBookId = result,
+                checkedTitle = item.title,
+                checkedAuthor = item.author,
+                checkedIncluded = item.included,
+            )
         } else {
-            matchedBookId = null
+            rowMatchCache[rowKey] = (rowMatchCache[rowKey] ?: RowMatchCache()).copy(matchedBookId = null)
         }
     }
 
-    LaunchedEffect(item.file.id) {
+    LaunchedEffect(rowKey, item.file.id) {
+        // Row remounted with this already checked (e.g. scrolled back into view) — skip re-query.
+        if (rowMatchCache[rowKey]?.pendingTransferChecked == true) return@LaunchedEffect
         val pending = checkPendingTransfer(item.file.syncedFileId, item.file.displayName)
-        pendingTransfer = pending
+        rowMatchCache[rowKey] = (rowMatchCache[rowKey] ?: RowMatchCache()).copy(
+            pendingTransfer = pending,
+            pendingTransferChecked = true,
+        )
         // Auto-deselect: an item already in flight must not be resubmitted just because it
         // happened to be checked when the batch sheet opened — the checkbox alone previously
         // let it through with only a visual warning next to it, easy to miss in a long batch.
