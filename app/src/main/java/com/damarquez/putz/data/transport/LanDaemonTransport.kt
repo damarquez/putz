@@ -154,6 +154,34 @@ class LanDaemonTransport @Inject constructor(
             }.getOrNull()
         }
 
+    // CONTRACT: protection split — queries the daemon's live, unsplit metadata.db directly,
+    // so it can find a protected/encrypted book that a downloaded metadata.db copy never
+    // will (see protection_split.py). Used as a fallback when a local UUID lookup misses.
+    data class LanBookMatch(val id: Long, val title: String, val author: String, val tags: String)
+
+    suspend fun getBookByUuid(uuid: String): LanBookMatch? =
+        withContext(Dispatchers.IO) {
+            val encodedUuid = java.net.URLEncoder.encode(uuid, "UTF-8")
+            val request = Request.Builder()
+                .url("${baseUrl()}/library/book_by_uuid/$encodedUuid")
+                .header("X-Sidekick-Key", apiKey())
+                .get()
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    val obj = json.parseToJsonElement(body).jsonObject
+                    LanBookMatch(
+                        id = obj["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@use null,
+                        title = obj["title"]?.jsonPrimitive?.content ?: "",
+                        author = obj["author"]?.jsonPrimitive?.content ?: "",
+                        tags = obj["tags"]?.jsonPrimitive?.content ?: "",
+                    )
+                }
+            }.getOrNull()
+        }
+
     override suspend fun downloadMetadataDb(googleAccount: String, destination: File): Boolean =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()

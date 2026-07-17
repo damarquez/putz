@@ -360,6 +360,7 @@ class CalibreRepository @Inject constructor(
     private val putioApiClient: PutioApiClient,
     private val secureStorage: SecureStorage,
     private val settingsRepository: com.damarquez.putz.settings.SettingsRepository,
+    private val lanDaemonTransport: com.damarquez.putz.data.transport.LanDaemonTransport,
 ) {
     private val _daemonStatus = MutableStateFlow<String?>(null)
     val daemonStatus = _daemonStatus.asStateFlow()
@@ -1328,10 +1329,15 @@ class CalibreRepository @Inject constructor(
                             // more than once.
                             val isFirstProbeResponse = response.is_probe == true && probesAwaitingResponse.remove(transfer.putioFileId)
                             val isCompletedRecheck = isFirstProbeResponse && transfer.status == CalibreTransferStatus.COMPLETED
+                            val isConfirmedByDaemon = isCompletedRecheck && newStatus == CalibreTransferStatus.COMPLETED
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 lastUpdatedAt = System.currentTimeMillis(),
-                                probeCount = if (isCompletedRecheck && newStatus == CalibreTransferStatus.COMPLETED) transfer.probeCount + 1 else transfer.probeCount,
+                                probeCount = if (isConfirmedByDaemon) transfer.probeCount + 1 else transfer.probeCount,
                                 errorMessage = if (isCompletedRecheck && newStatus == CalibreTransferStatus.FAILED) response.error else transfer.errorMessage,
+                                // The daemon checks its live, unsplit metadata.db, so a COMPLETED
+                                // recheck is authoritative even when Putz's local (protection-split)
+                                // copy couldn't find the book — see verifyCompletedTransfers().
+                                libraryVerified = if (isConfirmedByDaemon) true else transfer.libraryVerified,
                             ))
                         }
                     }
@@ -1643,7 +1649,18 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
-    suspend fun checkExistsByUuid(dbFile: File, uuid: String): CalibreBookMatch? = withContext(Dispatchers.IO) {
+    suspend fun checkExistsByUuid(dbFile: File, uuid: String): CalibreBookMatch? {
+        checkExistsByUuidLocal(dbFile, uuid)?.let { return it }
+        // Local metadata.db copy has protected/encrypted books' rows split out of it (see
+        // CONTRACTS.md §3a "protection split"), so a local miss doesn't mean the book doesn't
+        // exist. Ask the daemon directly over LAN — it reads the live, unsplit metadata.db.
+        val lanEnabled = settingsRepository.lanEnabledFlow.first()
+        if (!lanEnabled || !lanDaemonTransport.isReachable()) return null
+        val match = lanDaemonTransport.getBookByUuid(uuid) ?: return null
+        return CalibreBookMatch(id = match.id, title = match.title, author = match.author, tags = match.tags)
+    }
+
+    private suspend fun checkExistsByUuidLocal(dbFile: File, uuid: String): CalibreBookMatch? = withContext(Dispatchers.IO) {
         if (!dbFile.exists()) return@withContext null
         try {
             android.database.sqlite.SQLiteDatabase.openDatabase(
@@ -1652,12 +1669,12 @@ class CalibreRepository @Inject constructor(
                 android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             ).use { db ->
                 val query = """
-                    SELECT books.id, books.title, authors.name FROM books 
-                    JOIN books_authors_link ON books.id = books_authors_link.book 
-                    JOIN authors ON authors.id = books_authors_link.author 
+                    SELECT books.id, books.title, authors.name FROM books
+                    JOIN books_authors_link ON books.id = books_authors_link.book
+                    JOIN authors ON authors.id = books_authors_link.author
                     WHERE books.uuid = ?
                 """.trimIndent()
-                
+
                 db.rawQuery(query, arrayOf(uuid)).use { cursor ->
                     if (cursor.moveToFirst()) {
                         val bookId = cursor.getLong(0)
@@ -1677,7 +1694,14 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    suspend fun verifyCompletedTransfers(dbFile: File) = withContext(Dispatchers.IO) {
+    // CONTRACT: protection split — actions whose local verification is just "does this uuid
+    // exist in the library". Putz's downloaded metadata.db has protected/encrypted books'
+    // rows split out of it (see calibre_assets/protection_split.py), so a "not found" here
+    // is ambiguous: genuinely missing, or just protected and invisible to this local copy.
+    // Only the daemon's live, unsplit metadata.db can tell the two apart.
+    private val UUID_LOOKUP_ACTIONS = setOf("REPLACE_COVER", "GENERATE_COVER", "PROTECT_BOOK", "UPDATE_COMMENTS")
+
+    suspend fun verifyCompletedTransfers(dbFile: File, googleAccount: String) = withContext(Dispatchers.IO) {
         val transfers = calibreTransferDao.getAllTransfers().first().filter {
             it.status == CalibreTransferStatus.COMPLETED && !it.libraryVerified
         }
@@ -1697,12 +1721,20 @@ class CalibreRepository @Inject constructor(
                         json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content
                     } catch (_: Exception) { null }
                 }
+                // Local row missing entirely for a uuid-lookup action: don't treat it as a
+                // hard failure yet, since it may just be split out for protection. Ask the
+                // daemon (below) instead of leaving it stuck unverified forever.
+                val rowMissingLocally = transfer.calibreBookUuid != null &&
+                    action in UUID_LOOKUP_ACTIONS &&
+                    !checkBookUuidExists(db, transfer.calibreBookUuid)
+
                 val verified = when {
                     // Non-Calibre actions need no library check
                     transfer.transferType == "PLEX" -> true
                     action == "PRIORITY_PUTIO_SYNC" -> true
                     // Must have a UUID to locate the book
                     transfer.calibreBookUuid == null -> true
+                    rowMissingLocally -> false
                     action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                     action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
@@ -1722,6 +1754,12 @@ class CalibreRepository @Inject constructor(
                     calibreTransferDao.updateTransfer(
                         transfer.copy(libraryVerified = true, lastUpdatedAt = System.currentTimeMillis())
                     )
+                } else if (rowMissingLocally && googleAccount.isNotBlank()) {
+                    // Daemon checks against its live, unsplit metadata.db (see
+                    // find_book_by_uuid in putz_manager.py), so it can confirm a protected
+                    // book that this local copy can't see. Response comes back through the
+                    // normal probe path in pollResponses(), which marks libraryVerified.
+                    sendProbeRequest(transfer.putioFileId, googleAccount)
                 }
             }
         }

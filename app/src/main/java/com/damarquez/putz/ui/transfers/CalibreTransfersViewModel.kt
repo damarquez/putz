@@ -366,7 +366,7 @@ class CalibreTransfersViewModel @Inject constructor(
                     val dbFile = File(context.filesDir, "metadata.db")
                     val result = calibreRepository.syncMetadataDb(account, dbFile)
                     if (result is NetworkResult.Success) {
-                        calibreRepository.verifyCompletedTransfers(dbFile)
+                        calibreRepository.verifyCompletedTransfers(dbFile, account)
                     }
                     calibreRepository.pollHeartbeat(account)
 
