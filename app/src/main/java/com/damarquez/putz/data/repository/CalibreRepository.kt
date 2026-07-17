@@ -78,6 +78,7 @@ data class CalibreBatchRequest(
     val tags: String? = null, // For UPDATE_COMMENTS
     val source_format: String? = null, // For CONVERT_FORMAT
     val target_format: String? = null, // For CONVERT_FORMAT
+    val keep_cover: Boolean? = null, // For PROTECT_BOOK — when true, don't replace the existing cover
     val app_id: String? = null, // Device ID — daemon echoes back so each device only reads its own responses
 )
 
@@ -441,11 +442,7 @@ class CalibreRepository @Inject constructor(
      *  [fileName] is matched too as a belt-and-suspenders fallback (it's what's stored as the
      *  transfer's fileName and doesn't depend on getting the right ID field at all). */
     suspend fun findPendingTransfer(fileId: Long, fileName: String): CalibreTransferEntity? =
-        calibreTransferDao.getAllTransfers().first().firstOrNull { transfer ->
-            transfer.status != CalibreTransferStatus.COMPLETED &&
-                transfer.status != CalibreTransferStatus.FAILED &&
-                (fileId in transfer.parsedFileIds() || transfer.fileName == fileName)
-        }
+        calibreTransferDao.findPendingTransfer(fileId, fileName)
 
     // CONTRACT: UPDATE_COMMENTS
     suspend fun sendUpdateCommentsRequest(
@@ -2076,6 +2073,7 @@ class CalibreRepository @Inject constructor(
         author: String,
         calibreBookUuid: String,
         googleAccount: String,
+        keepCover: Boolean = false,
     ) {
         val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
@@ -2086,6 +2084,7 @@ class CalibreRepository @Inject constructor(
             author = author,
             items = emptyList(),
             calibre_book_uuid = calibreBookUuid,
+            keep_cover = if (keepCover) true else null,
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)

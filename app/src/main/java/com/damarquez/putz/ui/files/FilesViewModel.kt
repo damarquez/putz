@@ -247,6 +247,12 @@ class FilesViewModel @Inject constructor(
     }
 
     fun startCalibreBatchDraft(files: List<PutioFile>) {
+        // A previous batch's prefetch may still be running (e.g. the user reviewed a large
+        // selection, cancelled, then immediately started another) — stop it before starting a
+        // new one; see prefetchBatchLocalPaths/dismissCalibreBatchDraft for why it must be
+        // cancellable at all.
+        prefetchBatchLocalPathsJob?.cancel()
+
         // Files screen serves a cached folder listing outside of explicit pull-to-refresh, which
         // can be stale by weeks for a rarely-revisited folder. A stub's embedded put.io ID
         // (PutioFile.syncedFileId) changes every time the daemon re-syncs it, so a stale listing
@@ -276,6 +282,10 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    // Tracks the Job launched by prefetchBatchLocalPaths so dismissCalibreBatchDraft (Cancel, or
+    // Send) can actually stop it — see that function's doc for why leaving it running matters.
+    private var prefetchBatchLocalPathsJob: Job? = null
+
     /** Resolves each synced item's local_path in the background while the batch confirmation
      *  sheet is still open for the user to review titles/authors/tags — a per-file stub-content
      *  read, same as sendBatchToCalibre would otherwise do one-by-one only once Send is tapped.
@@ -284,9 +294,17 @@ class FilesViewModel @Inject constructor(
      *  Chunked at 5 concurrent reads, mirroring FileSizeProgress.computeSizeProgress. Each read is
      *  isolated in its own try/catch — coroutineScope+awaitAll would otherwise let one file's
      *  exception (a network hiccup, say) cancel every sibling and abort the whole remaining
-     *  batch, silently, with no error surfaced anywhere. */
+     *  batch, silently, with no error surfaced anywhere.
+     *
+     *  The launched Job is stashed in [prefetchBatchLocalPathsJob] and cancelled by
+     *  dismissCalibreBatchDraft — this is viewModelScope-launched, not tied to the confirmation
+     *  Dialog's composition, so without that it kept running for however many items hadn't
+     *  resolved yet even after the sheet was cancelled. For a large selection that's a lot of
+     *  orphaned concurrent network reads (bounded to 5 at a time, but never torn down), and
+     *  repeating select-review-cancel built up more overlapping orphaned runs each time — the
+     *  reported slowdown/crash after cancelling a large batch. */
     private fun prefetchBatchLocalPaths(items: List<CalibreBatchDraftItem>) {
-        viewModelScope.launch {
+        prefetchBatchLocalPathsJob = viewModelScope.launch {
             items.filter { it.file.isSynced }.chunked(5).forEach { chunk ->
                 coroutineScope {
                     chunk.map { item ->
@@ -319,6 +337,8 @@ class FilesViewModel @Inject constructor(
     }
 
     fun dismissCalibreBatchDraft() {
+        prefetchBatchLocalPathsJob?.cancel()
+        prefetchBatchLocalPathsJob = null
         _calibreBatchDraft.value = null
         calibreBatchScrollIndex = 0
         calibreBatchScrollOffset = 0

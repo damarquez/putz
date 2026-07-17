@@ -97,9 +97,13 @@ data class CalibreBatchDraftItem(
 @Composable
 fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
     val calibreBatchDraft by viewModel.calibreBatchDraft.collectAsState()
+    val isPreparingTransfer by viewModel.isPreparingTransfer.collectAsState()
+    val transferPreparationProgress by viewModel.transferPreparationProgress.collectAsState()
     calibreBatchDraft?.let { draft ->
         CalibreBatchConfirmationSheet(
             items = draft,
+            isPreviousBatchSending = isPreparingTransfer,
+            previousBatchProgress = transferPreparationProgress,
             onDismiss = { viewModel.dismissCalibreBatchDraft() },
             onConfirm = { finalItems ->
                 viewModel.sendBatchToCalibre(finalItems)
@@ -127,6 +131,14 @@ fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
 @Composable
 fun CalibreBatchConfirmationSheet(
     items: List<CalibreBatchDraftItem>,
+    // Whether some other in-flight "prepare for Calibre" operation is still running — a previous
+    // batch's dispatch loop, a single-file send, an archive assembly — anything sharing
+    // FilesViewModel.isPreparingTransfer's app-wide counter. Send stays disabled and shows that
+    // operation's progress until it clears, since sendBatchToCalibre for this new batch would
+    // otherwise run concurrently alongside it, and the user has no way to see how much of the
+    // earlier one is left.
+    isPreviousBatchSending: Boolean = false,
+    previousBatchProgress: Pair<Int, Int>? = null,
     onDismiss: () -> Unit,
     onConfirm: (List<CalibreBatchDraftItem>) -> Unit,
     onItemChange: (CalibreBatchDraftItem) -> Unit,
@@ -146,7 +158,7 @@ fun CalibreBatchConfirmationSheet(
     // see startCalibreBatchDraft). Deselecting a row here only affects this draft; "Mirror
     // selection" pushes those deselections back so the underlying file list stays in sync too.
     val deselectedFiles = items.filterNot { it.included }.map { it.file }
-    val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() }
+    val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() } && !isPreviousBatchSending
     // Resolved once for the whole list (not per row) so synced stubs' real sizes are fetched a
     // single time and shared, rather than re-fetched by every row's own effect.
     val sizeProgress = rememberSizeProgress(items.map { it.file }, readStubFileSize)
@@ -235,7 +247,14 @@ fun CalibreBatchConfirmationSheet(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = canSend,
                         ) {
-                            Text("Send (${includedItems.size})")
+                            Text(
+                                if (isPreviousBatchSending) {
+                                    val (done, total) = previousBatchProgress ?: (0 to 0)
+                                    if (total > 0) "Still sending previous batch ($done/$total)…" else "Still sending previous batch…"
+                                } else {
+                                    "Send (${includedItems.size})"
+                                }
+                            )
                         }
                         TextButton(
                             onClick = { onMirrorSelection(deselectedFiles) },

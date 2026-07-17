@@ -351,12 +351,13 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             title = { Text("Protect book") },
             text = {
                 Text(
-                    "Encrypt \"${protect.title}\" on disk? This cannot be undone without the protection key.",
+                    "Encrypt \"${protect.title}\" on disk? This cannot be undone without the protection key." +
+                        if (protect.keepCover) " The existing cover will be kept." else " The cover will be replaced with a generated one.",
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.protectBook(protect.uuid, protect.title, protect.author)
+                    viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover)
                     pendingProtectConfirmation = null
                 }) { Text("Protect") }
             },

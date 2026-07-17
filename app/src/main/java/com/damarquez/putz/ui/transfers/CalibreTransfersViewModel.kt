@@ -163,7 +163,7 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
-    fun protectBook(uuid: String, title: String, author: String) {
+    fun protectBook(uuid: String, title: String, author: String, keepCover: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
@@ -172,6 +172,7 @@ class CalibreTransfersViewModel @Inject constructor(
                 author = author,
                 calibreBookUuid = uuid,
                 googleAccount = account,
+                keepCover = keepCover,
             )
         }
     }
