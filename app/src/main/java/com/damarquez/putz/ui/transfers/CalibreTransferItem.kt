@@ -73,6 +73,8 @@ fun CalibreTransferItem(
     uploadProgress: String? = null,
     isPendingAppend: Boolean = false,
     onCopyUuid: ((String) -> Unit)? = null,
+    onCopyTitle: ((String) -> Unit)? = null,
+    onCopyAuthor: ((String) -> Unit)? = null,
     onTap: (() -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -319,6 +321,30 @@ fun CalibreTransferItem(
                 onClick = {
                     showContextMenu = false
                     onCopyUuid?.invoke(transfer.calibreBookUuid)
+                },
+            )
+        }
+        if (transfer.title.isNotBlank()) {
+            DropdownMenuItem(
+                text = { Text("Copy title") },
+                leadingIcon = {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onCopyTitle?.invoke(transfer.title)
+                },
+            )
+        }
+        if (transfer.author.isNotBlank()) {
+            DropdownMenuItem(
+                text = { Text("Copy author") },
+                leadingIcon = {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onCopyAuthor?.invoke(transfer.author)
                 },
             )
         }

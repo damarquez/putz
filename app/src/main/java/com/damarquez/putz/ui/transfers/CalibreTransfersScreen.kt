@@ -634,6 +634,14 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                     clipboardManager.setText(AnnotatedString(json))
                                     scope.launch { snackbarHostState.showSnackbar("JSON copied") }
                                 },
+                                onCopyTitle = { title ->
+                                    clipboardManager.setText(AnnotatedString(title))
+                                    scope.launch { snackbarHostState.showSnackbar("Title copied") }
+                                },
+                                onCopyAuthor = { author ->
+                                    clipboardManager.setText(AnnotatedString(author))
+                                    scope.launch { snackbarHostState.showSnackbar("Author copied") }
+                                },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
                                 isPendingAppend = transfer.putioFileId in pendingAssemblyAppends,
                                 onTap = { transferToBrowse = transfer },
@@ -704,6 +712,14 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 onCopyUuid = { uuid ->
                                     clipboardManager.setText(AnnotatedString(uuid))
                                     scope.launch { snackbarHostState.showSnackbar("UUID copied") }
+                                },
+                                onCopyTitle = { title ->
+                                    clipboardManager.setText(AnnotatedString(title))
+                                    scope.launch { snackbarHostState.showSnackbar("Title copied") }
+                                },
+                                onCopyAuthor = { author ->
+                                    clipboardManager.setText(AnnotatedString(author))
+                                    scope.launch { snackbarHostState.showSnackbar("Author copied") }
                                 },
                                 onTap = { transferToBrowse = transfer },
                             )
