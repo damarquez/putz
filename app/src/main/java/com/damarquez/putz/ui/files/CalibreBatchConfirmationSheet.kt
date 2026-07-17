@@ -434,7 +434,14 @@ private fun CalibreBatchRow(
                 checkedIncluded = item.included,
             )
         } else {
-            rowMatchCache[rowKey] = (rowMatchCache[rowKey] ?: RowMatchCache()).copy(matchedBookId = null)
+            // Also update checkedIncluded (not just clear matchedBookId) — otherwise re-checking
+            // this row later sees checkedIncluded still == true from the last real check, the
+            // skip-guard above wrongly treats it as "already checked", and the warning never
+            // comes back.
+            rowMatchCache[rowKey] = (rowMatchCache[rowKey] ?: RowMatchCache()).copy(
+                matchedBookId = null,
+                checkedIncluded = item.included,
+            )
         }
     }
 

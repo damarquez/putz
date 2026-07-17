@@ -227,12 +227,23 @@ class FilesViewModel @Inject constructor(
      *  draft's currently-included files) drop out of the selection, [toSelect] (the draft's
      *  currently-deselected files) join it — same id-based matching as [deselectFiles], for the
      *  same reason (a batch draft item's file can be a re-fetched instance). Used by the batch
-     *  sheet's "Reverse selection" button. */
+     *  sheet's "Reverse selection" button.
+     *
+     *  [toSelect] must be added using the exact PutioFile instances FilesScreen is currently
+     *  rendering (looked up here by id from _uiState), not the draft's own instances — FilesScreen
+     *  tests selection membership with `file in selectedFiles`, a *structural* equals over every
+     *  field of the data class. The draft's instances can be "fresh" refetched copies (see
+     *  startCalibreBatchDraft) that differ from the rendered ones in some field, so inserting them
+     *  directly made the selection change invisible on-screen (no row appeared checked) even
+     *  though _selectedFiles had genuinely been updated — confirmed by reopening the batch sheet,
+     *  which reads _selectedFiles directly and showed the correct reversed set. Falls back to the
+     *  draft's instance if the current listing no longer has a matching id (e.g. deleted/moved). */
     fun reverseFileSelection(toDeselect: List<PutioFile>, toSelect: List<PutioFile>) {
         val idsToDeselect = toDeselect.mapTo(HashSet()) { it.id }
+        val currentById = (_uiState.value as? FilesUiState.Success)?.files?.associateBy { it.id }.orEmpty()
         val merged = LinkedHashMap<Long, PutioFile>()
         _selectedFiles.value.forEach { if (it.id !in idsToDeselect) merged[it.id] = it }
-        toSelect.forEach { merged[it.id] = it }
+        toSelect.forEach { merged[it.id] = currentById[it.id] ?: it }
         _selectedFiles.value = merged.values.toSet()
     }
 
