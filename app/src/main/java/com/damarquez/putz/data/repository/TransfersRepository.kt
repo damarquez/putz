@@ -353,20 +353,25 @@ class TransfersRepository @Inject constructor(
         saveParentId = transfer.saveParentId,
     )
 
+    /** User-initiated rename ("Edit display name" / properties pencil button). Marked
+     *  manuallyRenamed so neither put.io's own resolved name (mergeWithLocal's shouldResolve)
+     *  nor the torrent-history resolved name (applyHistoryNames) can silently revert it. */
     suspend fun updateDisplayName(id: Long, newName: String) = withContext(Dispatchers.IO) {
         val local = dao.getById(id)
         if (local != null) {
-            dao.upsert(local.copy(displayName = newName))
+            dao.upsert(local.copy(displayName = newName, nameResolved = true, manuallyRenamed = true))
         }
     }
 
     /** Permanently stores history-resolved names for all matching transfers.
      *  History names always win — they come from the actual .torrent file.
-     *  Skips if the resolved name is itself the hash (not a real name). */
+     *  Skips if the resolved name is itself the hash (not a real name), or if the user has
+     *  manually renamed this transfer (manual renames always win). */
     suspend fun applyHistoryNames(resolvedByHash: Map<String, String>): Boolean =
         withContext(Dispatchers.IO) {
             var anyUpdated = false
             for (entity in dao.getAll()) {
+                if (entity.manuallyRenamed) continue
                 val hash = entity.infoHash?.lowercase() ?: continue
                 val resolved = resolvedByHash[hash]?.takeIf { it.isNotBlank() } ?: continue
                 if (resolved.lowercase() == hash) continue   // resolved name is just the hash itself
@@ -380,6 +385,7 @@ class TransfersRepository @Inject constructor(
     /** Immediately persists a history-resolved name for a specific transfer by put.io ID. */
     suspend fun persistNameById(putioId: Long, name: String) = withContext(Dispatchers.IO) {
         val entity = dao.getById(putioId) ?: return@withContext
+        if (entity.manuallyRenamed) return@withContext
         if (entity.displayName == name) return@withContext
         dao.upsert(entity.copy(displayName = name, nameResolved = true))
     }

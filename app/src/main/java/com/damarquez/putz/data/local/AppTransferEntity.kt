@@ -52,4 +52,9 @@ data class AppTransferEntity(
     /** put.io save_parent_id used when this transfer was originally added. Non-zero means
      *  the transfer was directed to a specific folder (e.g. .putz_hidden). */
     val saveParentId: Long = 0L,
+
+    /** True once the user has explicitly edited displayName via "Edit display name" or the
+     *  properties pencil button. Once set, neither put.io's own resolved name nor the
+     *  torrent-history resolved name may overwrite displayName again. */
+    val manuallyRenamed: Boolean = false,
 )

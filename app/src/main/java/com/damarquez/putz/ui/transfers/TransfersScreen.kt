@@ -87,6 +87,7 @@ fun TransfersScreen(
     var editNameTransferId by remember { mutableStateOf<Long?>(null) }
     var editNameValue by remember { mutableStateOf("") }
     var selectedHistoryEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
+    var selectedHistoryEntryTransferId by remember { mutableStateOf<Long?>(null) }
     val sortSpecs = remember { mutableStateMapOf<TransferGroup, TransferSortSpec>() }
 
     LaunchedEffect(navigationEvent) {
@@ -242,6 +243,7 @@ fun TransfersScreen(
                                         onTap = {
                                             selectedHistoryEntry = merged.historyEntry
                                                 ?: synthesizeHistoryEntry(merged)
+                                            selectedHistoryEntryTransferId = merged.transfer.id
                                             viewModel.onTransferTapped(merged)
                                         },
                                     )
@@ -276,7 +278,12 @@ fun TransfersScreen(
             ) {
                 HistoryDetailSheet(
                     entry = selectedHistoryEntry!!,
-                    onEditLabel = { /* label editing not needed from transfers screen */ },
+                    onEditLabel = {
+                        selectedHistoryEntryTransferId?.let { id ->
+                            editNameValue = selectedHistoryEntry?.label ?: ""
+                            editNameTransferId = id
+                        }
+                    },
                 )
             }
         }

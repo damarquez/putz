@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         HiddenLocalFileEntity::class,
         LanConnectionEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {
