@@ -111,6 +111,17 @@ fun CalibreConfirmationSheet(
     includeComments: Boolean = true,
     coverImageUri: Uri? = null,
     sizeSummary: String? = null,
+    onDraftFieldsChanged: (
+        title: String,
+        author: String,
+        uuid: String,
+        comments: String,
+        tags: String,
+        archiveMode: String,
+        assembleBook: Boolean,
+        isAltVersion: Boolean,
+        isProtected: Boolean,
+    ) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
@@ -157,6 +168,18 @@ fun CalibreConfirmationSheet(
     var assembleBook by remember { mutableStateOf(false) }
     var isAltVersion by remember { mutableStateOf(false) }
     var isProtected by remember { mutableStateOf(false) }
+
+    // Pushes every edit up to the caller as it happens (not just on confirm) so a caller can keep
+    // a durable copy of the in-progress edits elsewhere — e.g. FilesViewModel.calibreSingleDraft,
+    // needed because onPreview can navigate to an internal viewer route and back, which tears down
+    // and recreates this composable (and every `remember` above) from scratch. Watches every field
+    // uniformly instead of hooking each individual button/text-field's onValueChange, since edits
+    // land here through several different paths (typing, "use match", swap, autofix, transfer
+    // picker selection).
+    LaunchedEffect(title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected) {
+        onDraftFieldsChanged(title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected)
+    }
+
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     // A UUID match on the plain "send new book" flow only targets an existing book for a new

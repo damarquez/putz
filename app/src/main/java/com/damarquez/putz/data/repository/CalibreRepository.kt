@@ -20,6 +20,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
@@ -399,6 +400,51 @@ class CalibreRepository @Inject constructor(
 
     fun updatePrepareProgress(progress: Pair<Int, Int>?) {
         _prepareProgress.value = progress
+    }
+
+    // Counts in-flight "send to Calibre" pack operations (resolving/uploading files before
+    // the transfer row exists), so the UI can show an animation during that otherwise-silent gap.
+    // Lives here (not in FilesViewModel) for the same reason as prepareProgress above — the
+    // dispatch coroutine itself now runs on an app-scoped CoroutineScope so it survives
+    // navigating away from the Files screen that started it, and this counter needs to be
+    // visible to whichever FilesViewModel instance is current when it completes, not just the
+    // one that started it.
+    private val _pendingTransferPreparations = MutableStateFlow(0)
+    val pendingTransferPreparations = _pendingTransferPreparations.asStateFlow()
+
+    // Overrides the generic "Preparing files for Calibre…" banner text (FilesScreen.kt) for
+    // whichever flow is currently driving pendingTransferPreparations — e.g. sendBatchToCalibre
+    // sets this to a "Sending…" label for its dispatch loop, since by then most items were
+    // already resolved via prefetchBatchLocalPaths and "Preparing" would misleadingly suggest
+    // resolution is starting over from scratch.
+    private val _transferPreparationLabel = MutableStateFlow("Preparing files for Calibre…")
+    val transferPreparationLabel = _transferPreparationLabel.asStateFlow()
+
+    fun setTransferPreparationLabel(label: String) {
+        _transferPreparationLabel.value = label
+    }
+
+    /** Returns true when this call transitioned the count from 0 to 1 (caller should foreground
+     *  the process); see [decrementPendingTransferPreparations] for the matching teardown. */
+    fun incrementPendingTransferPreparations(): Boolean {
+        var wasIdle = false
+        _pendingTransferPreparations.update { current ->
+            wasIdle = current == 0
+            current + 1
+        }
+        return wasIdle
+    }
+
+    /** Returns true when this call transitioned the count back to 0 (caller should stop
+     *  foregrounding the process). */
+    fun decrementPendingTransferPreparations(): Boolean {
+        var isNowIdle = false
+        _pendingTransferPreparations.update { current ->
+            val next = (current - 1).coerceAtLeast(0)
+            isNowIdle = next == 0
+            next
+        }
+        return isNowIdle
     }
 
     fun markAssemblyAppendPending(transferId: Long) {

@@ -92,6 +92,7 @@ class FilesViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val lanDaemonTransport: LanDaemonTransport,
     private val trashRepository: com.damarquez.putz.data.repository.TrashRepository,
+    @com.damarquez.putz.di.ApplicationScope private val appScope: kotlinx.coroutines.CoroutineScope,
 ) : ViewModel() {
 
     val parentId: Long = savedStateHandle[Screen.Files.ARG_PARENT_ID] ?: 0L
@@ -245,6 +246,41 @@ class FilesViewModel @Inject constructor(
         _selectedFiles.value.forEach { if (it.id !in idsToDeselect) merged[it.id] = it }
         toSelect.forEach { merged[it.id] = currentById[it.id] ?: it }
         _selectedFiles.value = merged.values.toSet()
+    }
+
+    /** The single-file "Send to Calibre" dialog's in-progress edits, ViewModel-backed for the same
+     *  reason as [calibreBatchDraft]: its onPreview can navigate to an internal viewer route (see
+     *  FilesScreen's onNavigateToViewer), which pops FilesScreen out of composition and back. A
+     *  plain composable `remember` for the dialog's open/edited state — what it used to be — is
+     *  destroyed and rebuilt from scratch on that round-trip, silently discarding whatever the user
+     *  had typed and even closing the dialog outright. */
+    data class CalibreSingleDraft(
+        val file: PutioFile,
+        val title: String,
+        val author: String,
+        val uuid: String = "",
+        val comments: String = "",
+        val tags: String = "",
+        val archiveMode: String = "default",
+        val assembleBook: Boolean = false,
+        val isAltVersion: Boolean = false,
+        val isProtected: Boolean = false,
+    )
+
+    private val _calibreSingleDraft = MutableStateFlow<CalibreSingleDraft?>(null)
+    val calibreSingleDraft: StateFlow<CalibreSingleDraft?> = _calibreSingleDraft.asStateFlow()
+
+    fun startCalibreSingleDraft(file: PutioFile) {
+        val (title, author) = MetadataUtils.extractMetadata(file.displayName)
+        _calibreSingleDraft.value = CalibreSingleDraft(file = file, title = title, author = author)
+    }
+
+    fun updateCalibreSingleDraft(transform: (CalibreSingleDraft) -> CalibreSingleDraft) {
+        _calibreSingleDraft.value = _calibreSingleDraft.value?.let(transform)
+    }
+
+    fun dismissCalibreSingleDraft() {
+        _calibreSingleDraft.value = null
     }
 
     /** Re-fetches the live current PutioFile for a synced stub (its put.io ID drifts whenever the
@@ -402,8 +438,11 @@ class FilesViewModel @Inject constructor(
 
     // Counts in-flight "send to Calibre" pack operations (resolving/uploading files before
     // the transfer row exists), so the UI can show an animation during that otherwise-silent gap.
-    private val _pendingTransferPreparations = MutableStateFlow(0)
-    val isPreparingTransfer: StateFlow<Boolean> = _pendingTransferPreparations
+    // Backed by CalibreRepository (not local state) — the dispatch coroutine itself runs on an
+    // app-scoped CoroutineScope (see trackTransferPreparation below) so it survives navigating
+    // away from the Files screen that started it, and this state needs to reflect that to
+    // whichever FilesViewModel instance is current, not just the one that started it.
+    val isPreparingTransfer: StateFlow<Boolean> = calibreRepository.pendingTransferPreparations
         .map { it > 0 }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
@@ -411,13 +450,7 @@ class FilesViewModel @Inject constructor(
     // CalibreRepository (not local state) so TransferPrepareService can observe it too.
     val transferPreparationProgress: StateFlow<Pair<Int, Int>?> = calibreRepository.prepareProgress
 
-    // Overrides the generic "Preparing files for Calibre…" banner text (FilesScreen.kt) for
-    // whichever flow is currently driving _pendingTransferPreparations — e.g. sendBatchToCalibre
-    // sets this to a "Sending…" label for its dispatch loop, since by then most items were
-    // already resolved via prefetchBatchLocalPaths and "Preparing" would misleadingly suggest
-    // resolution is starting over from scratch.
-    private val _transferPreparationLabel = MutableStateFlow("Preparing files for Calibre…")
-    val transferPreparationLabel: StateFlow<String> = _transferPreparationLabel.asStateFlow()
+    val transferPreparationLabel: StateFlow<String> = calibreRepository.transferPreparationLabel
 
     private inline fun trackTransferPreparation(crossinline block: () -> Job): Job {
         // Foreground the process for the duration of this operation — otherwise Android can
@@ -428,23 +461,14 @@ class FilesViewModel @Inject constructor(
         // change, not from a separate .value read afterwards — two overlapping preparations
         // racing that read-then-branch could otherwise miss the transition back to zero and
         // leave the service (and its notification) running forever with nothing left to stop it.
-        var wasIdle = false
-        _pendingTransferPreparations.update { current ->
-            wasIdle = current == 0
-            current + 1
-        }
+        val wasIdle = calibreRepository.incrementPendingTransferPreparations()
         if (wasIdle) {
             com.damarquez.putz.sync.TransferPrepareService.start(context)
         }
         val job = block()
         job.invokeOnCompletion {
             calibreRepository.updatePrepareProgress(null)
-            var isNowIdle = false
-            _pendingTransferPreparations.update { current ->
-                val next = current - 1
-                isNowIdle = next == 0
-                next
-            }
+            val isNowIdle = calibreRepository.decrementPendingTransferPreparations()
             if (isNowIdle) {
                 com.damarquez.putz.sync.TransferPrepareService.stop(context)
             }
@@ -1133,9 +1157,9 @@ class FilesViewModel @Inject constructor(
      *  confirmation sheet opened, while the user was still reviewing titles/authors/tags — so this
      *  mainly just has to catch up on whichever items hadn't finished resolving yet. */
     fun sendBatchToCalibre(items: List<CalibreBatchDraftItem>) {
-        trackTransferPreparation { viewModelScope.launch {
+        trackTransferPreparation { appScope.launch {
             _snackbarMessage.value = "Sending ${items.size} book${if (items.size == 1) "" else "s"}..."
-            _transferPreparationLabel.value = "Sending to Calibre…"
+            calibreRepository.setTransferPreparationLabel("Sending to Calibre…")
 
             try {
                 val baseAddedAt = System.currentTimeMillis()
@@ -1169,13 +1193,13 @@ class FilesViewModel @Inject constructor(
                     }
                 }
             } finally {
-                _transferPreparationLabel.value = "Preparing files for Calibre…"
+                calibreRepository.setTransferPreparationLabel("Preparing files for Calibre…")
             }
         } }
     }
 
     fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null) {
-        trackTransferPreparation { viewModelScope.launch {
+        trackTransferPreparation { appScope.launch {
             sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, tags, preresolvedLocalPath)
         } }
     }
@@ -1618,7 +1642,7 @@ class FilesViewModel @Inject constructor(
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
     ) {
-        trackTransferPreparation { viewModelScope.launch {
+        trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1702,7 +1726,7 @@ class FilesViewModel @Inject constructor(
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
     ) {
-        trackTransferPreparation { viewModelScope.launch {
+        trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1815,7 +1839,7 @@ class FilesViewModel @Inject constructor(
         overrideUuid: String? = null, overrideTags: String? = null,
         overrideProtected: Boolean? = null,
     ) {
-        trackTransferPreparation { viewModelScope.launch {
+        trackTransferPreparation { appScope.launch {
             calibreRepository.markAssemblyAppendPending(assemblyFileId)
             try {
                 val putioToken = settingsRepository.authTokenFlow.first()

@@ -318,8 +318,8 @@ fun FilesScreen(
     var selectedMovieFolderPath by remember { mutableStateOf("") }
     val movieBrowserState by viewModel.movieBrowserState.collectAsState()
 
-    // Single-file Calibre send
-    var selectedFileForCalibre by remember { mutableStateOf<PutioFile?>(null) }
+    // Single-file Calibre send — ViewModel-backed; see FilesViewModel.calibreSingleDraft for why.
+    val calibreSingleDraft by viewModel.calibreSingleDraft.collectAsState()
     var selectedFileForCover by remember { mutableStateOf<PutioFile?>(null) }
     // Audiobook pack flow
     var audiobookPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
@@ -366,7 +366,7 @@ fun FilesScreen(
         if (destinationAssembly != null) return@LaunchedEffect
         if (pendingAssemblies.isEmpty()) {
             when (pd) {
-                is PendingDestination.Single -> selectedFileForCalibre = pd.file
+                is PendingDestination.Single -> viewModel.startCalibreSingleDraft(pd.file)
                 is PendingDestination.Pack -> when (pd.type) {
                     "PACK" -> selectedPackFiles = pd.files
                     "PDF_PACK" -> selectedPdfFiles = pd.files
@@ -389,7 +389,7 @@ fun FilesScreen(
         val candidates = pendingAssemblies
         fun dispatchToNew() {
             when (pd) {
-                is PendingDestination.Single -> selectedFileForCalibre = pd.file
+                is PendingDestination.Single -> viewModel.startCalibreSingleDraft(pd.file)
                 is PendingDestination.Pack -> when (pd.type) {
                     "PACK" -> selectedPackFiles = pd.files
                     "PDF_PACK" -> selectedPdfFiles = pd.files
@@ -504,8 +504,9 @@ fun FilesScreen(
     val isRoot = viewModel.parentId == 0L
     val folderName = viewModel.folderName
 
-    if (selectedFileForCalibre != null) {
-        val singleFile = selectedFileForCalibre!!
+    if (calibreSingleDraft != null) {
+        val draft = calibreSingleDraft!!
+        val singleFile = draft.file
         // The file may come from a cached folder listing that's stale by days/weeks if this
         // folder hasn't been pull-to-refreshed — and a synced stub's put.io ID drifts every time
         // the daemon re-syncs it (see FilesViewModel.startCalibreBatchDraft for the full story).
@@ -514,22 +515,37 @@ fun FilesScreen(
         LaunchedEffect(singleFile.id, singleFile.name) {
             if (singleFile.isSynced) {
                 val fresh = viewModel.resolveFreshSyncedFile(singleFile)
-                if (fresh != singleFile) selectedFileForCalibre = fresh
+                if (fresh != singleFile) viewModel.updateCalibreSingleDraft { it.copy(file = fresh) }
             }
-        }
-        val (initialTitle, initialAuthor) = remember(singleFile) {
-            MetadataUtils.extractMetadata(singleFile.displayName)
         }
         val sizeProgress = rememberSizeProgress(listOf(singleFile)) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = singleFile.displayName,
-            initialTitle = initialTitle,
-            initialAuthor = initialAuthor,
+            initialTitle = draft.title,
+            initialAuthor = draft.author,
+            initialUuid = draft.uuid,
+            initialComments = draft.comments,
+            initialTags = draft.tags,
             onPreview = { viewModel.previewFile(singleFile) },
-            onDismiss = { selectedFileForCalibre = null },
+            onDismiss = { viewModel.dismissCalibreSingleDraft() },
             onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
                 viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, tags)
-                selectedFileForCalibre = null
+                viewModel.dismissCalibreSingleDraft()
+            },
+            onDraftFieldsChanged = { title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected ->
+                viewModel.updateCalibreSingleDraft {
+                    it.copy(
+                        title = title,
+                        author = author,
+                        uuid = uuid,
+                        comments = comments,
+                        tags = tags,
+                        archiveMode = archiveMode,
+                        assembleBook = assembleBook,
+                        isAltVersion = isAltVersion,
+                        isProtected = isProtected,
+                    )
+                }
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
