@@ -32,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.ui.components.StorageBar
+import com.damarquez.putz.ui.components.formatDiskSize
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
@@ -41,19 +43,47 @@ import com.google.api.services.drive.DriveScopes
 @Composable
 fun SettingsAccountScreen(
     onNavigateUp: () -> Unit,
+    onSignOutOfPutio: () -> Unit,
     viewModel: SettingsViewModel,
 ) {
+    val accountInfo by viewModel.accountInfo.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
     val googleWebClientId by viewModel.googleWebClientId.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showGoogleSignOutConfirm by remember { mutableStateOf(false) }
+    var showPutioSignOutConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.onSnackbarShown()
         }
+    }
+
+    if (showPutioSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showPutioSignOutConfirm = false },
+            title = { Text("Sign out") },
+            text = { Text("Are you sure you want to sign out of Putz?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showPutioSignOutConfirm = false
+                        viewModel.signOutOfPutio()
+                        onSignOutOfPutio()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Sign out")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPutioSignOutConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (showGoogleSignOutConfirm) {
@@ -122,6 +152,44 @@ fun SettingsAccountScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            SettingsSectionHeader("put.io Account")
+            accountInfo?.let { info ->
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    Text(text = info.username, style = MaterialTheme.typography.bodyMedium)
+                    if (!info.mail.isNullOrBlank()) {
+                        Text(
+                            text = info.mail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    val subtitle = when {
+                        info.diskQuota > 0 -> "${formatDiskSize(info.diskAvail)} of ${formatDiskSize(info.diskQuota)} free"
+                        info.diskUsed > 0 -> "${formatDiskSize(info.diskUsed)} used, quota unknown"
+                        else -> null
+                    }
+                    subtitle?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    StorageBar(
+                        usedPercent = info.diskUsedPercent,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+            ButtonRow(
+                label = "Sign out",
+                onClick = { showPutioSignOutConfirm = true },
+                isError = true,
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
             SettingsSectionHeader("Google Account")
             if (googleAccount.isBlank()) {
                 ButtonRow(

@@ -339,11 +339,6 @@ fun AppNavGraph(
                     onNavigateToTrash = { navController.navigate(Screen.Trash.route) },
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                    onSignOut = {
-                        navController.navigate(Screen.Auth.route) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    },
                     viewModel = hiltViewModel(),
                     syncViewModel = syncViewModel,
                 )
@@ -478,6 +473,11 @@ fun AppNavGraph(
             composable(Screen.SettingsAccount.route) {
                 SettingsAccountScreen(
                     onNavigateUp = { navController.navigateUp() },
+                    onSignOutOfPutio = {
+                        navController.navigate(Screen.Auth.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
                     viewModel = hiltViewModel(),
                 )
             }

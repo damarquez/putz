@@ -2242,8 +2242,6 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    fun signOut() = settingsRepository.clearAuth()
-
     fun openPlexFolderPicker() {
         viewModelScope.launch {
             val connectionId = settingsRepository.plexLibraryLanConnectionIdFlow.first()

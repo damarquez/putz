@@ -24,14 +24,13 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LibraryAdd
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +63,7 @@ import com.damarquez.putz.data.model.PutioFile
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.ui.components.ErrorView
 import com.damarquez.putz.ui.components.FileItem
+import com.damarquez.putz.ui.components.formatDiskSize
 import com.damarquez.putz.ui.components.transientVerticalScrollbar
 import com.damarquez.putz.ui.navigation.Screen
 import com.damarquez.putz.util.MetadataUtils
@@ -118,7 +118,6 @@ fun FilesScreen(
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onSignOut: () -> Unit,
     viewModel: FilesViewModel,
     syncViewModel: GlobalSyncViewModel,
 ) {
@@ -164,7 +163,6 @@ fun FilesScreen(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var showMenu by remember { mutableStateOf(false) }
     val selectedFiles by viewModel.selectedFiles.collectAsState()
     val isSelectionMode = selectedFiles.isNotEmpty()
     // CONTRACT: selection-type invariant — "regular remote" (dimmed, undownloaded) files have no
@@ -178,7 +176,6 @@ fun FilesScreen(
     var fileDetailsLoading by remember { mutableStateOf(false) }
     var renameValue by remember { mutableStateOf("") }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
-    var showSignOutConfirm by remember { mutableStateOf(false) }
     val isInHiddenScope = viewModel.isInHiddenScope
 
     val listState = rememberLazyListState()
@@ -220,31 +217,6 @@ fun FilesScreen(
         } else if (isSearchMode) {
             viewModel.toggleSearch()
         }
-    }
-
-    if (showSignOutConfirm) {
-        AlertDialog(
-            onDismissRequest = { showSignOutConfirm = false },
-            title = { Text("Sign out") },
-            text = { Text("Are you sure you want to sign out of Putz?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSignOutConfirm = false
-                        viewModel.signOut()
-                        onSignOut()
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Sign out")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSignOutConfirm = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
     }
 
     LaunchedEffect(snackbarMessage) {
@@ -1575,59 +1547,15 @@ fun FilesScreen(
                                     IconButton(onClick = { viewModel.loadFiles(isRefresh = true) }) {
                                         Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                    Box {
-                                        IconButton(onClick = { showMenu = true }) {
-                                            BadgedBox(
-                                                badge = {
-                                                    if (libraryHasUpdates) {
-                                                        Badge()
-                                                    }
+                                    IconButton(onClick = onNavigateToSettings) {
+                                        BadgedBox(
+                                            badge = {
+                                                if (libraryHasUpdates) {
+                                                    Badge()
                                                 }
-                                            ) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
-                                        }
-                                        DropdownMenu(
-                                            expanded = showMenu,
-                                            onDismissRequest = { showMenu = false },
                                         ) {
-                                            accountInfo?.let { info ->
-                                                DropdownMenuItem(
-                                                    text = {
-                                                        Column {
-                                                            Text(
-                                                                text = info.username,
-                                                                style = MaterialTheme.typography.bodyMedium,
-                                                            )
-                                                            Text(
-                                                                text = info.mail ?: "",
-                                                                style = MaterialTheme.typography.bodySmall,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            )
-                                                            StorageBar(
-                                                                usedPercent = info.diskUsedPercent,
-                                                                modifier = Modifier.padding(top = 6.dp),
-                                                            )
-                                                        }
-                                                    },
-                                                    onClick = {},
-                                                )
-                                                HorizontalDivider()
-                                            }
-                                            DropdownMenuItem(
-                                                text = { Text("Settings") },
-                                                onClick = {
-                                                    showMenu = false
-                                                    onNavigateToSettings()
-                                                },
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
-                                                onClick = {
-                                                    showMenu = false
-                                                    showSignOutConfirm = true
-                                                },
-                                            )
+                                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
@@ -1896,29 +1824,6 @@ private sealed class PendingDestination {
         val outputFormat: MergeOutputFormat,
         val groups: List<MergeCandidateGroup>,
     ) : PendingDestination()
-}
-
-private fun formatDiskSize(bytes: Long): String = when {
-    bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)
-    bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
-    bytes >= 1_000L -> "%.1f KB".format(bytes / 1_000.0)
-    else -> "$bytes B"
-}
-
-@Composable
-private fun StorageBar(usedPercent: Float, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.width(180.dp)) {
-        LinearProgressIndicator(
-            progress = { usedPercent.coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            text = "%.0f%% used".format(usedPercent * 100),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 2.dp),
-        )
-    }
 }
 
 private fun formatFileSize(bytes: Long): String = when {

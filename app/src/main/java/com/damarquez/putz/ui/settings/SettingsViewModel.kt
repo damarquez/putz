@@ -3,6 +3,9 @@ package com.damarquez.putz.ui.settings
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.damarquez.putz.data.model.AccountInfo
+import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.data.repository.LanFilesRepository
 import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
@@ -29,7 +32,11 @@ class SettingsViewModel @Inject constructor(
     private val lanFilesRepository: LanFilesRepository,
     private val lanDaemonTransport: LanDaemonTransport,
     private val appUpdateManager: AppUpdateManager,
+    private val filesRepository: FilesRepository,
 ) : AndroidViewModel(application) {
+
+    private val _accountInfo = MutableStateFlow<AccountInfo?>(null)
+    val accountInfo: StateFlow<AccountInfo?> = _accountInfo.asStateFlow()
 
     val appCategory = settingsRepository.appCategoryFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppCategory.NORMAL)
@@ -94,11 +101,20 @@ class SettingsViewModel @Inject constructor(
             _daemonLanApiKey.value = settingsRepository.lanApiKeyFlow.first()
             _jackettBaseUrl.value = settingsRepository.jackettBaseUrlFlow.first()
             _jackettApiKey.value = settingsRepository.jackettApiKeyFlow.first()
+            val token = settingsRepository.authTokenFlow.first()
+            val result = filesRepository.getAccountInfo(token)
+            if (result is NetworkResult.Success) {
+                _accountInfo.value = result.data
+            }
         }
     }
 
     fun onJackettBaseUrlChange(v: String) { _jackettBaseUrl.value = v }
     fun onJackettApiKeyChange(v: String) { _jackettApiKey.value = v }
+
+    /** Signs out of the put.io account (the main app login) — distinct from the Google account
+     *  used for Drive/Calibre features above. */
+    fun signOutOfPutio() = settingsRepository.clearAuth()
 
     fun saveJackettSettings() {
         viewModelScope.launch {
