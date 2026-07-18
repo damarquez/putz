@@ -80,8 +80,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -98,10 +96,6 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import com.damarquez.putz.ui.GlobalSyncViewModel
 import com.damarquez.putz.ui.files.FilesUiState
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -111,7 +105,6 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material3.NavigationRailItemDefaults
 import com.damarquez.putz.ui.viewer.ViewerKind
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1272,63 +1265,6 @@ fun FilesScreen(
         )
     }
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        NavigationRail(
-            modifier = Modifier.width(54.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            val railColors = NavigationRailItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                indicatorColor = Color.Transparent,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            NavigationRailItem(
-                selected = currentTab == FilesTab.CLOUD,
-                onClick = {
-                    if (viewModel.parentId != 0L) {
-                        onNavigateToFolder(0L, "Your Files", null, -1L, null, FilesTab.CLOUD.name)
-                    } else {
-                        viewModel.setTab(FilesTab.CLOUD)
-                    }
-                },
-                icon = {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(if (currentTab == FilesTab.CLOUD) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Cloud, contentDescription = "Cloud")
-                    }
-                },
-                colors = railColors,
-            )
-            NavigationRailItem(
-                selected = currentTab == FilesTab.SPECIAL,
-                onClick = {
-                    if (viewModel.parentId != 0L) {
-                        onNavigateToFolder(0L, "Your Files", null, -1L, null, FilesTab.SPECIAL.name)
-                    } else {
-                        viewModel.setTab(FilesTab.SPECIAL)
-                    }
-                },
-                icon = {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(if (currentTab == FilesTab.SPECIAL) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Storage, contentDescription = "Special Folders")
-                    }
-                },
-                colors = railColors,
-            )
-        }
-
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -1877,7 +1813,6 @@ fun FilesScreen(
             }
         }
     }
-}
 }
 
 /** Collects the transfer-preparation progress flows in its own small composable rather than at

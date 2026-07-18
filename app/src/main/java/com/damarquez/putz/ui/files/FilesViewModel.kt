@@ -173,14 +173,6 @@ class FilesViewModel @Inject constructor(
 
     private var rawApiFiles: List<PutioFile> = emptyList()
 
-    fun setTab(tab: FilesTab) {
-        if (_currentTab.value == tab && parentId == 0L) return
-        _currentTab.value = tab
-        if (parentId == 0L) {
-            loadFiles(isRefresh = true)
-        }
-    }
-
     val putioLocalLanConnectionId: StateFlow<Long?> = settingsRepository.putioLocalLanConnectionIdFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 

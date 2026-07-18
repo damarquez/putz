@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -30,6 +31,7 @@ import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.archive.ArchiveScreen
 import com.damarquez.putz.ui.auth.AuthScreen
 import com.damarquez.putz.ui.files.FilesScreen
+import com.damarquez.putz.ui.files.FilesTab
 import com.damarquez.putz.ui.search.SearchScreen
 import com.damarquez.putz.ui.settings.LanConnectionsScreen
 import com.damarquez.putz.ui.trash.TrashScreen
@@ -120,15 +122,22 @@ fun AppNavGraph(
                         currentRoute == Screen.CalibreTransfers.route ||
                         currentRoute == Screen.Archive.route
 
-    // Tab selection state
-    val filesSelected = currentRoute == Screen.Files.route || currentRoute == Screen.Archive.route
+    // The Files route carries which file-source tab it's showing (Cloud/put.io vs Special/LAN)
+    // as a query arg — the route template alone can't tell them apart, so read the live arg.
+    val currentTabArg = backStackEntry?.arguments?.getString(Screen.Files.ARG_TAB)
+
+    // Tab selection state. Archive has no tab of its own (reached from either source) and is
+    // treated as belonging to Cloud, matching the pre-split default.
+    val cloudSelected = currentRoute == Screen.Archive.route ||
+        (currentRoute == Screen.Files.route && currentTabArg != FilesTab.SPECIAL.name)
+    val specialSelected = currentRoute == Screen.Files.route && currentTabArg == FilesTab.SPECIAL.name
     val transfersSelected = currentRoute == Screen.Transfers.route
     val searchSelected = currentRoute == Screen.Search.route
     val calibreSelected = currentRoute == Screen.CalibreTransfers.route
 
-    // True when the current screen is a non-Files tab (Transfers, Search, Calibre).
+    // True when the current screen is a non-Files tab (Special, Transfers, Search, Calibre).
     // These are always at the top of the back stack — pop one entry to return to Files/Archive.
-    val isOnNonFilesTab = transfersSelected || searchSelected || calibreSelected
+    val isOnNonFilesTab = specialSelected || transfersSelected || searchSelected || calibreSelected
 
     Scaffold(
         bottomBar = {
@@ -139,9 +148,9 @@ fun AppNavGraph(
             ) {
                 NavigationBar {
                     NavigationBarItem(
-                        selected = filesSelected,
+                        selected = cloudSelected,
                         onClick = {
-                            if (filesSelected) {
+                            if (cloudSelected) {
                                 // Already on Files/Archive — tap again to pop back to root
                                 navController.popBackStack(
                                     route = Screen.Files.createRoute(0L, ROOT_FOLDER_NAME),
@@ -158,6 +167,23 @@ fun AppNavGraph(
                         label = { Text("Files") },
                     )
                     NavigationBarItem(
+                        selected = specialSelected,
+                        onClick = {
+                            if (specialSelected) {
+                                // Already on Special — tap again to pop back to its root
+                                navController.popBackStack(
+                                    route = Screen.Files.createRoute(0L, "Special", tab = FilesTab.SPECIAL.name),
+                                    inclusive = false,
+                                )
+                            } else {
+                                if (isOnNonFilesTab) navController.popBackStack()
+                                navController.navigate(Screen.Files.createRoute(0L, "Special", tab = FilesTab.SPECIAL.name))
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Storage, contentDescription = "Special") },
+                        label = { Text("Special") },
+                    )
+                    NavigationBarItem(
                         selected = transfersSelected,
                         onClick = {
                             if (!transfersSelected) {
@@ -168,8 +194,8 @@ fun AppNavGraph(
                                 }
                             }
                         },
-                        icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Transfers") },
-                        label = { Text("Put.io Transfers") },
+                        icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Torrents") },
+                        label = { Text("Torrents") },
                     )
                     NavigationBarItem(
                         selected = searchSelected,
@@ -181,8 +207,8 @@ fun AppNavGraph(
                                 }
                             }
                         },
-                        icon = { Icon(Icons.Default.TravelExplore, contentDescription = "Find Content") },
-                        label = { Text("Find Content") },
+                        icon = { Icon(Icons.Default.TravelExplore, contentDescription = "Content") },
+                        label = { Text("Content") },
                     )
                     NavigationBarItem(
                         selected = calibreSelected,
@@ -205,7 +231,7 @@ fun AppNavGraph(
                                 Icon(Icons.Default.Book, contentDescription = "Calibre")
                             }
                         },
-                        label = { Text("Calibre Transfers") },
+                        label = { Text("Calibre") },
                     )
                 }
             }
