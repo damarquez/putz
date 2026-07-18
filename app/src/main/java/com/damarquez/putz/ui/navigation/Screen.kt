@@ -91,6 +91,12 @@ sealed class Screen(val route: String) {
     data object Trash : Screen("trash")
 
     data object Settings : Screen("settings")
+    data object SettingsAppearance : Screen("settings_appearance")
+    data object SettingsAccount : Screen("settings_account")
+    data object SettingsLibraries : Screen("settings_libraries")
+    data object SettingsDaemon : Screen("settings_daemon")
+    data object SettingsSearch : Screen("settings_search")
+    data object SettingsAbout : Screen("settings_about")
     data object CalibreTransfers : Screen("calibre_transfers")
     data object LanConnections : Screen("lan_connections")
     data object TransferHistory : Screen("transfer_history")

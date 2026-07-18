@@ -34,6 +34,12 @@ import com.damarquez.putz.ui.search.SearchScreen
 import com.damarquez.putz.ui.settings.LanConnectionsScreen
 import com.damarquez.putz.ui.trash.TrashScreen
 import com.damarquez.putz.ui.settings.SettingsScreen
+import com.damarquez.putz.ui.settings.SettingsAboutScreen
+import com.damarquez.putz.ui.settings.SettingsAccountScreen
+import com.damarquez.putz.ui.settings.SettingsAppearanceScreen
+import com.damarquez.putz.ui.settings.SettingsDaemonScreen
+import com.damarquez.putz.ui.settings.SettingsLibrariesScreen
+import com.damarquez.putz.ui.settings.SettingsSearchScreen
 import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
 import com.damarquez.putz.ui.transfers.TransferHistoryScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
@@ -427,8 +433,55 @@ fun AppNavGraph(
             composable(Screen.Settings.route) {
                 SettingsScreen(
                     onNavigateUp = { navController.navigateUp() },
+                    onNavigateToAppearance = { navController.navigate(Screen.SettingsAppearance.route) },
+                    onNavigateToAccount = { navController.navigate(Screen.SettingsAccount.route) },
+                    onNavigateToLibraries = { navController.navigate(Screen.SettingsLibraries.route) },
+                    onNavigateToDaemon = { navController.navigate(Screen.SettingsDaemon.route) },
+                    onNavigateToSearch = { navController.navigate(Screen.SettingsSearch.route) },
+                    onNavigateToAbout = { navController.navigate(Screen.SettingsAbout.route) },
+                )
+            }
+
+            composable(Screen.SettingsAppearance.route) {
+                SettingsAppearanceScreen(
+                    onNavigateUp = { navController.navigateUp() },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.SettingsAccount.route) {
+                SettingsAccountScreen(
+                    onNavigateUp = { navController.navigateUp() },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.SettingsLibraries.route) {
+                SettingsLibrariesScreen(
+                    onNavigateUp = { navController.navigateUp() },
                     onNavigateToCalibreTransfers = { navController.navigate(Screen.CalibreTransfers.route) },
                     onNavigateToLanConnections = { navController.navigate(Screen.LanConnections.route) },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.SettingsDaemon.route) {
+                SettingsDaemonScreen(
+                    onNavigateUp = { navController.navigateUp() },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.SettingsSearch.route) {
+                SettingsSearchScreen(
+                    onNavigateUp = { navController.navigateUp() },
+                    viewModel = hiltViewModel(),
+                )
+            }
+
+            composable(Screen.SettingsAbout.route) {
+                SettingsAboutScreen(
+                    onNavigateUp = { navController.navigateUp() },
                     viewModel = hiltViewModel(),
                 )
             }
