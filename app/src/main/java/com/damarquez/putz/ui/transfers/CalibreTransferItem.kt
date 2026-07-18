@@ -146,7 +146,7 @@ fun CalibreTransferItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .combinedClickable(
                 onClick = { onTap?.invoke() },
                 onLongClick = {
@@ -159,7 +159,7 @@ fun CalibreTransferItem(
     ) {
         Row(
             modifier = Modifier
-                .padding(16.dp)
+                .padding(8.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.Top
         ) {
