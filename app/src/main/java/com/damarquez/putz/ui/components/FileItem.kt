@@ -135,6 +135,7 @@ fun FileItem(
     isSelectable: Boolean = true,
     selectionCount: Int = 0,
     onSelectNextN: () -> Unit = {},
+    onUnselectAllAndSelectNextN: () -> Unit = {},
     onUnselectBeforeHere: () -> Unit = {},
     onUnselectFromHere: () -> Unit = {},
     onReverseSelection: () -> Unit = {},
@@ -727,6 +728,13 @@ fun FileItem(
                 onClick = {
                     showSelectionMenu = false
                     onSelectNextN()
+                },
+            )
+            TightMenuItem(
+                text = { Text("Unselect all and select next $selectionCount") },
+                onClick = {
+                    showSelectionMenu = false
+                    onUnselectAllAndSelectNextN()
                 },
             )
             TightMenuItem(

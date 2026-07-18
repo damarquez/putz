@@ -1653,6 +1653,25 @@ fun FilesScreen(
                                             }
                                             viewModel.setSelectedFiles(selectedFiles + file + nextBatch)
                                         },
+                                        onUnselectAllAndSelectNextN = {
+                                            // Clears the current selection entirely, then selects
+                                            // the long-pressed item plus the next N-1 items after
+                                            // it in this list, where N is how many were selected
+                                            // before clearing. Unlike onSelectNextN (which extends
+                                            // an existing selection and inherits its type), the new
+                                            // selection's type is anchored to the long-pressed file
+                                            // itself since the old selection no longer exists.
+                                            val n = selectedFiles.size
+                                            val index = files.indexOf(file)
+                                            val batch = if (index == -1) {
+                                                listOf(file)
+                                            } else {
+                                                files.subList(index, files.size)
+                                                    .filter { it.isRegularRemote == file.isRegularRemote }
+                                                    .take(n)
+                                            }
+                                            viewModel.setSelectedFiles(batch.toSet())
+                                        },
                                         onUnselectBeforeHere = {
                                             // Unselects everything above the long-pressed item in
                                             // this list, leaving the item itself and everything
