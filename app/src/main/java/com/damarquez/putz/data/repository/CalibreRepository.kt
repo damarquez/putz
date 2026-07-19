@@ -272,6 +272,16 @@ data class ManageVirtualLibraryRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: RENAME_AUTHOR
+@Serializable
+data class RenameAuthorRequest(
+    val action: String = "RENAME_AUTHOR",
+    val putio_file_id: Long,
+    val author_id: Long,
+    val new_name: String,
+    val app_id: String? = null,
+)
+
 @Serializable
 data class GlobalStatusProbeRequest(
     val action: String = "GLOBAL_STATUS_PROBE",
@@ -1694,6 +1704,36 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             transferType = "MANAGE_VL",
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: RENAME_AUTHOR
+    suspend fun sendRenameAuthorRequest(
+        request: RenameAuthorRequest,
+        googleAccount: String,
+    ) {
+        val appId = settingsRepository.getOrCreateAppId()
+        val jsonStr = json.encodeToString(request.copy(app_id = appId))
+        val displayName = "Rename author → \"${request.new_name}\""
+        val gDriveId = daemonTransport.submitRequest(
+            googleAccount,
+            "req_rename_author_${request.putio_file_id}.json",
+            jsonStr,
+        )
+        val transfer = CalibreTransferEntity(
+            putioFileId = request.putio_file_id,
+            fileName = displayName,
+            title = displayName,
+            author = "",
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = request.putio_file_id.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            transferType = "RENAME_AUTHOR",
             lastRequestPayload = jsonStr,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }

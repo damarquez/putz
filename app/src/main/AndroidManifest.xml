@@ -189,6 +189,20 @@
             </intent-filter>
         </activity>
 
+        <!-- CONTRACT: RENAME_AUTHOR — receives rename/merge-author intents from CalibreAnywhere -->
+        <activity
+            android:name=".ui.authors.RenameAuthorActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Putz">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="rename_author" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".sync.TransferDeleteService"
             android:exported="false"
