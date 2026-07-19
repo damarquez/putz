@@ -19,10 +19,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -42,7 +45,10 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
@@ -55,6 +61,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -106,6 +115,15 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val transfers by viewModel.transfers.collectAsState()
+    val filteredTransfers by viewModel.filteredTransfers.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    var isSearchActive by remember { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) runCatching { searchFocusRequester.requestFocus() }
+        else viewModel.setSearchQuery("")
+    }
     val completedTransferRefs = remember(transfers) {
         transfers
             .filter { it.status == CalibreTransferStatus.COMPLETED && it.calibreBookUuid != null }
@@ -501,58 +519,103 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { 
-                    Column {
-                        Text("Calibre Transfers")
-                        daemonStatus?.let { status ->
-                            val isIdle = status.equals("IDLE", ignoreCase = true)
-                            Text(
-                                text = "Daemon: ${if (isIdle) "Idle" else "Running"}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isIdle)
-                                    MaterialTheme.colorScheme.outline 
-                                else 
-                                    com.damarquez.putz.ui.theme.SuccessGreen
-                            )
+            if (isSearchActive) {
+                TopAppBar(
+                    title = {
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.setSearchQuery(it) },
+                            placeholder = { Text("Search transfers…") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(searchFocusRequester),
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {}),
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { isSearchActive = false }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
                         }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateUp) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    if (greenTransfers.isNotEmpty()) {
-                        IconButton(onClick = {
-                            clearGreenAlsoDelete = false
-                            showClearGreenDialog = true
-                        }) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = "Clear verified transfers")
-                        }
-                    }
-
-                    IconButton(
-                        onClick = { viewModel.requestSync() },
-                        enabled = !isSyncing && isGoogleSignedIn
-                    ) {
-                        BadgedBox(
-                            badge = {
-                                if (libraryHasUpdates) {
-                                    Badge()
-                                }
+                    },
+                    actions = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
                             }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("Calibre Transfers")
+                            daemonStatus?.let { status ->
+                                val isIdle = status.equals("IDLE", ignoreCase = true)
+                                Text(
+                                    text = "Daemon: ${if (isIdle) "Idle" else "Running"}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isIdle)
+                                        MaterialTheme.colorScheme.outline
+                                    else
+                                        com.damarquez.putz.ui.theme.SuccessGreen
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateUp) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        if (transfers.isNotEmpty()) {
+                            IconButton(onClick = { isSearchActive = true }) {
+                                Icon(Icons.Default.Search, contentDescription = "Search transfers")
+                            }
+                        }
+
+                        if (greenTransfers.isNotEmpty()) {
+                            IconButton(onClick = {
+                                clearGreenAlsoDelete = false
+                                showClearGreenDialog = true
+                            }) {
+                                Icon(Icons.Default.DeleteSweep, contentDescription = "Clear verified transfers")
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { viewModel.requestSync() },
+                            enabled = !isSyncing && isGoogleSignedIn
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = "Sync metadata.db",
-                                modifier = if (isSyncing) Modifier.rotate(rotation) else Modifier
-                            )
+                            BadgedBox(
+                                badge = {
+                                    if (libraryHasUpdates) {
+                                        Badge()
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sync metadata.db",
+                                    modifier = if (isSyncing) Modifier.rotate(rotation) else Modifier
+                                )
+                            }
                         }
                     }
-                }
-            )
+                )
+            }
         }
     ) { paddingValues ->
         Box(
@@ -573,10 +636,23 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                         modifier = Modifier.padding(24.dp)
                     )
                 }
+            } else if (searchQuery.isNotBlank() && filteredTransfers.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No transfers match \"$searchQuery\"",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(24.dp)
+                    )
+                }
             } else {
                 // distinctBy guards against a duplicate putioFileId from upstream crashing
                 // LazyColumn with "Key already used" (putioFileId is used as the item key below).
-                val dedupedTransfers = transfers.distinctBy { it.putioFileId }
+                val dedupedTransfers = filteredTransfers.distinctBy { it.putioFileId }
                 val activeTransfers = dedupedTransfers.filter { it.status != CalibreTransferStatus.COMPLETED }
                 val completedTransfers = dedupedTransfers.filter { it.status == CalibreTransferStatus.COMPLETED }
 

@@ -21,10 +21,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.File
 import javax.inject.Inject
 
@@ -39,6 +42,23 @@ class CalibreTransfersViewModel @Inject constructor(
 
     val transfers: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    // CONTRACT: search matches against the transfer's full JSON (same serialization used by
+    // "Copy JSON" in CalibreTransferItem), so a query matches ANY field — title, author, uuid,
+    // status, error message, tags, batchData, etc. — not just a hand-picked subset.
+    val filteredTransfers: StateFlow<List<CalibreTransferEntity>> = combine(
+        transfers, _searchQuery
+    ) { list, query ->
+        if (query.isBlank()) return@combine list
+        list.filter { Json.encodeToString(it).contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val daemonStatus: StateFlow<String?> = settingsRepository.daemonStatusFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
