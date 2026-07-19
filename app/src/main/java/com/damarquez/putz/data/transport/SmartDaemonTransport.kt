@@ -53,7 +53,10 @@ class SmartDaemonTransport @Inject constructor(
 
     // CONTRACT: priority requests lane — always via Drive, since gdriveRequestId (the only handle
     // we keep on a pending request) is always a Drive file ID regardless of which transport
-    // originally submitted it.
+    // originally submitted it. If the request was actually delivered via LAN, the daemon's own
+    // priority poll detects the in-flight LAN copy and redirects the promotion internally — see
+    // putz_manager._claim_priority_requests — so this doesn't need to know or care which lane
+    // originally handled the request.
     override suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean =
         drive.promoteRequestToPriority(googleAccount, gdriveRequestId)
 

@@ -20,7 +20,10 @@ interface DaemonTransport {
 
     // CONTRACT: priority requests lane — promotes an already-submitted, not-yet-claimed request in
     // place by moving its Drive file into requests/priority/. No-op (returns false) over LAN, since
-    // a LAN-submitted request is already dispatched immediately and never sits queued.
+    // a LAN-submitted request is already dispatched immediately and never sits queued. If the Drive
+    // mirror copy of a LAN-submitted request gets promoted this way, the daemon's own priority poll
+    // detects the in-flight LAN copy and redirects the promotion internally — see
+    // putz_manager._claim_priority_requests — so no client-side LAN-specific handling is needed.
     suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean
 
     /** Return all pending responses for this app instance; each envelope contains the raw JSON and its delivery source. */
