@@ -28,8 +28,11 @@ class GDriveDaemonTransport @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun submitRequest(googleAccount: String, fileName: String, content: String): String? =
-        gDriveManager.uploadRequest(googleAccount, fileName, content)
+    override suspend fun submitRequest(googleAccount: String, fileName: String, content: String, isPriority: Boolean): String? =
+        gDriveManager.uploadRequest(googleAccount, fileName, content, isPriority)
+
+    override suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean =
+        gDriveManager.promoteRequestToPriority(googleAccount, gdriveRequestId)
 
     override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
         val files = gDriveManager.listResponses(googleAccount, appId)

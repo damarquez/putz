@@ -118,20 +118,28 @@ class GDriveManager @Inject constructor(
     }
 
     // CONTRACT: IPC transport
-    suspend fun uploadRequest(accountName: String, fileName: String, content: String): String? = withContext(Dispatchers.IO) {
+    // CONTRACT: priority requests lane — isPriority routes into requests/priority/ instead of
+    // requests/ itself; see CONTRACTS.md §17. The daemon drains that subfolder completely before
+    // ever looking at requests/, so anything placed there is dispatched ahead of everything else.
+    suspend fun uploadRequest(accountName: String, fileName: String, content: String, isPriority: Boolean = false): String? = withContext(Dispatchers.IO) {
         try {
-            Log.d("GDriveManager", "Uploading request $fileName for $accountName")
+            Log.d("GDriveManager", "Uploading request $fileName for $accountName (priority=$isPriority)")
             val service = getDriveService(accountName)
-            
+
             val libFolderId = getLibraryFolderId(service) ?: run {
                 Log.e("GDriveManager", "Could not find Calibre library root (metadata.db missing)")
                 return@withContext null
             }
 
-            val rootFolderId = findFolder(service, ".calibre_integration", libFolderId) 
+            val rootFolderId = findFolder(service, ".calibre_integration", libFolderId)
                 ?: createFolder(service, ".calibre_integration", libFolderId)
-            
+
             val requestsFolderId = findFolder(service, "requests", rootFolderId) ?: createFolder(service, "requests", rootFolderId)
+            val destinationFolderId = if (isPriority) {
+                findFolder(service, "priority", requestsFolderId) ?: createFolder(service, "priority", requestsFolderId)
+            } else {
+                requestsFolderId
+            }
 
             // Drive allows multiple files with the same name in one folder — files().create()
             // never replaces an existing one. Without this, every retry for the same book piles
@@ -139,10 +147,12 @@ class GDriveManager @Inject constructor(
             // the daemon works through each one independently over several minutes, so an old
             // failure can keep resurfacing and overwriting a newer, already-fixed request's
             // result. Trash any existing copies for this exact filename before uploading the
-            // new one so at most one live request per book/action survives at a time.
+            // new one so at most one live request per book/action survives at a time. Checks both
+            // requests/ and requests/priority/ — a retry or a promote could otherwise leave a
+            // stale copy behind in whichever folder it isn't landing in this time.
             try {
                 val existing = service.files().list()
-                    .setQ("name = '$fileName' and '$requestsFolderId' in parents and trashed = false")
+                    .setQ("name = '$fileName' and trashed = false and ('$requestsFolderId' in parents or '$destinationFolderId' in parents)")
                     .setFields("files(id)")
                     .execute()
                 existing.files?.forEach { stale ->
@@ -158,7 +168,7 @@ class GDriveManager @Inject constructor(
             val uploaded = try {
                 val metadata = com.google.api.services.drive.model.File().apply {
                     name = fileName
-                    parents = listOf(requestsFolderId)
+                    parents = listOf(destinationFolderId)
                 }
                 val mediaContent = FileContent("application/json", tempFile)
                 service.files().create(metadata, mediaContent).setFields("id").execute()
@@ -307,6 +317,39 @@ class GDriveManager @Inject constructor(
             true
         } catch (e: Exception) {
             Log.e("GDriveManager", "downloadFileToDisk: FAILED for fileId=$fileId", e)
+            false
+        }
+    }
+
+    // CONTRACT: priority requests lane — promotes an already-submitted, not-yet-claimed request
+    // in place by reparenting it from requests/ to requests/priority/ (same file ID, so the
+    // locally-cached gdriveRequestId stays valid). If the daemon already claimed the request
+    // before this lands, the move has no effect — the daemon works off the file ID it claimed,
+    // not folder membership — so this is safe to call without checking daemon state first.
+    suspend fun promoteRequestToPriority(accountName: String, fileId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val service = getDriveService(accountName)
+            val libFolderId = getLibraryFolderId(service) ?: return@withContext false
+            val rootFolderId = findFolder(service, ".calibre_integration", libFolderId) ?: return@withContext false
+            val requestsFolderId = findFolder(service, "requests", rootFolderId) ?: return@withContext false
+            val priorityFolderId = findFolder(service, "priority", requestsFolderId)
+                ?: createFolder(service, "priority", requestsFolderId)
+
+            service.files().update(fileId, null)
+                .setAddParents(priorityFolderId)
+                .setRemoveParents(requestsFolderId)
+                .setFields("id, parents")
+                .execute()
+            Log.d("GDriveManager", "promoteRequestToPriority: moved $fileId into priority")
+            true
+        } catch (e: Exception) {
+            val isAlreadyGone = (e as? com.google.api.client.googleapis.json.GoogleJsonResponseException)?.statusCode == 404
+            if (isAlreadyGone) {
+                // Already claimed and deleted/trashed by the daemon — nothing to promote.
+                Log.d("GDriveManager", "promoteRequestToPriority: $fileId already gone (404), treating as no-op")
+            } else {
+                Log.e("GDriveManager", "promoteRequestToPriority: FAILED for $fileId", e)
+            }
             false
         }
     }

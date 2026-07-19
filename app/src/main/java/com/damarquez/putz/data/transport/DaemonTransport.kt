@@ -13,8 +13,15 @@ import java.io.File
  *  - [SmartDaemonTransport] — dual-write + fallback; always returns a Drive file ID for DB storage
  */
 interface DaemonTransport {
-    /** Upload a request JSON; returns the Drive file ID (used in DB as gdriveRequestId), or null on failure. */
-    suspend fun submitRequest(googleAccount: String, fileName: String, content: String): String?
+    /** Upload a request JSON; returns the Drive file ID (used in DB as gdriveRequestId), or null on
+     *  failure. [isPriority] routes it into the daemon's priority lane (see CONTRACTS.md §17) — no
+     *  effect over the LAN path, since that's already dispatched immediately regardless. */
+    suspend fun submitRequest(googleAccount: String, fileName: String, content: String, isPriority: Boolean = false): String?
+
+    // CONTRACT: priority requests lane — promotes an already-submitted, not-yet-claimed request in
+    // place by moving its Drive file into requests/priority/. No-op (returns false) over LAN, since
+    // a LAN-submitted request is already dispatched immediately and never sits queued.
+    suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean
 
     /** Return all pending responses for this app instance; each envelope contains the raw JSON and its delivery source. */
     suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope>

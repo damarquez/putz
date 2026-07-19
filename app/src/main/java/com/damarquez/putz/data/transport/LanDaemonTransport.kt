@@ -55,8 +55,10 @@ class LanDaemonTransport @Inject constructor(
         }
     }
 
-    /** POST the request JSON to the daemon; returns the request_id on success, null on failure. */
-    override suspend fun submitRequest(googleAccount: String, fileName: String, content: String): String? =
+    /** POST the request JSON to the daemon; returns the request_id on success, null on failure.
+     *  [isPriority] has no effect here — a LAN-submitted request is dispatched immediately, never
+     *  sitting in a queue for priority to matter. */
+    override suspend fun submitRequest(googleAccount: String, fileName: String, content: String, isPriority: Boolean): String? =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
                 .url("${baseUrl()}/request")
@@ -72,6 +74,9 @@ class LanDaemonTransport @Inject constructor(
                 }
             }.getOrNull()
         }
+
+    // CONTRACT: priority requests lane — irrelevant over LAN, so always a no-op.
+    override suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean = false
 
     override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> =
         withContext(Dispatchers.IO) {

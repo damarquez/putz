@@ -671,6 +671,7 @@ class CalibreRepository @Inject constructor(
         // first would otherwise win the "most recent" slot in the addedAt-sorted transfer list,
         // regardless of the order the user actually queued them in.
         addedAt: Long? = null,
+        priority: Boolean = false,
     ) {
         val initialItem = CalibreBatchItem(
             type = when {
@@ -707,6 +708,7 @@ class CalibreRepository @Inject constructor(
             calibreBookUuid = calibreBookUuid,
             localUrisJson = localUrisJson,
             tags = tags?.ifBlank { null },
+            priority = priority,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -726,7 +728,7 @@ class CalibreRepository @Inject constructor(
             tags = tags?.ifBlank { null },
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$putioFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$putioFileId.json", jsonStr, isPriority = priority)
 
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -789,7 +791,7 @@ class CalibreRepository @Inject constructor(
             tags = transfer.tags,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_${transfer.putioFileId}.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_${transfer.putioFileId}.json", jsonStr, isPriority = transfer.priority)
         calibreTransferDao.updateTransfer(transfer.copy(
             batchData = json.encodeToString(updatedItems),
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
@@ -822,7 +824,7 @@ class CalibreRepository @Inject constructor(
             tags = transfer.tags,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPutioFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPutioFileId.json", jsonStr, isPriority = transfer.priority)
 
         calibreTransferDao.deleteTransfer(fileId) // Remove temp placeholder
         calibreTransferDao.insertTransfer(transfer.copy(
@@ -854,6 +856,7 @@ class CalibreRepository @Inject constructor(
         localUrisJson: String? = null,
         tags: String? = null,
         isProtected: Boolean = false,
+        priority: Boolean = false,
     ) {
         val allPairs = files ?: groups?.flatMap { (_, groupFiles) -> groupFiles }
             ?: error("addMergeTransfer requires either files or groups")
@@ -887,6 +890,7 @@ class CalibreRepository @Inject constructor(
             calibreBookUuid = calibreBookUuid,
             localUrisJson = localUrisJson,
             tags = tags?.ifBlank { null },
+            priority = priority,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -908,7 +912,7 @@ class CalibreRepository @Inject constructor(
             tags = tags?.ifBlank { null },
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr, isPriority = priority)
 
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -958,7 +962,7 @@ class CalibreRepository @Inject constructor(
             tags = transfer.tags,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPrimaryId.json", jsonStr)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPrimaryId.json", jsonStr, isPriority = transfer.priority)
 
         calibreTransferDao.deleteTransfer(tempId)
         calibreTransferDao.insertTransfer(transfer.copy(
@@ -2724,7 +2728,7 @@ class CalibreRepository @Inject constructor(
         }
 
         android.util.Log.d("CalibreRepository", "Retrying transfer $fileId for $googleAccount")
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_${transfer.putioFileId}.json", finalPayload)
+        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_${transfer.putioFileId}.json", finalPayload, isPriority = transfer.priority)
         
         if (gDriveId != null) {
             calibreTransferDao.updateTransfer(transfer.copy(
@@ -2742,6 +2746,34 @@ class CalibreRepository @Inject constructor(
 
     suspend fun getTransfer(fileId: Long): CalibreTransferEntity? {
         return calibreTransferDao.getTransferById(fileId)
+    }
+
+    // CONTRACT: priority requests lane — promotes a not-yet-claimed transfer in place. A no-op
+    // (returns false, leaves the local row untouched) once the daemon has already claimed the
+    // request (PROCESSING) or finished it (COMPLETED/FAILED) — there's nothing left to promote,
+    // and showing a "priority" badge on a transfer that's already past the point it could matter
+    // would just be misleading.
+    suspend fun promoteTransferToPriority(fileId: Long, googleAccount: String): Boolean {
+        val transfer = calibreTransferDao.getTransferById(fileId) ?: return false
+        if (transfer.priority) return true
+        if (transfer.status != CalibreTransferStatus.PENDING &&
+            transfer.status != CalibreTransferStatus.UPLOADING &&
+            transfer.status != CalibreTransferStatus.ASSEMBLED &&
+            transfer.status != CalibreTransferStatus.REQUESTED
+        ) return false
+
+        // Only REQUESTED has already reached Drive — earlier states (PENDING/UPLOADING/ASSEMBLED)
+        // haven't dispatched yet, so setting the local flag is enough; the eventual dispatch
+        // (resolveLocalPathAndDispatch/updateTransferAfterUpload/updateMergeAfterUpload) reads
+        // transfer.priority and routes into the priority folder itself.
+        if (transfer.status == CalibreTransferStatus.REQUESTED) {
+            val requestId = transfer.gdriveRequestId ?: return false
+            val moved = daemonTransport.promoteRequestToPriority(googleAccount, requestId)
+            if (!moved) return false
+        }
+
+        calibreTransferDao.updateTransfer(transfer.copy(priority = true))
+        return true
     }
 
     suspend fun removeTransfer(fileId: Long) {

@@ -38,18 +38,24 @@ class SmartDaemonTransport @Inject constructor(
 
     private suspend fun lanEnabled(): Boolean = settingsRepository.lanEnabledFlow.first()
 
-    override suspend fun submitRequest(googleAccount: String, fileName: String, content: String): String? {
+    override suspend fun submitRequest(googleAccount: String, fileName: String, content: String, isPriority: Boolean): String? {
         if (lanEnabled() && lan.isReachable()) {
             try {
-                lan.submitRequest(googleAccount, fileName, content)
+                lan.submitRequest(googleAccount, fileName, content, isPriority)
                 // LAN delivery succeeded — mark Drive copy so daemon can skip if already handled
-                return drive.submitRequest(googleAccount, fileName, injectLanFlag(content))
+                return drive.submitRequest(googleAccount, fileName, injectLanFlag(content), isPriority)
             } catch (_: Exception) {
                 // Fall through to Drive-only
             }
         }
-        return drive.submitRequest(googleAccount, fileName, content)
+        return drive.submitRequest(googleAccount, fileName, content, isPriority)
     }
+
+    // CONTRACT: priority requests lane — always via Drive, since gdriveRequestId (the only handle
+    // we keep on a pending request) is always a Drive file ID regardless of which transport
+    // originally submitted it.
+    override suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean =
+        drive.promoteRequestToPriority(googleAccount, gdriveRequestId)
 
     override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
         val all = mutableListOf<ResponseEnvelope>()

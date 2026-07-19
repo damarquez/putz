@@ -68,6 +68,11 @@ data class CalibreTransferEntity(
      *  System.currentTimeMillis() as putioFileId. "Also delete from put.io" must be a
      *  no-op for these; there is nothing on put.io to delete. */
     val hasPutioFile: Boolean = true,
+
+    /** True once this transfer's request has been placed (or promoted) into the daemon's
+     *  priority lane (requests/priority/ — see CONTRACTS.md §17). Purely a display flag; the
+     *  actual queue position is which Drive folder gdriveRequestId's file currently lives in. */
+    val priority: Boolean = false,
     ) {
 
     fun parsedFileIds(): List<Long> = 

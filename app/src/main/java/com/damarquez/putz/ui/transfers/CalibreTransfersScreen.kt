@@ -648,6 +648,14 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 uploadProgress = uploadProgress[transfer.putioFileId],
                                 isPendingAppend = transfer.putioFileId in pendingAssemblyAppends,
                                 onTap = { transferToBrowse = transfer },
+                                onMakePriority = {
+                                    scope.launch {
+                                        val promoted = viewModel.makeTransferPriority(transfer.putioFileId)
+                                        if (!promoted) {
+                                            snackbarHostState.showSnackbar("Already being processed — too late to prioritize")
+                                        }
+                                    }
+                                },
                             )
                         }
                         item {

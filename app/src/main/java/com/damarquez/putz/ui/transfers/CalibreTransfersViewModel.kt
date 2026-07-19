@@ -353,6 +353,15 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    // CONTRACT: priority requests lane — promotes a not-yet-claimed transfer. Returns false (a
+    // no-op) if the daemon already claimed/finished it, so the caller can tell the user it was
+    // too late.
+    suspend fun makeTransferPriority(fileId: Long): Boolean {
+        val account = settingsRepository.googleTokenFlow.first()
+        if (account.isBlank()) return false
+        return calibreRepository.promoteTransferToPriority(fileId, account)
+    }
+
     fun syncMetadata() {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
@@ -76,6 +77,7 @@ fun CalibreTransferItem(
     onCopyTitle: ((String) -> Unit)? = null,
     onCopyAuthor: ((String) -> Unit)? = null,
     onTap: (() -> Unit)? = null,
+    onMakePriority: (() -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     var showContextMenu by remember { mutableStateOf(false) }
@@ -208,11 +210,22 @@ fun CalibreTransferItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    text = "$dateStr · ${transfer.putioFileId}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "$dateStr · ${transfer.putioFileId}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    if (transfer.priority) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.PriorityHigh,
+                            contentDescription = "Priority",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                }
                 if (!transfer.errorMessage.isNullOrBlank()) {
                     Text(
                         text = transfer.errorMessage,
@@ -345,6 +358,26 @@ fun CalibreTransferItem(
                 onClick = {
                     showContextMenu = false
                     onCopyAuthor?.invoke(transfer.author)
+                },
+            )
+        }
+        if (!transfer.priority && onMakePriority != null && (
+                transfer.status == CalibreTransferStatus.PENDING ||
+                transfer.status == CalibreTransferStatus.UPLOADING ||
+                transfer.status == CalibreTransferStatus.ASSEMBLED ||
+                transfer.status == CalibreTransferStatus.REQUESTED
+            )
+        ) {
+            // CONTRACT: priority requests lane — promotes a not-yet-claimed transfer ahead of
+            // everything else pending; see CalibreRepository.promoteTransferToPriority.
+            DropdownMenuItem(
+                text = { Text("Make priority") },
+                leadingIcon = {
+                    Icon(Icons.Default.PriorityHigh, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onMakePriority()
                 },
             )
         }
