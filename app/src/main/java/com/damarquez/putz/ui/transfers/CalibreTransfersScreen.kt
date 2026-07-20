@@ -314,7 +314,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 clipboardImageUri = null
                 prefilledUuid = null
             },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _ ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCoverFromClipboard(clipboardImageUri!!, title, author, matchedId ?: 0L, uuid)
                 }
@@ -342,7 +342,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 prefilledUuid = null
                 pendingCommentsRepository.clear()
             },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, comments, tags, _ ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, comments, tags, _, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCommentsFromClipboard(comments, tags, title, author, matchedId ?: 0L, uuid)
                 }

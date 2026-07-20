@@ -56,6 +56,12 @@ data class CalibreBatchItem(
     val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
     val archive_entry: String? = null, // For ARCHIVE_ENTRY: path of the entry within the archive file
     val protected: Boolean? = null,  // When true the daemon encrypts the file before adding to Calibre
+    // CONTRACT: ADD_BOOK_BATCH "to PDF" — when true and fileName's format is convertible
+    // (see MetadataUtils.canConvertToPdf), the daemon converts it to PDF via ebook-convert
+    // and adds the PDF as an additional format alongside the original (never replacing it).
+    // If fileName already carries the "_bkp" alt-version suffix, the derived PDF is added as
+    // PDF_BKP instead of PDF, so it never clobbers a plain PDF already on the book.
+    val convert_to_pdf: Boolean? = null,
     // CONTRACT: source-batch grouping — each AudiobookFile.sourceBatch tags which assembly
     // append contributed it. Null = legacy (treat as batch 1). When multiple distinct batches
     // are present the daemon creates one chapter/folder/section per batch in the merged output;
@@ -678,6 +684,7 @@ class CalibreRepository @Inject constructor(
         archiveEntry: String? = null,
         localPath: String? = null,   // CONTRACT: stub convention — relative path within the local mirror repo
         isProtected: Boolean = false,
+        convertToPdf: Boolean = false,
         tags: String? = null,
         // Lets a concurrent batch caller (see FilesViewModel.sendBatchToCalibre) stamp a
         // deterministic, list-order-preserving value instead of real dispatch time — when
@@ -702,6 +709,7 @@ class CalibreRepository @Inject constructor(
             smb_path = smbPath,
             archive_entry = archiveEntry,
             protected = if (isProtected) true else null,
+            convert_to_pdf = if (convertToPdf) true else null,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,

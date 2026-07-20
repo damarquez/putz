@@ -257,6 +257,7 @@ class FilesViewModel @Inject constructor(
         val assembleBook: Boolean = false,
         val isAltVersion: Boolean = false,
         val isProtected: Boolean = false,
+        val convertToPdf: Boolean = false,
     )
 
     private val _calibreSingleDraft = MutableStateFlow<CalibreSingleDraft?>(null)
@@ -1172,6 +1173,7 @@ class FilesViewModel @Inject constructor(
                                         isAltVersion = item.isAltVersion,
                                         calibreBookUuid = item.uuid.trim().ifBlank { null },
                                         isProtected = item.isProtected,
+                                        convertToPdf = item.convertToPdf,
                                         tags = item.tags.trim().ifBlank { null },
                                         preresolvedLocalPath = item.localPath,
                                         addedAt = baseAddedAt + index,
@@ -1190,9 +1192,9 @@ class FilesViewModel @Inject constructor(
         } }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null) {
         trackTransferPreparation { appScope.launch {
-            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, tags, preresolvedLocalPath)
+            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, convertToPdf, tags, preresolvedLocalPath)
         } }
     }
 
@@ -1203,7 +1205,7 @@ class FilesViewModel @Inject constructor(
      *  FilesViewModel.prefetchBatchLocalPaths), skips the stub-content read below entirely.
      *  [addedAt], when supplied by a concurrent batch caller, overrides the real dispatch time
      *  so the local transfer list's display order still matches list order despite the race. */
-    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addedAt: Long? = null) {
+    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addedAt: Long? = null) {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1236,6 +1238,7 @@ class FilesViewModel @Inject constructor(
                         useLocal = true,
                         localPath = null,
                         isProtected = isProtected,
+                        convertToPdf = convertToPdf,
                         tags = tags,
                         addedAt = addedAt,
                     )
@@ -1283,6 +1286,7 @@ class FilesViewModel @Inject constructor(
                         useLocal = true,
                         localPath = null,
                         isProtected = isProtected,
+                        convertToPdf = convertToPdf,
                         tags = tags,
                         addedAt = addedAt,
                     )
@@ -1304,6 +1308,7 @@ class FilesViewModel @Inject constructor(
                     useLocal = true,
                     localPath = localPath,
                     isProtected = isProtected,
+                    convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
                 )
@@ -1332,6 +1337,7 @@ class FilesViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     smbPath = buildUncPath(conn.host, conn.shareName, file.lanPath),
                     isProtected = isProtected,
+                    convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
                 )
@@ -1352,6 +1358,7 @@ class FilesViewModel @Inject constructor(
                     isUploading = true,
                     localUrisJson = file.localUri?.let { """["$it"]""" },
                     isProtected = isProtected,
+                    convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
                 )
@@ -1398,6 +1405,7 @@ class FilesViewModel @Inject constructor(
                                 assembleBook = true,
                                 calibreBookUuid = calibreBookUuid,
                                 isProtected = isProtected,
+                                convertToPdf = convertToPdf,
                                 tags = tags,
                                 addedAt = addedAt,
                             )
@@ -1443,6 +1451,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     isProtected = isProtected,
+                    convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
                 )

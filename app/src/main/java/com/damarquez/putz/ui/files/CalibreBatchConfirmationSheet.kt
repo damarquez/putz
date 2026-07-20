@@ -78,6 +78,7 @@ data class CalibreBatchDraftItem(
     val included: Boolean = true,
     val isProtected: Boolean = false,
     val isAltVersion: Boolean = false,
+    val convertToPdf: Boolean = false,
     val tags: String = "",
     val uuid: String = "",
     val matchedBookId: Long? = null,
@@ -661,7 +662,7 @@ private fun CalibreBatchRow(
             // a draft restored from a previous edit), so nothing is silently hidden from view.
             var expanded by remember(item.file.id) {
                 mutableStateOf(
-                    item.uuid.isNotBlank() || item.tags.isNotBlank() || item.isProtected || item.isAltVersion,
+                    item.uuid.isNotBlank() || item.tags.isNotBlank() || item.isProtected || item.isAltVersion || item.convertToPdf,
                 )
             }
             Row(
@@ -737,6 +738,18 @@ private fun CalibreBatchRow(
                         onCheckedChange = { onChange(item.copy(isAltVersion = it)) },
                         modifier = Modifier.scale(0.75f),
                     )
+                    if (MetadataUtils.canConvertToPdf(item.file.displayName)) {
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "To PDF",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Switch(
+                            checked = item.convertToPdf,
+                            onCheckedChange = { onChange(item.copy(convertToPdf = it)) },
+                            modifier = Modifier.scale(0.75f),
+                        )
+                    }
                 }
             }
 

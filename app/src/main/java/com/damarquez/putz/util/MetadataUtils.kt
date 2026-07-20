@@ -9,6 +9,9 @@ object MetadataUtils {
     private val MULTI_TRACK_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac")
     private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "wmv", "m4v", "ts", "webm", "flv", "mpg", "mpeg", "divx")
     private val PLEXAMP_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac", "aac", "wav", "ogg", "opus", "wma", "ape", "alac", "aiff", "dsf")
+    // CONTRACT: CONVERT_FORMAT / ADD_BOOK_BATCH "to PDF" — mirrors calibreAnywhere's
+    // ConversionRules.kt "-> PDF" source formats. Keep the two lists in sync.
+    private val PDF_CONVERTIBLE_EXTENSIONS = setOf("epub", "mobi", "azw3", "cbz", "cbr", "txt", "txtz", "html", "htm", "htmlz", "docx", "rtf", "odt", "zip")
 
     /** Extra single-word junk tags (beyond format/extension names) to strip from parsed titles. Extend as needed. */
     private val JUNK_PAREN_WORDS = setOf("retail")
@@ -110,6 +113,13 @@ object MetadataUtils {
     fun isTxt(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext == "txt"
+    }
+
+    /** True for source formats the daemon's ebook-convert wrapper can turn into a PDF
+     *  (see ADD_BOOK_BATCH "convert_to_pdf" handling in _process_single_item). */
+    fun canConvertToPdf(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext in PDF_CONVERTIBLE_EXTENSIONS
     }
 
     fun isHtml(fileName: String): Boolean {

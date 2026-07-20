@@ -493,11 +493,11 @@ fun FilesScreen(
             initialTags = draft.tags,
             onPreview = { viewModel.previewFile(singleFile) },
             onDismiss = { viewModel.dismissCalibreSingleDraft() },
-            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
-                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, tags)
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, convertToPdf ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, convertToPdf, tags)
                 viewModel.dismissCalibreSingleDraft()
             },
-            onDraftFieldsChanged = { title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected ->
+            onDraftFieldsChanged = { title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected, convertToPdf ->
                 viewModel.updateCalibreSingleDraft {
                     it.copy(
                         title = title,
@@ -509,6 +509,7 @@ fun FilesScreen(
                         assembleBook = assembleBook,
                         isAltVersion = isAltVersion,
                         isProtected = isProtected,
+                        convertToPdf = convertToPdf,
                     )
                 }
             },
@@ -533,7 +534,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedFileForCover = null },
-            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _ ->
+            onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCover(imageFile, title, author, matchedId ?: 0L, uuid)
                 }
@@ -589,7 +590,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
                 viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedPackFiles = null
@@ -612,7 +613,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPdfFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedPdfFiles = null
             },
@@ -649,7 +650,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedEpubFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedEpubFiles = null
             },
@@ -686,7 +687,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMobiFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMobiFiles = null
             },
@@ -728,7 +729,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedImageFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedImageFiles = null
             },
@@ -837,7 +838,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeFlatFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeFlatFiles = null
             },
@@ -864,7 +865,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeGroups = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeGroups = null
             },
@@ -903,7 +904,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedCbrFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedCbrFiles = null
             },
@@ -941,7 +942,7 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedCbrCbzFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedCbrCbzFiles = null
             },
