@@ -73,6 +73,12 @@ data class CalibreTransferEntity(
      *  priority lane (requests/priority/ — see CONTRACTS.md §17). Purely a display flag; the
      *  actual queue position is which Drive folder gdriveRequestId's file currently lives in. */
     val priority: Boolean = false,
+
+    /** Seconds the daemon actually spent fulfilling this request, echoed on COMPLETED
+     *  (CalibreResponse.duration_seconds) — from when a worker began processing it, not
+     *  from when it first arrived/was queued. Null for transfers completed before the
+     *  daemon started reporting this. */
+    val durationSeconds: Double? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 

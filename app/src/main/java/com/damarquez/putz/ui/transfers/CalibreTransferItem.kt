@@ -246,6 +246,7 @@ fun CalibreTransferItem(
                         isAppendPending = isPendingAppend,
                         errorMessage = transfer.errorMessage,
                         probeCount = transfer.probeCount,
+                        durationSeconds = transfer.durationSeconds,
                     )
                     Spacer(Modifier.weight(1f))
                     if (isAssembled) {
@@ -401,7 +402,7 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null, probeCount: Int = 0) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null, probeCount: Int = 0, durationSeconds: Double? = null) {
     val (icon, color, label) = when (status) {
         CalibreTransferStatus.UPLOADING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
         CalibreTransferStatus.ASSEMBLED -> if (isAssemblyUploading) {
@@ -422,11 +423,12 @@ private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? =
             Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, progressLabel)
         }
         CalibreTransferStatus.COMPLETED -> {
-            val label = when {
+            val base = when {
                 probeCount <= 0 -> "Completed"
                 probeCount == 1 -> "Completed and checked"
                 else -> "Completed and checked ${probeCount}x"
             }
+            val label = if (durationSeconds != null) "$base (${durationSeconds}s)" else base
             Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, label)
         }
         CalibreTransferStatus.FAILED -> Triple(Icons.Default.Error, MaterialTheme.colorScheme.error, "Failed")

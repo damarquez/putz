@@ -127,6 +127,10 @@ data class CalibreResponse(
     // CONTRACT: probe pattern — echoed by the daemon when this response answers an is_probe
     // request, so pollResponses can tell a manual re-check apart from a normal completion.
     val is_probe: Boolean? = null,
+    // CONTRACT: request timing — present on COMPLETED when the daemon tracked this attempt's
+    // start time; elapsed seconds from when a worker actually began fulfilling the request
+    // (not from when it first arrived/was queued). See putz_manager.py's send_response().
+    val duration_seconds: Double? = null,
 )
 
 data class CalibreBookMatch(
@@ -1344,6 +1348,7 @@ class CalibreRepository @Inject constructor(
                                 calibreBookUuid = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_uuid != null) response.calibre_book_uuid else transfer.calibreBookUuid,
                                 calibreBookId = if (newStatus == CalibreTransferStatus.COMPLETED && response.calibre_book_id != null) response.calibre_book_id else transfer.calibreBookId,
                                 warnings = if (newStatus == CalibreTransferStatus.COMPLETED) response.warnings?.joinToString("\n")?.takeIf { it.isNotBlank() } else transfer.warnings,
+                                durationSeconds = if (newStatus == CalibreTransferStatus.COMPLETED && response.duration_seconds != null) response.duration_seconds else transfer.durationSeconds,
                                 libraryVerified = libraryVerified,
                                 lastUpdatedAt = System.currentTimeMillis()
                             ))
