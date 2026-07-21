@@ -128,6 +128,7 @@ fun FilesScreen(
     val accountInfo by viewModel.accountInfo.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
     val completedTransfersWithUuid by viewModel.completedTransfersWithUuid.collectAsState()
+    val transferredPutioFileIds by viewModel.transferredPutioFileIds.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val isSearchMode by viewModel.isSearchMode.collectAsState()
@@ -1679,6 +1680,42 @@ fun FilesScreen(
                                                     .take(n)
                                             }
                                             viewModel.setSelectedFiles(batch.toSet())
+                                        },
+                                        onUnselectAllAndSelectNextNotSent = {
+                                            // Clears the current selection, then walks the list
+                                            // top to bottom starting right after wherever the
+                                            // selection already ended (same anchor as
+                                            // onUnselectAllAndSelectNextN — never wherever this
+                                            // long-press happened to land), selecting the first
+                                            // file that doesn't already have a calibre transfer
+                                            // (any status, including FAILED, counts as "already
+                                            // has one"). Lets a user who stopped partway through
+                                            // a top-to-bottom send resume right where they left
+                                            // off. Selects nothing (and so exits selection mode,
+                                            // since isSelectionMode is derived from selectedFiles
+                                            // being non-empty) if every remaining file already has
+                                            // a transfer.
+                                            val lastSelectedIndex = files.indexOfLast { it in selectedFiles }
+                                            val startIndex = if (lastSelectedIndex == -1) files.indexOf(file) else lastSelectedIndex + 1
+                                            val nextNotSent = if (startIndex == -1) {
+                                                null
+                                            } else {
+                                                files.subList(startIndex.coerceAtMost(files.size), files.size)
+                                                    .filter { it.isRegularRemote == file.isRegularRemote }
+                                                    // Only stubs (isSynced) can be sent to Calibre at all —
+                                                    // an unsynced regular remote file has no local_path for
+                                                    // the daemon to read, so it can never have (or need) a
+                                                    // calibre transfer. Restricting to stubs here also keeps
+                                                    // this consistent with syncedFileId below, which is only
+                                                    // meaningful for synced files.
+                                                    .filter { it.isSynced }
+                                                    // CONTRACT: stub convention — a synced file's own `id` is
+                                                    // the stub marker file's id, not the original put.io file
+                                                    // id the transfer was created against; syncedFileId is the
+                                                    // one that actually matches CalibreTransferEntity.putioFileId.
+                                                    .firstOrNull { it.syncedFileId !in transferredPutioFileIds }
+                                            }
+                                            viewModel.setSelectedFiles(setOfNotNull(nextNotSent))
                                         },
                                         onUnselectBeforeHere = {
                                             // Unselects everything above the long-pressed item in

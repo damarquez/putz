@@ -426,6 +426,13 @@ class FilesViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Every put.io file ID that already has a calibre transfer record, any status included
+    // (a FAILED transfer still counts as "already has one" — used by "unselect all and select
+    // next not sent" to skip files that were already attempted, not just ones in flight).
+    val transferredPutioFileIds: StateFlow<Set<Long>> = calibreRepository.getTransfers()
+        .map { transfers -> transfers.flatMapTo(mutableSetOf()) { it.parsedFileIds() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
