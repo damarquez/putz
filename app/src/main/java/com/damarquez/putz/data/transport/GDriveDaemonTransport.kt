@@ -1,5 +1,7 @@
 package com.damarquez.putz.data.transport
 
+import com.damarquez.putz.data.local.PendingResponseDeletionDao
+import com.damarquez.putz.data.local.PendingResponseDeletionEntity
 import com.damarquez.putz.data.model.HistoryEntryFile
 import com.damarquez.putz.data.model.HistoryFileSearchResult
 import com.damarquez.putz.data.model.NetworkResult
@@ -24,6 +26,7 @@ import javax.inject.Singleton
 @Singleton
 class GDriveDaemonTransport @Inject constructor(
     private val gDriveManager: GDriveManager,
+    private val pendingResponseDeletionDao: PendingResponseDeletionDao,
 ) : DaemonTransport {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -35,7 +38,14 @@ class GDriveDaemonTransport @Inject constructor(
         gDriveManager.promoteRequestToPriority(googleAccount, gdriveRequestId)
 
     override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
+        // Retry deletes Putz already decided on in an earlier, interrupted poll (app backgrounded
+        // mid-cycle, transient Drive error, etc.) before touching anything new. This is a bare
+        // delete call per file — no content download, no reprocessing — so it stays cheap even
+        // with a large backlog, unlike re-fetching and re-parsing content we've already acted on.
+        val stillPendingDeletion = retryPendingDeletions(googleAccount)
+
         val files = gDriveManager.listResponses(googleAccount, appId)
+            .filterNot { it.id in stillPendingDeletion }
         // Fetching each file's content is a separate network round-trip; done sequentially,
         // a backlog of hundreds of responses takes minutes to even finish listing before any
         // processing/cleanup starts — long enough that new responses keep arriving faster than
@@ -62,9 +72,32 @@ class GDriveDaemonTransport @Inject constructor(
         }
     }
 
+    /** Returns the subset of previously-pending file IDs that are still undeleted after this
+     *  retry, so the caller can skip re-downloading/re-processing their content this cycle too. */
+    private suspend fun retryPendingDeletions(googleAccount: String): Set<String> {
+        val pending = pendingResponseDeletionDao.getAllIds()
+        if (pending.isEmpty()) return emptySet()
+        val stillPending = mutableSetOf<String>()
+        pending.forEach { fileId ->
+            if (gDriveManager.deleteFile(googleAccount, fileId)) {
+                pendingResponseDeletionDao.deleteById(fileId)
+            } else {
+                stillPending += fileId
+            }
+        }
+        return stillPending
+    }
+
     override suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope, appId: String) {
         if (envelope.source == ResponseEnvelope.Source.DRIVE) {
-            gDriveManager.deleteFile(googleAccount, envelope.id)
+            if (gDriveManager.deleteFile(googleAccount, envelope.id)) {
+                pendingResponseDeletionDao.deleteById(envelope.id)
+            } else {
+                // Putz has already applied (or determined it can't do anything with) this
+                // response's content — remember that so a later poll retries just the delete
+                // instead of redownloading and reprocessing content it's already finished with.
+                pendingResponseDeletionDao.upsert(PendingResponseDeletionEntity(envelope.id))
+            }
         }
     }
 

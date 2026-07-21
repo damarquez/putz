@@ -1797,12 +1797,19 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    // CONTRACT: protection split — actions whose local verification is just "does this uuid
-    // exist in the library". Putz's downloaded metadata.db has protected/encrypted books'
-    // rows split out of it (see calibre_assets/protection_split.py), so a "not found" here
-    // is ambiguous: genuinely missing, or just protected and invisible to this local copy.
-    // Only the daemon's live, unsplit metadata.db can tell the two apart.
-    private val UUID_LOOKUP_ACTIONS = setOf("REPLACE_COVER", "GENERATE_COVER", "PROTECT_BOOK", "UPDATE_COMMENTS")
+    // CONTRACT: protection split — Putz's downloaded metadata.db has protected/encrypted
+    // books' rows split out of it (see calibre_assets/protection_split.py), so a uuid "not
+    // found" here is ambiguous: genuinely missing, or just protected and invisible to this
+    // local copy. Only the daemon's live, unsplit metadata.db can tell the two apart — hence
+    // the sendProbeRequest fallback below for any action whose success requires the book to
+    // exist. These are the exceptions: actions whose verification either needs no uuid lookup
+    // at all, or where the book being ABSENT locally is the expected success state (deletion
+    // confirmations), so a missing row there is not the split-table ambiguity and must not
+    // trigger a fallback probe.
+    private val NO_PRESENCE_CHECK_ACTIONS = setOf(
+        "PRIORITY_PUTIO_SYNC", "MARK_BOOK_FOR_DELETION", "MARK_FORMATS_FOR_DELETION",
+        "CONFIRM_DELETE_BOOK", "CONFIRM_DELETE_FORMATS", "CANCEL_DELETION",
+    )
 
     suspend fun verifyCompletedTransfers(dbFile: File, googleAccount: String) = withContext(Dispatchers.IO) {
         val transfers = calibreTransferDao.getAllTransfers().first().filter {
@@ -1824,11 +1831,14 @@ class CalibreRepository @Inject constructor(
                         json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content
                     } catch (_: Exception) { null }
                 }
-                // Local row missing entirely for a uuid-lookup action: don't treat it as a
-                // hard failure yet, since it may just be split out for protection. Ask the
-                // daemon (below) instead of leaving it stuck unverified forever.
+                // Local row missing entirely for an action that requires the book to exist:
+                // don't treat it as a hard failure yet, since it may just be split out for
+                // protection. Ask the daemon (below) instead of leaving it stuck unverified
+                // forever — this is the fallback ADD_BOOK_BATCH (and anything else landing in
+                // the `else` branch below) needs just as much as REPLACE_COVER etc. do.
                 val rowMissingLocally = transfer.calibreBookUuid != null &&
-                    action in UUID_LOOKUP_ACTIONS &&
+                    transfer.transferType != "PLEX" &&
+                    action !in NO_PRESENCE_CHECK_ACTIONS &&
                     !checkBookUuidExists(db, transfer.calibreBookUuid)
 
                 val verified = when {

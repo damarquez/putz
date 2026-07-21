@@ -354,11 +354,12 @@ class GDriveManager @Inject constructor(
         }
     }
 
-    suspend fun deleteFile(accountName: String, fileId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteFile(accountName: String, fileId: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)
             service.files().delete(fileId).execute()
             Log.d("GDriveManager", "deleteFile: deleted $fileId")
+            true
         } catch (e: Exception) {
             // A 404 here just means the file is already gone (deleted by an earlier attempt —
             // e.g. a duplicate response the daemon uploaded twice under the same name for the
@@ -368,11 +369,14 @@ class GDriveManager @Inject constructor(
             val isAlreadyGone = (e as? com.google.api.client.googleapis.json.GoogleJsonResponseException)?.statusCode == 404
             if (isAlreadyGone) {
                 Log.d("GDriveManager", "deleteFile: $fileId already gone (404) — treating as success")
+                true
             } else {
-                // Silent failure here means a response is never acknowledged, so it's re-fetched
-                // and re-processed on every poll forever — this is the #1 suspect for responses
-                // piling up in Drive while Putz appears to do nothing with them.
+                // The caller persists this fileId as a pending deletion (see
+                // PendingResponseDeletionDao) so a genuine failure here doesn't force a full
+                // redownload/reprocess of the file on every subsequent poll — just a retried
+                // delete call.
                 Log.e("GDriveManager", "deleteFile: FAILED to delete $fileId", e)
+                false
             }
         }
     }
