@@ -1656,18 +1656,25 @@ fun FilesScreen(
                                         },
                                         onUnselectAllAndSelectNextN = {
                                             // Clears the current selection entirely, then selects
-                                            // the long-pressed item plus the next N-1 items after
-                                            // it in this list, where N is how many were selected
-                                            // before clearing. Unlike onSelectNextN (which extends
-                                            // an existing selection and inherits its type), the new
-                                            // selection's type is anchored to the long-pressed file
-                                            // itself since the old selection no longer exists.
+                                            // the next N items starting right after wherever the
+                                            // current selection already ends in this list — NOT
+                                            // from wherever this long-press happened to land, which
+                                            // could be anywhere within (or before) the existing
+                                            // selection while scrolling back up to trigger it. This
+                                            // mirrors onSelectNextN's "continue from the end of
+                                            // what's already selected" behavior. N is how many were
+                                            // selected before clearing. Unlike onSelectNextN (which
+                                            // extends an existing selection and inherits its type),
+                                            // the new selection's type is anchored to the
+                                            // long-pressed file itself since the old selection no
+                                            // longer exists.
                                             val n = selectedFiles.size
-                                            val index = files.indexOf(file)
-                                            val batch = if (index == -1) {
+                                            val lastSelectedIndex = files.indexOfLast { it in selectedFiles }
+                                            val startIndex = if (lastSelectedIndex == -1) files.indexOf(file) else lastSelectedIndex + 1
+                                            val batch = if (startIndex == -1) {
                                                 listOf(file)
                                             } else {
-                                                files.subList(index, files.size)
+                                                files.subList(startIndex.coerceAtMost(files.size), files.size)
                                                     .filter { it.isRegularRemote == file.isRegularRemote }
                                                     .take(n)
                                             }
