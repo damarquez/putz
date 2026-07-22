@@ -111,6 +111,7 @@ fun FileItem(
     onSendAsJoinedPdf: (PutioFile) -> Unit,
     onSendAsJoinedEpub: (PutioFile) -> Unit,
     onSendAsJoinedMobi: (PutioFile) -> Unit,
+    onSendAsJoinedTextPdf: (PutioFile) -> Unit,
     onSendAsCbrPdf: (PutioFile) -> Unit,
     onSendAsCbrCbz: (PutioFile) -> Unit,
     onSendToPlex: (PutioFile) -> Unit,
@@ -157,6 +158,7 @@ fun FileItem(
     val isPdf = MetadataUtils.isPdf(file.displayName)
     val isEpub = MetadataUtils.isEpub(file.displayName)
     val isMobi = MetadataUtils.isMobi(file.displayName)
+    val isJoinableText = MetadataUtils.isJoinableText(file.displayName)
     val isVideo = fileType == PutioFileType.VIDEO || MetadataUtils.isVideo(file.displayName)
     val isAudio = MetadataUtils.isAudio(file.displayName)
     val isSubtitle = file.displayName.endsWith(".srt", ignoreCase = true) ||
@@ -551,6 +553,17 @@ fun FileItem(
                                     },
                                 )
                             }
+                            if (isJoinableText) {
+                                TightMenuItem(
+                                    // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
+                                    text = { Text("Join into PDF…") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSendAsJoinedTextPdf(file)
+                                    },
+                                )
+                            }
                             if (isComicArchive) {
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
@@ -643,7 +656,7 @@ fun FileItem(
                                     },
                                 )
                             }
-                            if (isEbook || isImage || isMultiTrackAudio || isPdf || isComicArchive || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder || canBrowseArchive) {
+                            if (isEbook || isImage || isMultiTrackAudio || isPdf || isJoinableText || isComicArchive || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder || canBrowseArchive) {
                                 HorizontalDivider()
                             }
                         }

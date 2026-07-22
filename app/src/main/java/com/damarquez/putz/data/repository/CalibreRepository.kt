@@ -1023,11 +1023,13 @@ class CalibreRepository @Inject constructor(
     private val PACK_TYPES = setOf("PACK", "PDF_PACK", "EPUB_PACK", "IMAGE_PDF_PACK", "IMAGE_EPUB_PACK", "IMAGE_CBZ_PACK", "CBR_PDF_PACK", "CBR_CBZ_PACK")
     private val CBZ_TYPES = setOf("IMAGE_CBZ_PACK", "CBR_CBZ_PACK")
 
-    // Only PDF_PACK/EPUB_PACK can absorb a lone SINGLE item of the matching extension into the
-    // pack as its first file: a finished .pdf/.epub is valid raw input for "join PDFs/EPUBs".
-    // IMAGE_PDF_PACK/CBR_PDF_PACK take raw images/archives as input, so a finished SINGLE .pdf
-    // isn't valid input for those — no promotion offered for them.
-    private val PROMOTABLE_SINGLE_EXTENSION = mapOf("PDF_PACK" to "pdf", "EPUB_PACK" to "epub")
+    // Only PDF_PACK/EPUB_PACK/TEXT_PDF_PACK can absorb a lone SINGLE item of the matching
+    // extension into the pack as its first file: a finished .pdf/.epub is valid raw input for
+    // "join PDFs/EPUBs", and TEXT_PDF_PACK's build_output ends in the same PdfPackJob merge as
+    // PDF_PACK, so a finished .pdf is just as valid there. IMAGE_PDF_PACK/CBR_PDF_PACK take raw
+    // images/archives as input, so a finished SINGLE .pdf isn't valid input for those — no
+    // promotion offered for them.
+    private val PROMOTABLE_SINGLE_EXTENSION = mapOf("PDF_PACK" to "pdf", "EPUB_PACK" to "epub", "TEXT_PDF_PACK" to "pdf")
 
     private fun CalibreBatchItem.sourceFileNames(): List<String> = when {
         type in PACK_TYPES && files != null -> files.map { it.fileName }

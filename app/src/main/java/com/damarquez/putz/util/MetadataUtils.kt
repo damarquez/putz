@@ -12,6 +12,9 @@ object MetadataUtils {
     // CONTRACT: CONVERT_FORMAT / ADD_BOOK_BATCH "to PDF" — mirrors calibreAnywhere's
     // ConversionRules.kt "-> PDF" source formats. Keep the two lists in sync.
     private val PDF_CONVERTIBLE_EXTENSIONS = setOf("epub", "mobi", "azw3", "cbz", "cbr", "txt", "txtz", "html", "htm", "htmlz", "docx", "rtf", "odt", "zip")
+    // CONTRACT: TEXT_PDF_PACK — the "text document" subset of PDF_CONVERTIBLE_EXTENSIONS (excludes
+    // epub/mobi/azw3/cbz/cbr/zip, which are ebook/comic containers with their own Join family).
+    private val JOINABLE_TEXT_EXTENSIONS = setOf("rtf", "txt", "txtz", "html", "htm", "htmlz", "docx", "odt")
 
     /** Extra single-word junk tags (beyond format/extension names) to strip from parsed titles. Extend as needed. */
     private val JUNK_PAREN_WORDS = setOf("retail")
@@ -142,6 +145,13 @@ object MetadataUtils {
     fun isRtf(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext == "rtf"
+    }
+
+    /** True for text-document formats (RTF/TXT/HTML/DOCX/ODT) that can be mixed together and
+     * joined into a single PDF (see TEXT_PDF_PACK in the merge framework). */
+    fun isJoinableText(fileName: String): Boolean {
+        val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
+        return ext in JOINABLE_TEXT_EXTENSIONS
     }
 
     fun isDocx(fileName: String): Boolean {

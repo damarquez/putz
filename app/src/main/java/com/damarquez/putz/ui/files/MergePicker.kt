@@ -38,6 +38,7 @@ enum class MergeContentType(val itemType: String, val outputFileName: String, va
     AUDIO("PACK", "Audiobook.m4b", "Audio"),
     EPUBS("EPUB_PACK", "Book.epub", "EPUBs"),
     MOBIS("MOBI_PACK", "Book.mobi", "MOBIs"),
+    TEXT("TEXT_PDF_PACK", "Book.pdf", "Text files"),
 }
 
 // Name-based core so non-PutioFile sources (e.g. archive entries) can match without
@@ -49,6 +50,7 @@ fun MergeContentType.matchesName(name: String): Boolean = when (this) {
     MergeContentType.AUDIO -> MetadataUtils.isMultiTrackAudio(name)
     MergeContentType.EPUBS -> MetadataUtils.isEpub(name)
     MergeContentType.MOBIS -> MetadataUtils.isMobi(name)
+    MergeContentType.TEXT -> MetadataUtils.isJoinableText(name)
 }
 
 fun MergeContentType.matches(file: PutioFile): Boolean = matchesName(file.displayName)
@@ -85,6 +87,7 @@ fun MergeContentType.outputFormatOptions(): List<MergeOutputFormat> = when (this
     MergeContentType.AUDIO -> listOf(MergeOutputFormat("PACK", "Audiobook.m4b", "M4B"))
     MergeContentType.EPUBS -> listOf(MergeOutputFormat("EPUB_PACK", "Book.epub", "EPUB"))
     MergeContentType.MOBIS -> listOf(MergeOutputFormat("MOBI_PACK", "Book.mobi", "MOBI"))
+    MergeContentType.TEXT -> listOf(MergeOutputFormat("TEXT_PDF_PACK", "Book.pdf", "PDF"))
 }
 
 // Images keep the existing GIF-presence heuristic (GIF survives better in CBZ than flattened

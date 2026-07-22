@@ -303,6 +303,10 @@ fun FilesScreen(
     var mobiPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedMobiFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
 
+    // Text-to-PDF pack flow (RTF/TXT/HTML/DOCX/ODT, any mix)
+    var textPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
+    var selectedTextFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
+
     // Image pack flow (PDF / EPUB / CBZ)
     var imagePackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
@@ -338,6 +342,7 @@ fun FilesScreen(
                     "PDF_PACK" -> selectedPdfFiles = pd.files
                     "EPUB_PACK" -> selectedEpubFiles = pd.files
                     "MOBI_PACK" -> selectedMobiFiles = pd.files
+                    "TEXT_PDF_PACK" -> selectedTextFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
                     "CBR_CBZ_PACK" -> selectedCbrCbzFiles = pd.files
                     else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
@@ -361,6 +366,7 @@ fun FilesScreen(
                     "PDF_PACK" -> selectedPdfFiles = pd.files
                     "EPUB_PACK" -> selectedEpubFiles = pd.files
                     "MOBI_PACK" -> selectedMobiFiles = pd.files
+                    "TEXT_PDF_PACK" -> selectedTextFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
                     "CBR_CBZ_PACK" -> selectedCbrCbzFiles = pd.files
                     else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
@@ -723,6 +729,47 @@ fun FilesScreen(
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, mobiFiles),
+        )
+    }
+
+    if (textPackTriggerFile != null && selectedTextFiles == null && pendingDestination == null) {
+        val textFiles = remember(textPackTriggerFile, packCandidateFiles) {
+            packCandidateFiles.filter { MetadataUtils.isJoinableText(it.displayName) }
+        }
+        TextPackSheet(
+            textFiles = textFiles,
+            onDismiss = { textPackTriggerFile = null },
+            onConfirm = { files ->
+                pendingDestination = PendingDestination.Pack("TEXT_PDF_PACK", files, "Book.pdf", "${files.size} files")
+                textPackTriggerFile = null
+            },
+            readStubFileSize = { viewModel.readStubFileSize(it) },
+        )
+    }
+
+    if (selectedTextFiles != null) {
+        val textFiles = selectedTextFiles!!
+        val (initialTitle, initialAuthor) = remember(textFiles) {
+            MetadataUtils.extractMetadata(textFiles.first().displayName)
+        }
+        val sizeProgress = rememberSizeProgress(textFiles) { viewModel.readStubFileSize(it) }
+        CalibreConfirmationSheet(
+            displayName = "${textFiles.size} files",
+            initialTitle = initialTitle,
+            initialAuthor = initialAuthor,
+            onDismiss = { selectedTextFiles = null },
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedTextFiles = null
+            },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
+                selectedTextFiles = null
+            },
+            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            transferRefs = completedTransfersWithUuid,
+            sizeSummary = sizeSummaryText(sizeProgress, textFiles),
         )
     }
 
@@ -1802,6 +1849,7 @@ fun FilesScreen(
                                         onSendAsJoinedPdf = { pdfPackTriggerFile = it },
                                         onSendAsJoinedEpub = { epubPackTriggerFile = it },
                                         onSendAsJoinedMobi = { mobiPackTriggerFile = it },
+                                        onSendAsJoinedTextPdf = { textPackTriggerFile = it },
                                         onSendAsCbrPdf = { cbrPdfPackTriggerFile = it },
                                         onSendAsCbrCbz = { cbrCbzPackTriggerFile = it },
                                         onSendToPlex = {
