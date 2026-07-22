@@ -93,13 +93,13 @@ object MetadataUtils {
         return ext in MULTI_TRACK_AUDIO_EXTENSIONS
     }
 
-    /** True for PDF files that can be joined into a fused PDF. */
+    /** True for PDF files that can be joined into a single PDF. */
     fun isPdf(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext == "pdf"
     }
 
-    /** True for EPUB files that can be joined into a fused EPUB. */
+    /** True for EPUB files that can be joined into a single EPUB. */
     fun isEpub(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
         return ext == "epub"

@@ -113,7 +113,7 @@ import com.damarquez.putz.ui.theme.LocalAppStyling
 fun ArchiveScreen(
     onNavigateUp: () -> Unit,
     onNavigateToViewer: (kind: ViewerKind, title: String, filePath: String) -> Unit,
-    autoFuse: Boolean = false,
+    autoJoin: Boolean = false,
     viewModel: ArchiveViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -157,13 +157,13 @@ fun ArchiveScreen(
         }
     }
 
-    // Reached from the Files-list "Fuse archive…" action: pop the merge choice dialog for the
+    // Reached from the Files-list "Join archive…" action: pop the merge choice dialog for the
     // root as soon as entries are loaded, instead of requiring a manual extra tap once inside.
-    var autoFuseTriggered by remember { mutableStateOf(false) }
+    var autoJoinTriggered by remember { mutableStateOf(false) }
     LaunchedEffect(uiState) {
         val s = uiState as? ArchiveUiState.Success ?: return@LaunchedEffect
-        if (autoFuse && !autoFuseTriggered) {
-            autoFuseTriggered = true
+        if (autoJoin && !autoJoinTriggered) {
+            autoJoinTriggered = true
             viewModel.openArchiveMergeChoice(currentDirAsEntry(s.currentDir, viewModel.archiveName))
         }
     }
@@ -268,7 +268,7 @@ fun ArchiveScreen(
                             onClick = { viewModel.openArchiveMergeChoice(currentDirAsEntry(s.currentDir, viewModel.archiveName)) },
                             modifier = Modifier.padding(end = 8.dp),
                         ) {
-                            Text("Fuse")
+                            Text("Join")
                         }
                         Button(
                             onClick = { showDestinationPicker = true },
@@ -1134,7 +1134,7 @@ private fun ArchiveEntryItem(
 }
 
 /** Synthetic entry representing "the directory currently being viewed" (root when [currentDir]
- * is empty), since [ArchiveViewModel.openArchiveMergeChoice] needs an [ArchiveEntry] to fuse. */
+ * is empty), since [ArchiveViewModel.openArchiveMergeChoice] needs an [ArchiveEntry] to join. */
 private fun currentDirAsEntry(currentDir: String, archiveName: String): ArchiveEntry =
     ArchiveEntry(
         path = currentDir,

@@ -499,7 +499,7 @@ fun FileItem(
                                 )
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Fuse images…") },
+                                    text = { Text("Join images…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -510,7 +510,7 @@ fun FileItem(
                             if (isMultiTrackAudio) {
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Fuse into M4B…") },
+                                    text = { Text("Join into M4B…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -521,7 +521,7 @@ fun FileItem(
                             if (isPdf) {
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Fuse PDFs…") },
+                                    text = { Text("Join PDFs…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -532,7 +532,7 @@ fun FileItem(
                             if (isEpub) {
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Fuse EPUBs…") },
+                                    text = { Text("Join EPUBs…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -543,7 +543,7 @@ fun FileItem(
                             if (isMobi) {
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Fuse MOBIs…") },
+                                    text = { Text("Join MOBIs…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -623,7 +623,7 @@ fun FileItem(
                                 )
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Fuse folder…") },
+                                    text = { Text("Join folder…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
@@ -635,7 +635,7 @@ fun FileItem(
                             if (canBrowseArchive) {
                                 TightMenuItem(
                                     // CONTRACT: merge framework — see CONTRACTS.md "Merge framework"
-                                    text = { Text("Fuse archive…") },
+                                    text = { Text("Join archive…") },
                                     enabled = isGoogleSignedIn,
                                     onClick = {
                                         showMenu = false
