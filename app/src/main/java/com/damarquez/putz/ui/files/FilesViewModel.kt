@@ -487,7 +487,7 @@ class FilesViewModel @Inject constructor(
         val fileSize: Long,
         val parentFolderId: Long,
         val isSynced: Boolean,
-        val autoFuse: Boolean = false,
+        val autoJoin: Boolean = false,
     )
     private val _putioArchiveEvent = MutableSharedFlow<PutioArchiveEvent>()
     val putioArchiveEvent: SharedFlow<PutioArchiveEvent> = _putioArchiveEvent.asSharedFlow()
@@ -1199,9 +1199,9 @@ class FilesViewModel @Inject constructor(
         } }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addToChain: Boolean = false) {
         trackTransferPreparation { appScope.launch {
-            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, convertToPdf, tags, preresolvedLocalPath)
+            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, convertToPdf, tags, preresolvedLocalPath, addToChain = addToChain)
         } }
     }
 
@@ -1212,10 +1212,18 @@ class FilesViewModel @Inject constructor(
      *  FilesViewModel.prefetchBatchLocalPaths), skips the stub-content read below entirely.
      *  [addedAt], when supplied by a concurrent batch caller, overrides the real dispatch time
      *  so the local transfer list's display order still matches list order despite the race. */
-    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addedAt: Long? = null) {
+    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addedAt: Long? = null, addToChain: Boolean = false) {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
+                return
+            }
+
+            // CONTRACT: CHAIN — an on-device local file still needs its own upload-to-put.io
+            // round trip before a real request payload can be built at all; there's no
+            // resolved download_url/local_path/smb_path yet to stage. Not supported in v1.
+            if (addToChain && file.isLocal) {
+                _snackbarMessage.value = "Can't add an on-device file to a chain until it's uploaded — send it normally first"
                 return
             }
 
@@ -1227,7 +1235,7 @@ class FilesViewModel @Inject constructor(
                     if (ext.isNotEmpty()) file.displayName.substringBeforeLast('.') + "." + ext + "_bkp" else file.displayName
                 } else file.displayName
 
-                if (assembleBook) {
+                if (assembleBook && !addToChain) {
                     // Assembly spans multiple sends over time, so this book's local_path may
                     // legitimately still be unresolved when this particular file is added —
                     // park it and let resolveLocalPathAndDispatch persist the path once known.
@@ -1279,6 +1287,13 @@ class FilesViewModel @Inject constructor(
                         else ->
                             "'$title' is synced but its local path hasn't been recorded yet — try again shortly"
                     }
+                    // CONTRACT: CHAIN — a chain member needs a fully resolvable payload staged
+                    // immediately (placeChain has no later resolve-and-retry step, unlike a real
+                    // dispatch); reject rather than stage something unplacable.
+                    if (addToChain) {
+                        _snackbarMessage.value = reason
+                        return
+                    }
                     calibreRepository.addTransfer(
                         putioFileId = file.syncedFileId,
                         fileName = syncedFileName,
@@ -1318,8 +1333,9 @@ class FilesViewModel @Inject constructor(
                     convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
+                    addToChain = addToChain,
                 )
-                _snackbarMessage.value = "Transfer requested for $title"
+                _snackbarMessage.value = if (addToChain) "Added to chain" else "Transfer requested for $title"
                 return
             } else if (file.isLan) {
                 val conn = file.lanConnectionId?.let { lanFilesRepository.getConnectionById(it) }
@@ -1347,8 +1363,13 @@ class FilesViewModel @Inject constructor(
                     convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
+                    addToChain = addToChain,
                 )
-                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
+                _snackbarMessage.value = when {
+                    addToChain -> "Added to chain"
+                    assembleBook -> "Book assembled"
+                    else -> "Transfer requested for $title"
+                }
             } else if (file.isLocal) {
                 calibreRepository.addTransfer(
                     putioFileId = file.id,
@@ -1461,8 +1482,13 @@ class FilesViewModel @Inject constructor(
                     convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
+                    addToChain = addToChain,
                 )
-                _snackbarMessage.value = if (assembleBook) "Book assembled" else "Transfer requested for $title"
+                _snackbarMessage.value = when {
+                    addToChain -> "Added to chain"
+                    assembleBook -> "Book assembled"
+                    else -> "Transfer requested for $title"
+                }
             }
     }
 
@@ -1649,6 +1675,7 @@ class FilesViewModel @Inject constructor(
         tags: String? = null,
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
+        addToChain: Boolean = false,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1659,6 +1686,13 @@ class FilesViewModel @Inject constructor(
 
             val putioToken = settingsRepository.authTokenFlow.first()
             val tempId = files.first().id
+
+            // CONTRACT: CHAIN — on-device local files still need their own upload-to-put.io
+            // round trip before a real request payload can be built; not supported in v1.
+            if (addToChain && files.any { it.isLocal }) {
+                _snackbarMessage.value = "Can't add on-device files to a chain until they're uploaded — send normally first"
+                return@launch
+            }
 
             if (files.any { it.isLocal }) {
                 val localUrisJson = org.json.JSONArray(files.mapNotNull { it.localUri }).toString()
@@ -1717,8 +1751,13 @@ class FilesViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
                 isProtected = isProtected,
+                addToChain = addToChain,
             )
-            _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
+            _snackbarMessage.value = when {
+                addToChain -> "Added to chain"
+                assembleBook -> "Merge queued for assembly"
+                else -> "Merge transfer requested"
+            }
         } }
     }
 
@@ -1733,6 +1772,7 @@ class FilesViewModel @Inject constructor(
         tags: String? = null,
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
+        addToChain: Boolean = false,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1784,8 +1824,13 @@ class FilesViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
                 isProtected = isProtected,
+                addToChain = addToChain,
             )
-            _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
+            _snackbarMessage.value = when {
+                addToChain -> "Added to chain"
+                assembleBook -> "Merge queued for assembly"
+                else -> "Merge transfer requested"
+            }
         } }
     }
 
@@ -1833,7 +1878,7 @@ class FilesViewModel @Inject constructor(
     }
 
     // CONTRACT: ADD_BOOK_BATCH — merge framework. Appends a merge item into an existing pending
-    // (not-yet-dispatched) assembly transfer — the "Assemble into fused PDF"-style mechanism,
+    // (not-yet-dispatched) assembly transfer — the "Assemble into joined PDF"-style mechanism,
     // generalized for any merge engine. Pass either `files` (flat) or `groups` (chaptered).
     // Which item (if any) in [assembly] a new [payloadType] pack batch would fold into, for the
     // "Pick Assembly" picker to filter candidates and preview what's already in each one.
@@ -1961,12 +2006,12 @@ class FilesViewModel @Inject constructor(
         return FolderScanResult(result, subfolderCount)
     }
 
-    fun openPutioArchive(file: PutioFile, autoFuse: Boolean = false) {
+    fun openPutioArchive(file: PutioFile, autoJoin: Boolean = false) {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val url = filesRepository.getDownloadUrl(token, file.id)
             // CONTRACT: stub convention — fileId is the original file ID; stubFileId is the actual put.io ID of the stub
-            _putioArchiveEvent.emit(PutioArchiveEvent(file.syncedFileId, file.id, file.displayName, url, file.size, file.parentId, file.isSynced, autoFuse))
+            _putioArchiveEvent.emit(PutioArchiveEvent(file.syncedFileId, file.id, file.displayName, url, file.size, file.parentId, file.isSynced, autoJoin))
         }
     }
 
@@ -1999,7 +2044,7 @@ class FilesViewModel @Inject constructor(
     suspend fun findPendingTransfer(fileId: Long, fileName: String) =
         calibreRepository.findPendingTransfer(fileId, fileName)
 
-    fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
+    fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null, addToChain: Boolean = false) {
         viewModelScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) return@launch
@@ -2035,8 +2080,9 @@ class FilesViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 useLocal = useLocal,
                 localPath = localPath,
+                addToChain = addToChain,
             )
-            _snackbarMessage.value = "Cover replacement request sent"
+            _snackbarMessage.value = if (addToChain) "Added to chain" else "Cover replacement request sent"
         }
     }
 

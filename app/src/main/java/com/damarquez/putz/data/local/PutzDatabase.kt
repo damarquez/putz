@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
         LanConnectionEntity::class,
         PendingResponseDeletionEntity::class,
     ],
-    version = 27,
+    version = 28,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {

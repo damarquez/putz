@@ -28,9 +28,12 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -520,6 +523,7 @@ class CalibreRepository @Inject constructor(
         tags: String?,
         googleAccount: String,
         calibreBookUuid: String? = null,
+        addToChain: Boolean = false,
     ) {
         // We use a fake putio_file_id for comments update as it doesn't involve a file.
         // CONTRACT: negative sign marks it as a fileless/book-level request — the daemon
@@ -540,27 +544,25 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_comments_$putioFileId.json", jsonStr)
-
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = "Update comments for $title",
-            title = "Comments for $title",
-            author = author,
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            isTempUpload = true,
-            hasPutioFile = false,
-            calibreBookUuid = calibreBookUuid,
-            lastRequestPayload = jsonStr
-        )
-        // NonCancellable: the GDrive upload already completed; the DB record must always
-        // be written so the transfer is visible even if the calling scope navigates away.
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+        dispatchOrStage(googleAccount, "req_comments_$putioFileId.json", jsonStr, addToChain) { status, gDriveId, errorMessage, chainPosition ->
+            CalibreTransferEntity(
+                putioFileId = putioFileId,
+                fileName = "Update comments for $title",
+                title = "Comments for $title",
+                author = author,
+                status = status,
+                addedAt = System.currentTimeMillis(),
+                lastUpdatedAt = System.currentTimeMillis(),
+                allPutioFileIds = putioFileId.toString(),
+                gdriveRequestId = gDriveId,
+                errorMessage = errorMessage,
+                isTempUpload = true,
+                hasPutioFile = false,
+                calibreBookUuid = calibreBookUuid,
+                lastRequestPayload = jsonStr,
+                chainPosition = chainPosition,
+            )
+        }
     }
 
     // CONTRACT: UPDATE_COMMENTS (edit_metadata variant — sends all non-null fields together)
@@ -618,6 +620,7 @@ class CalibreRepository @Inject constructor(
         uuids: List<String>,
         tags: String,
         googleAccount: String,
+        addToChain: Boolean = false,
     ) {
         val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
@@ -628,24 +631,24 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_batch_tags_$putioFileId.json", jsonStr)
-
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = "Batch add tags to ${uuids.size} books",
-            title = "Batch tag: $tags",
-            author = "",
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            isTempUpload = true,
-            hasPutioFile = false,
-            lastRequestPayload = jsonStr,
-        )
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+        dispatchOrStage(googleAccount, "req_batch_tags_$putioFileId.json", jsonStr, addToChain) { status, gDriveId, errorMessage, chainPosition ->
+            CalibreTransferEntity(
+                putioFileId = putioFileId,
+                fileName = "Batch add tags to ${uuids.size} books",
+                title = "Batch tag: $tags",
+                author = "",
+                status = status,
+                addedAt = System.currentTimeMillis(),
+                lastUpdatedAt = System.currentTimeMillis(),
+                allPutioFileIds = putioFileId.toString(),
+                gdriveRequestId = gDriveId,
+                errorMessage = errorMessage,
+                isTempUpload = true,
+                hasPutioFile = false,
+                lastRequestPayload = jsonStr,
+                chainPosition = chainPosition,
+            )
+        }
     }
 
     // CONTRACT: PRIORITY_PUTIO_SYNC
@@ -693,6 +696,7 @@ class CalibreRepository @Inject constructor(
         // regardless of the order the user actually queued them in.
         addedAt: Long? = null,
         priority: Boolean = false,
+        addToChain: Boolean = false,
     ) {
         val initialItem = CalibreBatchItem(
             type = when {
@@ -711,12 +715,29 @@ class CalibreRepository @Inject constructor(
             protected = if (isProtected) true else null,
             convert_to_pdf = if (convertToPdf) true else null,
         )
+        // CONTRACT: CHAIN — staged chain members skip dispatch just like ASSEMBLED/UPLOADING
+        // placeholders already do, but (unlike those) need their full request payload saved
+        // immediately: placeChain() reads every chain member's lastRequestPayload verbatim, with
+        // no reconstruct-from-batchData fallback the way retryTransfer has for legacy rows.
+        val chainPosition = if (addToChain) (calibreTransferDao.maxChainPosition() ?: -1) + 1 else null
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = listOf(initialItem),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+            tags = tags?.ifBlank { null },
+        )
+        val jsonStr = json.encodeToString(request)
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
             fileName = fileName,
             title = title,
             author = author,
             status = when {
+                addToChain -> CalibreTransferStatus.CHAINED
                 assembleBook -> CalibreTransferStatus.ASSEMBLED
                 isUploading -> CalibreTransferStatus.UPLOADING
                 else -> CalibreTransferStatus.PENDING
@@ -731,25 +752,16 @@ class CalibreRepository @Inject constructor(
             localUrisJson = localUrisJson,
             tags = tags?.ifBlank { null },
             priority = priority,
+            chainPosition = chainPosition,
+            lastRequestPayload = if (addToChain) jsonStr else null,
         )
         calibreTransferDao.insertTransfer(transfer)
 
         // useLocal without local_path: park as PENDING so caller can resolve path before dispatching
         // useLocal/smbPath means we can dispatch immediately without a download URL
-        if (assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null) || (useLocal && localPath == null)) return
+        if (addToChain || assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null) || (useLocal && localPath == null)) return
 
         // Immediately try to upload request
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = CalibreBatchRequest(
-            putio_file_id = putioFileId,
-            title = title,
-            author = author,
-            items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-            tags = tags?.ifBlank { null },
-        )
-        val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$putioFileId.json", jsonStr, isPriority = priority)
 
         if (gDriveId != null) {
@@ -879,6 +891,7 @@ class CalibreRepository @Inject constructor(
         tags: String? = null,
         isProtected: Boolean = false,
         priority: Boolean = false,
+        addToChain: Boolean = false,
     ) {
         val allPairs = files ?: groups?.flatMap { (_, groupFiles) -> groupFiles }
             ?: error("addMergeTransfer requires either files or groups")
@@ -895,12 +908,27 @@ class CalibreRepository @Inject constructor(
             groups = groups?.map { (label, groupFiles) -> PackGroup(label, groupFiles.map { (_, f) -> f }) },
             protected = if (isProtected) true else null,
         )
+        // CONTRACT: CHAIN — see addTransfer's identical comment; placeChain() reads
+        // lastRequestPayload verbatim for every staged chain member.
+        val chainPosition = if (addToChain) (calibreTransferDao.maxChainPosition() ?: -1) + 1 else null
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            putio_file_id = primaryFileId,
+            title = title,
+            author = author,
+            items = listOf(initialItem),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+            tags = tags?.ifBlank { null },
+        )
+        val jsonStr = json.encodeToString(request)
         val transfer = CalibreTransferEntity(
             putioFileId = primaryFileId,
             fileName = fileName,
             title = title,
             author = author,
             status = when {
+                addToChain -> CalibreTransferStatus.CHAINED
                 assembleBook -> CalibreTransferStatus.ASSEMBLED
                 isUploading -> CalibreTransferStatus.UPLOADING
                 else -> CalibreTransferStatus.PENDING
@@ -913,6 +941,8 @@ class CalibreRepository @Inject constructor(
             localUrisJson = localUrisJson,
             tags = tags?.ifBlank { null },
             priority = priority,
+            chainPosition = chainPosition,
+            lastRequestPayload = if (addToChain) jsonStr else null,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -921,19 +951,8 @@ class CalibreRepository @Inject constructor(
         // If the app is killed mid-upload, GlobalSyncViewModel's orphan detector resumes from
         // localUrisJson via restartOrphanedUpload (CONTRACT: works for any item type, since it
         // only reads files/fileName generically from the stored batchData).
-        if (assembleBook || isUploading || allPairs.any { (_, f) -> f.download_url == null && f.smb_path == null && f.use_local != true }) return
+        if (addToChain || assembleBook || isUploading || allPairs.any { (_, f) -> f.download_url == null && f.smb_path == null && f.use_local != true }) return
 
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = CalibreBatchRequest(
-            putio_file_id = primaryFileId,
-            title = title,
-            author = author,
-            items = listOf(initialItem),
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-            tags = tags?.ifBlank { null },
-        )
-        val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount, "req_$primaryFileId.json", jsonStr, isPriority = priority)
 
         if (gDriveId != null) {
@@ -1042,7 +1061,7 @@ class CalibreRepository @Inject constructor(
      * Folds [newItem]'s files into the matching item found by [compatibleAssemblyItem] (extending
      * an existing pack, or promoting a lone matching SINGLE into a new pack) instead of appending
      * [newItem] as a separate item — this is what lets a join-pack be built up across multiple
-     * "Assemble into fused X" calls without hitting the daemon's same-output-format dedup, which
+     * "Assemble into joined X" calls without hitting the daemon's same-output-format dedup, which
      * otherwise silently drops the second of two same-type pack items at dispatch (see the TODO
      * on [appendToAssembly] below). Falls back to [appendToAssembly] when nothing is compatible.
      * Always preserves the assembly's own title/author/tags — those came from [transfer], not
@@ -2153,6 +2172,39 @@ class CalibreRepository @Inject constructor(
         }
     }
 
+    // CONTRACT: CHAIN — shared tail for the "build one entity, decide status, maybe dispatch"
+    // send*Request functions. When addToChain is true, stages the transfer as CHAINED (ordered
+    // by a fresh chainPosition) and skips dispatch entirely — the daemon never sees it until
+    // placeChain() later wraps it (and its chain siblings) into one CHAIN request. Otherwise
+    // dispatches now via daemonTransport, exactly as every one of these functions did before
+    // this helper existed. [buildTransfer] receives the resolved status/gdriveRequestId/
+    // errorMessage/chainPosition and returns the rest of the entity's fields.
+    private suspend fun dispatchOrStage(
+        googleAccount: String,
+        requestFileName: String,
+        jsonStr: String,
+        addToChain: Boolean,
+        isPriority: Boolean = false,
+        buildTransfer: (status: CalibreTransferStatus, gDriveId: String?, errorMessage: String?, chainPosition: Int?) -> CalibreTransferEntity,
+    ) {
+        if (addToChain) {
+            val nextPosition = (calibreTransferDao.maxChainPosition() ?: -1) + 1
+            val transfer = buildTransfer(CalibreTransferStatus.CHAINED, null, null, nextPosition)
+            withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+            return
+        }
+        val gDriveId = daemonTransport.submitRequest(googleAccount, requestFileName, jsonStr, isPriority)
+        val transfer = buildTransfer(
+            if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            gDriveId,
+            if (gDriveId == null) "Failed to upload to GDrive" else null,
+            null,
+        )
+        // NonCancellable: the GDrive upload already completed; the DB record must always
+        // be written so the transfer is visible even if the calling scope navigates away.
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
     suspend fun sendReplaceCoverRequest(
         putioFileId: Long,
         fileName: String,
@@ -2164,6 +2216,7 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String? = null,
         useLocal: Boolean = false,
         localPath: String? = null,
+        addToChain: Boolean = false,
     ) {
         val item = CalibreBatchItem(
             type = "SINGLE",
@@ -2185,26 +2238,24 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount,"req_cover_$putioFileId.json", jsonStr)
-
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = fileName,
-            title = "Cover for $title",
-            author = author,
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            batchData = json.encodeToString(listOf(item)),
-            calibreBookUuid = calibreBookUuid,
-            lastRequestPayload = jsonStr
-        )
-        // NonCancellable: the GDrive upload already completed; the DB record must always
-        // be written so the transfer is visible even if the calling scope navigates away.
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+        dispatchOrStage(googleAccount, "req_cover_$putioFileId.json", jsonStr, addToChain) { status, gDriveId, errorMessage, chainPosition ->
+            CalibreTransferEntity(
+                putioFileId = putioFileId,
+                fileName = fileName,
+                title = "Cover for $title",
+                author = author,
+                status = status,
+                addedAt = System.currentTimeMillis(),
+                lastUpdatedAt = System.currentTimeMillis(),
+                allPutioFileIds = putioFileId.toString(),
+                gdriveRequestId = gDriveId,
+                errorMessage = errorMessage,
+                batchData = json.encodeToString(listOf(item)),
+                calibreBookUuid = calibreBookUuid,
+                lastRequestPayload = jsonStr,
+                chainPosition = chainPosition,
+            )
+        }
     }
 
     // CONTRACT: GENERATE_COVER
@@ -2254,6 +2305,7 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         googleAccount: String,
         keepCover: Boolean = false,
+        addToChain: Boolean = false,
     ) {
         val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
@@ -2268,25 +2320,25 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_protect_$putioFileId.json", jsonStr)
-
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = "Protect $title",
-            title = "Protect $title",
-            author = author,
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            batchData = "[]",
-            calibreBookUuid = calibreBookUuid,
-            lastRequestPayload = jsonStr,
-            hasPutioFile = false,
-        )
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+        dispatchOrStage(googleAccount, "req_protect_$putioFileId.json", jsonStr, addToChain) { status, gDriveId, errorMessage, chainPosition ->
+            CalibreTransferEntity(
+                putioFileId = putioFileId,
+                fileName = "Protect $title",
+                title = "Protect $title",
+                author = author,
+                status = status,
+                addedAt = System.currentTimeMillis(),
+                lastUpdatedAt = System.currentTimeMillis(),
+                allPutioFileIds = putioFileId.toString(),
+                gdriveRequestId = gDriveId,
+                errorMessage = errorMessage,
+                batchData = "[]",
+                calibreBookUuid = calibreBookUuid,
+                lastRequestPayload = jsonStr,
+                hasPutioFile = false,
+                chainPosition = chainPosition,
+            )
+        }
     }
 
     // CONTRACT: UNPROTECT_BOOK
@@ -2295,6 +2347,7 @@ class CalibreRepository @Inject constructor(
         author: String,
         calibreBookUuid: String,
         googleAccount: String,
+        addToChain: Boolean = false,
     ) {
         val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
         val appId = settingsRepository.getOrCreateAppId()
@@ -2308,25 +2361,25 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_unprotect_$putioFileId.json", jsonStr)
-
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = "Unprotect $title",
-            title = "Unprotect $title",
-            author = author,
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            batchData = "[]",
-            calibreBookUuid = calibreBookUuid,
-            lastRequestPayload = jsonStr,
-            hasPutioFile = false,
-        )
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+        dispatchOrStage(googleAccount, "req_unprotect_$putioFileId.json", jsonStr, addToChain) { status, gDriveId, errorMessage, chainPosition ->
+            CalibreTransferEntity(
+                putioFileId = putioFileId,
+                fileName = "Unprotect $title",
+                title = "Unprotect $title",
+                author = author,
+                status = status,
+                addedAt = System.currentTimeMillis(),
+                lastUpdatedAt = System.currentTimeMillis(),
+                allPutioFileIds = putioFileId.toString(),
+                gdriveRequestId = gDriveId,
+                errorMessage = errorMessage,
+                batchData = "[]",
+                calibreBookUuid = calibreBookUuid,
+                lastRequestPayload = jsonStr,
+                hasPutioFile = false,
+                chainPosition = chainPosition,
+            )
+        }
     }
 
     // CONTRACT: CONVERT_FORMAT
@@ -2806,6 +2859,74 @@ class CalibreRepository @Inject constructor(
         }
         return NetworkResult.Error("Could not upload request to Google Drive")
     }
+
+    fun observeChainedTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.observeChainedTransfers()
+    fun observeChainedCount(): Flow<Int> = calibreTransferDao.observeChainedCount()
+
+    // CONTRACT: CHAIN
+    suspend fun reorderChain(orderedFileIds: List<Long>) {
+        orderedFileIds.forEachIndexed { index, fileId ->
+            val transfer = calibreTransferDao.getTransferById(fileId) ?: return@forEachIndexed
+            if (transfer.status != CalibreTransferStatus.CHAINED) return@forEachIndexed
+            calibreTransferDao.updateTransfer(transfer.copy(chainPosition = index))
+        }
+    }
+
+    // CONTRACT: CHAIN — sends every staged (CHAINED) item at once, wrapped in one CHAIN
+    // request, in their current chainPosition order. Every CHAINED row is guaranteed to carry
+    // a complete lastRequestPayload (populated at staging time by addTransfer/addMergeTransfer/
+    // the send*Request functions' dispatchOrStage path) — unlike retryTransfer, there is no
+    // reconstruct-from-batchData fallback here, so a chain member is only ever unplacable if
+    // something upstream failed to set lastRequestPayload, which would be a bug, not a normal
+    // runtime condition.
+    suspend fun placeChain(googleAccount: String): NetworkResult<Unit> {
+        val chained = calibreTransferDao.observeChainedTransfers().first()
+        if (chained.isEmpty()) return NetworkResult.Error("Chain is empty")
+
+        val items = mutableListOf<kotlinx.serialization.json.JsonElement>()
+        for (transfer in chained) {
+            val payload = transfer.lastRequestPayload
+                ?: return NetworkResult.Error("\"${transfer.title}\" has no saved request and can't be placed")
+            try {
+                items.add(json.parseToJsonElement(payload))
+            } catch (e: Exception) {
+                return NetworkResult.Error("\"${transfer.title}\"'s saved request is unreadable: ${e.message}")
+            }
+        }
+
+        val chainPutioId = -System.currentTimeMillis()
+        val appId = settingsRepository.getOrCreateAppId()
+        val chainRequest = buildJsonObject {
+            put("action", "CHAIN")
+            put("putio_file_id", chainPutioId)
+            put("app_id", appId)
+            put("items", JsonArray(items))
+        }
+        val jsonStr = json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), chainRequest)
+        // CONTRACT: CHAIN — the daemon's Drive-path dispatch classifier recognizes a chain
+        // request by this `req_chain_` filename prefix (in addition to the parsed action, which
+        // the LAN path already has); see _dispatch_or_queue in putz_manager.py.
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_chain_$chainPutioId.json", jsonStr)
+            ?: return NetworkResult.Error("Could not upload chain request to Google Drive")
+
+        val chainIdStr = chainPutioId.toString()
+        chained.forEach { transfer ->
+            calibreTransferDao.updateTransfer(transfer.copy(
+                status = CalibreTransferStatus.REQUESTED,
+                chainId = chainIdStr,
+                gdriveRequestId = gDriveId,
+                lastUpdatedAt = System.currentTimeMillis(),
+            ))
+        }
+        return NetworkResult.Success(Unit)
+    }
+
+    // CONTRACT: CHAIN — there's no "undispatched, not-in-a-chain" state to fall back to, so
+    // removing an item from the chain-in-progress just sends it standalone right away, exactly
+    // as "Send now" would have at staging time — reuses retryTransfer's reconstruct-and-resubmit
+    // path, which already works unmodified for any row carrying a full lastRequestPayload.
+    suspend fun removeFromChain(fileId: Long, googleAccount: String): NetworkResult<Unit> =
+        retryTransfer(fileId, googleAccount)
 
     suspend fun getTransfer(fileId: Long): CalibreTransferEntity? {
         return calibreTransferDao.getTransferById(fileId)

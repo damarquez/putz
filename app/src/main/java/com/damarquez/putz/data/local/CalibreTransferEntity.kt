@@ -79,6 +79,16 @@ data class CalibreTransferEntity(
      *  from when it first arrived/was queued. Null for transfers completed before the
      *  daemon started reporting this. */
     val durationSeconds: Double? = null,
+
+    /** Set once this transfer is placed as part of a chain (see CalibreRepository.placeChain).
+     *  Persists after placement (unlike [chainPosition]) so completed/failed rows can still
+     *  show "was part of chain X". Null for a transfer never chained. */
+    val chainId: String? = null,
+
+    /** Ordering position while [status] is CHAINED (staged, not yet placed) — the request
+     *  chain screen sorts by this. Meaningless once placed; left as-is rather than cleared,
+     *  since it's harmless dead weight after that point. */
+    val chainPosition: Int? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 
@@ -97,5 +107,10 @@ enum class CalibreTransferStatus {
     PROCESSING,
     COMPLETED,
     FAILED,
-    ASSEMBLED
+    ASSEMBLED,
+
+    /** Fully built request, staged into the chain-in-progress via "Add to chain" — has a
+     *  complete [CalibreTransferEntity.lastRequestPayload] but has not been dispatched.
+     *  See [CalibreTransferEntity.chainPosition] for ordering; CONTRACT: CHAIN. */
+    CHAINED,
 }

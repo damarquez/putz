@@ -112,8 +112,8 @@ import com.damarquez.putz.ui.viewer.ViewerKind
 fun FilesScreen(
     onNavigateToFolder: (Long, String, String?, Long, String?, String?) -> Unit,
     onNavigateToFolderHighlighted: (folderId: Long, folderName: String, highlightId: Long) -> Unit,
-    onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String, autoFuse: Boolean) -> Unit,
-    onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean, autoFuse: Boolean) -> Unit,
+    onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String, autoJoin: Boolean) -> Unit,
+    onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean, autoJoin: Boolean) -> Unit,
     onNavigateToViewer: (kind: ViewerKind, title: String, filePath: String) -> Unit,
     onNavigateToTrash: () -> Unit,
     onNavigateUp: () -> Unit,
@@ -140,7 +140,7 @@ fun FilesScreen(
     val sizeSort by viewModel.sizeSort.collectAsState()
     val itemCount = (uiState as? FilesUiState.Success)?.files?.size
 
-    // Candidate pool for the fuse/pack pickers (PDF/EPUB/CBR/etc.): the current folder's listing
+    // Candidate pool for the join/pack pickers (PDF/EPUB/CBR/etc.): the current folder's listing
     // normally, but the search results themselves while searching, so search acts as a "virtual
     // folder" spanning whatever folders the matched files actually live in.
     val packCandidateFiles = (uiState as? FilesUiState.Success)?.let { success ->
@@ -183,13 +183,13 @@ fun FilesScreen(
     val scope = rememberCoroutineScope()
     var currentHighlightId by remember { mutableStateOf(viewModel.highlightFileId) }
 
-    // Shared by row-tap (autoFuse=false, just browse) and the "Fuse archive…" menu action
-    // (autoFuse=true, browse and immediately pop the merge choice dialog for the root).
-    fun openArchive(file: PutioFile, autoFuse: Boolean) {
+    // Shared by row-tap (autoJoin=false, just browse) and the "Join archive…" menu action
+    // (autoJoin=true, browse and immediately pop the merge choice dialog for the root).
+    fun openArchive(file: PutioFile, autoJoin: Boolean) {
         if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.displayName)) {
-            onNavigateToArchive(file.localUri, file.lanConnectionId ?: -1L, file.lanPath, file.displayName, autoFuse)
+            onNavigateToArchive(file.localUri, file.lanConnectionId ?: -1L, file.lanPath, file.displayName, autoJoin)
         } else if (!file.isLocal && !file.isLan && file.isSynced && MetadataUtils.isArchive(file.displayName)) {
-            viewModel.openPutioArchive(file, autoFuse)
+            viewModel.openPutioArchive(file, autoJoin)
         }
     }
 
@@ -242,7 +242,7 @@ fun FilesScreen(
 
     LaunchedEffect(Unit) {
         viewModel.putioArchiveEvent.collect { event ->
-            onNavigateToPutioArchive(event.fileId, event.stubFileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId, event.isSynced, event.autoFuse)
+            onNavigateToPutioArchive(event.fileId, event.stubFileId, event.fileName, event.downloadUrl, event.fileSize, event.parentFolderId, event.isSynced, event.autoJoin)
         }
     }
 
@@ -498,6 +498,10 @@ fun FilesScreen(
                 viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, convertToPdf, tags)
                 viewModel.dismissCalibreSingleDraft()
             },
+            onAddToChain = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, convertToPdf ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, convertToPdf, tags, addToChain = true)
+                viewModel.dismissCalibreSingleDraft()
+            },
             onDraftFieldsChanged = { title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected, convertToPdf ->
                 viewModel.updateCalibreSingleDraft {
                     it.copy(
@@ -538,6 +542,12 @@ fun FilesScreen(
             onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _, _ ->
                 if (matchedId != null || uuid != null) {
                     viewModel.replaceCover(imageFile, title, author, matchedId ?: 0L, uuid)
+                }
+                selectedFileForCover = null
+            },
+            onAddToChain = { title, author, _, _, _, matchedId, uuid, _, _, _, _ ->
+                if (matchedId != null || uuid != null) {
+                    viewModel.replaceCover(imageFile, title, author, matchedId ?: 0L, uuid, addToChain = true)
                 }
                 selectedFileForCover = null
             },
@@ -596,6 +606,11 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedPackFiles = null
             },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
+                viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
+                selectedPackFiles = null
+            },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
@@ -616,6 +631,10 @@ fun FilesScreen(
             onDismiss = { selectedPdfFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedPdfFiles = null
+            },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
                 selectedPdfFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -655,6 +674,10 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedEpubFiles = null
             },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
+                selectedEpubFiles = null
+            },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
@@ -690,6 +713,10 @@ fun FilesScreen(
             onDismiss = { selectedMobiFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedMobiFiles = null
+            },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
                 selectedMobiFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -732,6 +759,10 @@ fun FilesScreen(
             onDismiss = { selectedImageFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedImageFiles = null
+            },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
                 selectedImageFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -843,6 +874,10 @@ fun FilesScreen(
                 viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook)
                 selectedMergeFlatFiles = null
             },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
+                selectedMergeFlatFiles = null
+            },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
@@ -868,6 +903,10 @@ fun FilesScreen(
             onDismiss = { selectedMergeGroups = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook)
+                selectedMergeGroups = null
+            },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
                 selectedMergeGroups = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -909,6 +948,10 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
                 selectedCbrFiles = null
             },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
+                selectedCbrFiles = null
+            },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
@@ -945,6 +988,10 @@ fun FilesScreen(
             onDismiss = { selectedCbrCbzFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
                 viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook)
+                selectedCbrCbzFiles = null
+            },
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _ ->
+                viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, addToChain = true)
                 selectedCbrCbzFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -1609,7 +1656,7 @@ fun FilesScreen(
                                                     if (isInHiddenScope) "hidden" else currentTab.name,
                                                 )
                                             } else if (MetadataUtils.isArchive(file.displayName)) {
-                                                openArchive(file, autoFuse = false)
+                                                openArchive(file, autoJoin = false)
                                             } else if (!file.isLocal && !file.isLan && file.isSynced) {
                                                 fileForDetails = file
                                                 fileDetailsStubContent = null
@@ -1778,7 +1825,7 @@ fun FilesScreen(
                                             }
                                         },
                                         onMergeFolder = { folder -> viewModel.openMergeProcessChoice(folder) },
-                                        onMergeArchive = { archive -> openArchive(archive, autoFuse = true) },
+                                        onMergeArchive = { archive -> openArchive(archive, autoJoin = true) },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },

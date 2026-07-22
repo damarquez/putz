@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Refresh
@@ -78,6 +79,8 @@ fun CalibreTransferItem(
     onCopyAuthor: ((String) -> Unit)? = null,
     onTap: (() -> Unit)? = null,
     onMakePriority: (() -> Unit)? = null,
+    onRemoveFromChain: (() -> Unit)? = null,
+    onOpenChain: (() -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     var showContextMenu by remember { mutableStateOf(false) }
@@ -247,6 +250,7 @@ fun CalibreTransferItem(
                         errorMessage = transfer.errorMessage,
                         probeCount = transfer.probeCount,
                         durationSeconds = transfer.durationSeconds,
+                        chainPosition = transfer.chainPosition,
                     )
                     Spacer(Modifier.weight(1f))
                     if (isAssembled) {
@@ -382,6 +386,31 @@ fun CalibreTransferItem(
                 },
             )
         }
+        // CONTRACT: CHAIN
+        if (transfer.status == CalibreTransferStatus.CHAINED && onRemoveFromChain != null) {
+            DropdownMenuItem(
+                text = { Text("Remove from chain (send now)") },
+                leadingIcon = {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onRemoveFromChain()
+                },
+            )
+        }
+        if (transfer.chainId != null && onOpenChain != null) {
+            DropdownMenuItem(
+                text = { Text("Part of a chain") },
+                leadingIcon = {
+                    Icon(Icons.Default.Link, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onOpenChain()
+                },
+            )
+        }
         if (transfer.status == CalibreTransferStatus.COMPLETED) {
             // CONTRACT: probe pattern — re-verifies the book/formats with the daemon and
             // refreshes assets.db for it, same request the in-progress probe button sends;
@@ -402,8 +431,13 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null, probeCount: Int = 0, durationSeconds: Double? = null) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null, probeCount: Int = 0, durationSeconds: Double? = null, chainPosition: Int? = null) {
     val (icon, color, label) = when (status) {
+        CalibreTransferStatus.CHAINED -> Triple(
+            Icons.Default.Link,
+            MaterialTheme.colorScheme.secondary,
+            if (chainPosition != null) "Chained (#${chainPosition + 1})" else "Chained",
+        )
         CalibreTransferStatus.UPLOADING -> Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, uploadProgress ?: "Uploading")
         CalibreTransferStatus.ASSEMBLED -> if (isAssemblyUploading) {
             val activeLabel = uploadProgress ?: if (isAppendPending) "Working…" else "Uploading"

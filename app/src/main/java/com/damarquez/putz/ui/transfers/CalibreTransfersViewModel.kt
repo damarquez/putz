@@ -107,26 +107,29 @@ class CalibreTransfersViewModel @Inject constructor(
         _snackbarMessage.value = null
     }
 
-    fun batchAddTags(uuids: List<String>, tags: String) {
+    fun batchAddTags(uuids: List<String>, tags: String, addToChain: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
-            _snackbarMessage.value = "Sending batch tag update..."
+            _snackbarMessage.value = if (addToChain) "Adding to chain..." else "Sending batch tag update..."
             try {
-                calibreRepository.sendBatchAddTagsRequest(uuids, tags, account)
-                _snackbarMessage.value = "Batch tag request sent for ${uuids.size} book${if (uuids.size == 1) "" else "s"}"
+                calibreRepository.sendBatchAddTagsRequest(uuids, tags, account, addToChain = addToChain)
+                _snackbarMessage.value = if (addToChain)
+                    "Added to chain"
+                else
+                    "Batch tag request sent for ${uuids.size} book${if (uuids.size == 1) "" else "s"}"
             } catch (e: Exception) {
                 _snackbarMessage.value = "Error: ${e.message}"
             }
         }
     }
 
-    fun replaceCommentsFromClipboard(comments: String?, tags: String?, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
+    fun replaceCommentsFromClipboard(comments: String?, tags: String?, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null, addToChain: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
 
-            _snackbarMessage.value = "Sending metadata update..."
+            _snackbarMessage.value = if (addToChain) "Adding to chain..." else "Sending metadata update..."
 
             try {
                 calibreRepository.sendUpdateCommentsRequest(
@@ -136,9 +139,10 @@ class CalibreTransfersViewModel @Inject constructor(
                     comments = comments,
                     tags = tags,
                     googleAccount = account,
-                    calibreBookUuid = calibreBookUuid
+                    calibreBookUuid = calibreBookUuid,
+                    addToChain = addToChain,
                 )
-                _snackbarMessage.value = "Metadata update request sent"
+                _snackbarMessage.value = if (addToChain) "Added to chain" else "Metadata update request sent"
             } catch (e: Exception) {
                 _snackbarMessage.value = "Error: ${e.message}"
             }
@@ -183,7 +187,7 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
-    fun protectBook(uuid: String, title: String, author: String, keepCover: Boolean = false) {
+    fun protectBook(uuid: String, title: String, author: String, keepCover: Boolean = false, addToChain: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
@@ -193,11 +197,12 @@ class CalibreTransfersViewModel @Inject constructor(
                 calibreBookUuid = uuid,
                 googleAccount = account,
                 keepCover = keepCover,
+                addToChain = addToChain,
             )
         }
     }
 
-    fun unprotectBook(uuid: String, title: String, author: String) {
+    fun unprotectBook(uuid: String, title: String, author: String, addToChain: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
@@ -206,6 +211,7 @@ class CalibreTransfersViewModel @Inject constructor(
                 author = author,
                 calibreBookUuid = uuid,
                 googleAccount = account,
+                addToChain = addToChain,
             )
         }
     }
@@ -251,7 +257,7 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
-    fun replaceCoverFromClipboard(uri: android.net.Uri, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null) {
+    fun replaceCoverFromClipboard(uri: android.net.Uri, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null, addToChain: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             val token = settingsRepository.authTokenFlow.first()
@@ -296,9 +302,10 @@ class CalibreTransfersViewModel @Inject constructor(
                     calibreBookId = calibreBookId,
                     googleAccount = account,
                     downloadUrl = downloadUrl,
-                    calibreBookUuid = calibreBookUuid
+                    calibreBookUuid = calibreBookUuid,
+                    addToChain = addToChain,
                 )
-                _snackbarMessage.value = "Cover replacement request sent"
+                _snackbarMessage.value = if (addToChain) "Added to chain" else "Cover replacement request sent"
             } else {
                 _snackbarMessage.value = "Upload failed: ${(uploadResult as NetworkResult.Error).message}"
             }
@@ -322,9 +329,18 @@ class CalibreTransfersViewModel @Inject constructor(
                     val now = System.currentTimeMillis()
                     val activeProgressKeys = calibreRepository.uploadProgress.value.keys
                     currentTransfers.forEach { transfer ->
-                        val isStuck = transfer.status == CalibreTransferStatus.PENDING ||
-                                     transfer.status == CalibreTransferStatus.REQUESTED ||
-                                     transfer.status == CalibreTransferStatus.PROCESSING
+                        // CONTRACT: CHAIN — a chain member queued behind slower earlier items can
+                        // legitimately sit at REQUESTED far longer than 5 minutes with the daemon
+                        // never having touched it yet; probing it would get back a premature FAILED
+                        // (its expected end-state doesn't exist until the chain actually reaches it)
+                        // and could even trigger an auto-retry that races the chain's own eventual
+                        // run of the same item. Exempt any transfer that was placed as part of a
+                        // chain from the stuck-transfer watchdog entirely.
+                        val isStuck = transfer.chainId == null && (
+                            transfer.status == CalibreTransferStatus.PENDING ||
+                            transfer.status == CalibreTransferStatus.REQUESTED ||
+                            transfer.status == CalibreTransferStatus.PROCESSING
+                        )
 
                         val isFailedUpload = transfer.status == CalibreTransferStatus.FAILED &&
                                              transfer.errorMessage?.contains("upload to GDrive", ignoreCase = true) == true
@@ -380,6 +396,44 @@ class CalibreTransfersViewModel @Inject constructor(
         val account = settingsRepository.googleTokenFlow.first()
         if (account.isBlank()) return false
         return calibreRepository.promoteTransferToPriority(fileId, account)
+    }
+
+    // CONTRACT: CHAIN
+    val chainedTransfers: StateFlow<List<CalibreTransferEntity>> = calibreRepository.observeChainedTransfers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val chainedCount: StateFlow<Int> = calibreRepository.observeChainedCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    fun reorderChain(orderedFileIds: List<Long>) {
+        viewModelScope.launch { calibreRepository.reorderChain(orderedFileIds) }
+    }
+
+    fun removeFromChain(fileId: Long) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            _snackbarMessage.value = "Removing from chain — sending now..."
+            val result = calibreRepository.removeFromChain(fileId, account)
+            _snackbarMessage.value = when (result) {
+                is NetworkResult.Success -> "Sent"
+                is NetworkResult.Error -> "Could not send: ${result.message}"
+                else -> "Could not send"
+            }
+        }
+    }
+
+    fun placeChain() {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            _snackbarMessage.value = "Placing chain..."
+            val result = calibreRepository.placeChain(account)
+            _snackbarMessage.value = when (result) {
+                is NetworkResult.Success -> "Chain placed"
+                is NetworkResult.Error -> "Could not place chain: ${result.message}"
+                else -> "Could not place chain"
+            }
+        }
     }
 
     fun syncMetadata() {

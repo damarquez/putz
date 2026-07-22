@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardActions
@@ -97,6 +98,7 @@ import com.damarquez.putz.ui.GlobalSyncViewModel
 @Composable
 fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     onNavigateUp: () -> Unit,
+    onOpenChain: () -> Unit,
     viewModel: CalibreTransfersViewModel,
     pendingCoverRepository: PendingCoverRepository,
     pendingCommentsRepository: PendingCommentsRepository,
@@ -130,6 +132,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             .map { TransferRef(it.calibreBookUuid!!, it.title, it.author) }
             .distinctBy { it.uuid }
     }
+    val chainedCount by viewModel.chainedCount.collectAsState()
     val daemonStatus by viewModel.daemonStatus.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
     val pendingAssemblyAppends by viewModel.pendingAssemblyAppends.collectAsState()
@@ -321,6 +324,13 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 clipboardImageUri = null
                 prefilledUuid = null
             },
+            onAddToChain = { title, author, _, _, _, matchedId, uuid, _, _, _, _ ->
+                if (matchedId != null || uuid != null) {
+                    viewModel.replaceCoverFromClipboard(clipboardImageUri!!, title, author, matchedId ?: 0L, uuid, addToChain = true)
+                }
+                clipboardImageUri = null
+                prefilledUuid = null
+            },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isReplaceCover = true,
@@ -352,6 +362,16 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 prefilledUuid = null
                 pendingCommentsRepository.clear()
             },
+            onAddToChain = { title, author, _, _, _, matchedId, uuid, comments, tags, _, _ ->
+                if (matchedId != null || uuid != null) {
+                    viewModel.replaceCommentsFromClipboard(comments, tags, title, author, matchedId ?: 0L, uuid, addToChain = true)
+                }
+                clipboardComments = null
+                includeClipboardComments = true
+                autoAddTags = null
+                prefilledUuid = null
+                pendingCommentsRepository.clear()
+            },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isUpdateComments = true,
@@ -374,10 +394,17 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover)
-                    pendingProtectConfirmation = null
-                }) { Text("Protect") }
+                Row {
+                    // CONTRACT: CHAIN
+                    TextButton(onClick = {
+                        viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover, addToChain = true)
+                        pendingProtectConfirmation = null
+                    }) { Text("Add to chain") }
+                    TextButton(onClick = {
+                        viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover)
+                        pendingProtectConfirmation = null
+                    }) { Text("Protect") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { pendingProtectConfirmation = null }) { Text("Cancel") }
@@ -395,10 +422,17 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.unprotectBook(unprotect.uuid, unprotect.title, unprotect.author)
-                    pendingUnprotectConfirmation = null
-                }) { Text("Unprotect") }
+                Row {
+                    // CONTRACT: CHAIN
+                    TextButton(onClick = {
+                        viewModel.unprotectBook(unprotect.uuid, unprotect.title, unprotect.author, addToChain = true)
+                        pendingUnprotectConfirmation = null
+                    }) { Text("Add to chain") }
+                    TextButton(onClick = {
+                        viewModel.unprotectBook(unprotect.uuid, unprotect.title, unprotect.author)
+                        pendingUnprotectConfirmation = null
+                    }) { Text("Unprotect") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { pendingUnprotectConfirmation = null }) { Text("Cancel") }
@@ -422,18 +456,34 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        val tags = batchTagInput.trim()
-                        if (tags.isNotBlank()) {
-                            viewModel.batchAddTags(uuids, tags)
-                        }
-                        pendingBatchUuids = null
-                        batchTagInput = ""
-                    },
-                    enabled = batchTagInput.isNotBlank(),
-                ) {
-                    Text("Add tag")
+                Row {
+                    // CONTRACT: CHAIN
+                    TextButton(
+                        onClick = {
+                            val tags = batchTagInput.trim()
+                            if (tags.isNotBlank()) {
+                                viewModel.batchAddTags(uuids, tags, addToChain = true)
+                            }
+                            pendingBatchUuids = null
+                            batchTagInput = ""
+                        },
+                        enabled = batchTagInput.isNotBlank(),
+                    ) {
+                        Text("Add to chain")
+                    }
+                    Button(
+                        onClick = {
+                            val tags = batchTagInput.trim()
+                            if (tags.isNotBlank()) {
+                                viewModel.batchAddTags(uuids, tags)
+                            }
+                            pendingBatchUuids = null
+                            batchTagInput = ""
+                        },
+                        enabled = batchTagInput.isNotBlank(),
+                    ) {
+                        Text("Add tag")
+                    }
                 }
             },
             dismissButton = {
@@ -580,6 +630,17 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                         }
                     },
                     actions = {
+                        // CONTRACT: CHAIN
+                        IconButton(onClick = onOpenChain) {
+                            BadgedBox(
+                                badge = {
+                                    if (chainedCount > 0) Badge { Text("$chainedCount") }
+                                }
+                            ) {
+                                Icon(Icons.Default.Link, contentDescription = "Request chain")
+                            }
+                        }
+
                         if (transfers.isNotEmpty()) {
                             IconButton(onClick = { isSearchActive = true }) {
                                 Icon(Icons.Default.Search, contentDescription = "Search transfers")
@@ -732,6 +793,8 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                         }
                                     }
                                 },
+                                onRemoveFromChain = { viewModel.removeFromChain(transfer.putioFileId) },
+                                onOpenChain = onOpenChain,
                             )
                         }
                         item {
@@ -809,6 +872,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                     scope.launch { snackbarHostState.showSnackbar("Author copied") }
                                 },
                                 onTap = { transferToBrowse = transfer },
+                                onOpenChain = onOpenChain,
                             )
                         }
                         item {

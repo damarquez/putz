@@ -308,18 +308,18 @@ fun AppNavGraph(
                             Screen.Files.createRoute(folderId, folderName, highlightId = highlightId)
                         )
                     },
-                    onNavigateToArchive = { localUri, lanConnectionId, lanPath, archiveName, autoFuse ->
+                    onNavigateToArchive = { localUri, lanConnectionId, lanPath, archiveName, autoJoin ->
                         navController.navigate(
                             Screen.Archive.createRoute(
                                 archiveName,
                                 localUri = localUri,
                                 lanConnectionId = if (lanConnectionId != -1L) lanConnectionId else null,
                                 lanPath = lanPath,
-                                autoFuse = autoFuse,
+                                autoJoin = autoJoin,
                             )
                         )
                     },
-                    onNavigateToPutioArchive = { fileId, stubFileId, fileName, downloadUrl, fileSize, parentFolderId, isSynced, autoFuse ->
+                    onNavigateToPutioArchive = { fileId, stubFileId, fileName, downloadUrl, fileSize, parentFolderId, isSynced, autoJoin ->
                         navController.navigate(
                             Screen.Archive.createRoute(
                                 fileName,
@@ -329,7 +329,7 @@ fun AppNavGraph(
                                 putioFileSize = fileSize,
                                 putioParentFolderId = parentFolderId,
                                 putioIsSynced = isSynced,
-                                autoFuse = autoFuse,
+                                autoJoin = autoJoin,
                             )
                         )
                     },
@@ -413,7 +413,7 @@ fun AppNavGraph(
                         type = NavType.BoolType
                         defaultValue = false
                     },
-                    navArgument(Screen.Archive.ARG_AUTO_FUSE) {
+                    navArgument(Screen.Archive.ARG_AUTO_JOIN) {
                         type = NavType.BoolType
                         defaultValue = false
                     },
@@ -424,7 +424,7 @@ fun AppNavGraph(
                     onNavigateToViewer = { kind, title, filePath ->
                         navController.navigate(Screen.Viewer.createRoute(kind.name, title, filePath))
                     },
-                    autoFuse = backStackEntry.arguments?.getBoolean(Screen.Archive.ARG_AUTO_FUSE) ?: false,
+                    autoJoin = backStackEntry.arguments?.getBoolean(Screen.Archive.ARG_AUTO_JOIN) ?: false,
                     viewModel = hiltViewModel(),
                 )
             }
@@ -522,6 +522,7 @@ fun AppNavGraph(
             composable(Screen.CalibreTransfers.route) {
                 CalibreTransfersScreen(
                     onNavigateUp = { navController.navigateUp() },
+                    onOpenChain = { navController.navigate(Screen.Chain.route) },
                     viewModel = hiltViewModel(),
                     pendingCoverRepository = pendingCoverRepository,
                     pendingCommentsRepository = pendingCommentsRepository,
@@ -533,6 +534,14 @@ fun AppNavGraph(
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
                     pendingEditMetadataRepository = pendingEditMetadataRepository,
                     syncViewModel = syncViewModel,
+                )
+            }
+
+            // CONTRACT: CHAIN
+            composable(Screen.Chain.route) {
+                com.damarquez.putz.ui.chain.ChainScreen(
+                    onNavigateUp = { navController.navigateUp() },
+                    viewModel = hiltViewModel(),
                 )
             }
         }

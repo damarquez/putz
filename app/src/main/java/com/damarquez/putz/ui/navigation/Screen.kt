@@ -34,7 +34,7 @@ sealed class Screen(val route: String) {
         const val ARG_TAB = "tab"
     }
 
-    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioStubFileId={putioStubFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}&putioIsSynced={putioIsSynced}&autoFuse={autoFuse}") {
+    data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioStubFileId={putioStubFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}&putioIsSynced={putioIsSynced}&autoJoin={autoJoin}") {
         fun createRoute(
             archiveName: String,
             localUri: String? = null,
@@ -46,7 +46,7 @@ sealed class Screen(val route: String) {
             putioFileSize: Long? = null,
             putioParentFolderId: Long? = null,
             putioIsSynced: Boolean = false,
-            autoFuse: Boolean = false,
+            autoJoin: Boolean = false,
         ): String {
             var route = "archive/${Uri.encode(archiveName)}"
             val params = mutableListOf<String>()
@@ -59,7 +59,7 @@ sealed class Screen(val route: String) {
             if (putioFileSize != null) params.add("putioFileSize=$putioFileSize")
             if (putioParentFolderId != null) params.add("putioParentFolderId=$putioParentFolderId")
             if (putioIsSynced) params.add("putioIsSynced=true")
-            if (autoFuse) params.add("autoFuse=true")
+            if (autoJoin) params.add("autoJoin=true")
             if (params.isNotEmpty()) route += "?" + params.joinToString("&")
             return route
         }
@@ -73,7 +73,7 @@ sealed class Screen(val route: String) {
         const val ARG_PUTIO_FILE_SIZE = "putioFileSize"
         const val ARG_PUTIO_PARENT_FOLDER_ID = "putioParentFolderId"
         const val ARG_PUTIO_IS_SYNCED = "putioIsSynced"
-        const val ARG_AUTO_FUSE = "autoFuse"
+        const val ARG_AUTO_JOIN = "autoJoin"
     }
 
     data object Viewer : Screen("viewer/{kind}/{title}?filePath={filePath}") {
@@ -100,4 +100,5 @@ sealed class Screen(val route: String) {
     data object CalibreTransfers : Screen("calibre_transfers")
     data object LanConnections : Screen("lan_connections")
     data object TransferHistory : Screen("transfer_history")
+    data object Chain : Screen("chain")  // CONTRACT: CHAIN
 }

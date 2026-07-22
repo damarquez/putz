@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Warning
@@ -97,6 +98,9 @@ fun CalibreConfirmationSheet(
     onPreview: () -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean, convertToPdf: Boolean) -> Unit,
+    // CONTRACT: CHAIN — same signature as onConfirm: stages a complete request rather than
+    // dispatching it. Null hides the button (not offered for this sheet's caller).
+    onAddToChain: ((title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean, convertToPdf: Boolean) -> Unit)? = null,
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: (suspend () -> CalibreTransferEntity?)? = null,
@@ -760,6 +764,41 @@ fun CalibreConfirmationSheet(
 
                 Spacer(Modifier.height(24.dp))
 
+                val canConfirm = title.isNotBlank() &&
+                    !authorHasAnd &&
+                    pendingTransfer == null &&
+                    (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
+                    (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
+                    (!requiresUuidMatch || isUuidMatched || uuidFromTransfer)
+
+                // CONTRACT: CHAIN
+                if (onAddToChain != null) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            onAddToChain(
+                                if (isReplaceCover) matchedBookTitle ?: title.trim() else title.trim(),
+                                if (isReplaceCover) matchedBookAuthor ?: author.trim().ifBlank { "Unknown" } else author.trim().ifBlank { "Unknown" },
+                                if (isArchive) archiveMode else null,
+                                assembleBook,
+                                isAltVersion,
+                                matchedBookId,
+                                uuid.trim().ifBlank { null },
+                                if (isUpdateComments && includeComments) comments.trim() else null,
+                                if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
+                                isProtected,
+                                convertToPdf,
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = canConfirm,
+                    ) {
+                        Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add to Chain")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 Button(
                     onClick = {
                         onConfirm(
@@ -777,12 +816,7 @@ fun CalibreConfirmationSheet(
                         )
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = title.isNotBlank() &&
-                        !authorHasAnd &&
-                        pendingTransfer == null &&
-                        (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
-                        (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
-                        (!requiresUuidMatch || isUuidMatched || uuidFromTransfer),
+                    enabled = canConfirm,
                 ) {
                     Text(
                         when {

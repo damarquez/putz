@@ -43,4 +43,14 @@ interface CalibreTransferDao {
 
     @Query("DELETE FROM calibre_transfers WHERE putioFileId = :fileId")
     suspend fun deleteTransfer(fileId: Long)
+
+    // CONTRACT: CHAIN
+    @Query("SELECT MAX(chainPosition) FROM calibre_transfers WHERE status = 'CHAINED'")
+    suspend fun maxChainPosition(): Int?
+
+    @Query("SELECT * FROM calibre_transfers WHERE status = 'CHAINED' ORDER BY chainPosition ASC")
+    fun observeChainedTransfers(): Flow<List<CalibreTransferEntity>>
+
+    @Query("SELECT COUNT(*) FROM calibre_transfers WHERE status = 'CHAINED'")
+    fun observeChainedCount(): Flow<Int>
 }
