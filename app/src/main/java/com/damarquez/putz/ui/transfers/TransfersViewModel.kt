@@ -186,6 +186,10 @@ class TransfersViewModel @Inject constructor(
         _prefillMagnet.value = prefill
         _addState.value = AddTransferState.Idle
         _showAddSheet.value = true
+        // Refresh historyByHash so a recent "Remove from history" (done on a different screen,
+        // this ViewModel otherwise wouldn't hear about) doesn't still show a stale "Already in
+        // history" warning for an entry that's actually gone now.
+        loadHistory()
     }
 
     fun dismissAddSheet() {
@@ -209,14 +213,19 @@ class TransfersViewModel @Inject constructor(
         doSubmitTransfer(magnetOrUrl, hideFromDaemon)
     }
 
-    fun submitTransferAnyway(magnetOrUrl: String, hideFromDaemon: Boolean = false) = doSubmitTransfer(magnetOrUrl, hideFromDaemon)
+    // bypassHistoryCheck=true: the user already confirmed through this exact warning once (this
+    // is the "Add anyway" override) — must actually skip TransfersRepository's own internal
+    // completed-in-history guard too, not just this screen's client-side warning, or the user
+    // gets stuck in an unbreakable loop between the two checks (see TransfersRepository.addTransfer).
+    fun submitTransferAnyway(magnetOrUrl: String, hideFromDaemon: Boolean = false) =
+        doSubmitTransfer(magnetOrUrl, hideFromDaemon, bypassHistoryCheck = true)
 
-    private fun doSubmitTransfer(magnetOrUrl: String, hideFromDaemon: Boolean = false) {
+    private fun doSubmitTransfer(magnetOrUrl: String, hideFromDaemon: Boolean = false, bypassHistoryCheck: Boolean = false) {
         _addState.value = AddTransferState.Submitting
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val saveParentId = if (hideFromDaemon) transfersRepository.getOrCreateHiddenFolderId(token) else 0L
-            when (val outcome = transfersRepository.addTransfer(token, magnetOrUrl, saveParentId)) {
+            when (val outcome = transfersRepository.addTransfer(token, magnetOrUrl, saveParentId, bypassHistoryCheck = bypassHistoryCheck)) {
                 is AddTransferOutcome.Added -> {
                     _showAddSheet.value = false
                     _addState.value = AddTransferState.Idle

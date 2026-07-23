@@ -107,6 +107,7 @@ fun TransferHistoryScreen(
     var editingEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
     var editLabelValue by remember { mutableStateOf("") }
     var selectedEntry by remember { mutableStateOf<HistoryFileEntry?>(null) }
+    var pendingRemoval by remember { mutableStateOf<HistoryFileEntry?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(isSearchActive) {
@@ -151,6 +152,31 @@ fun TransferHistoryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { editingEntry = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (pendingRemoval != null) {
+        val entry = pendingRemoval!!
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            title = { Text("Remove from history?") },
+            text = {
+                Text(
+                    "This permanently deletes \"${entry.resolvedName ?: entry.label}\" from history " +
+                        "and cancels its put.io transfer job. You'll be able to re-add the same " +
+                        "magnet/torrent afterward — this can't be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.removeFromHistory(entry)
+                    if (selectedEntry?.infoHash == entry.infoHash) selectedEntry = null
+                    pendingRemoval = null
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoval = null }) { Text("Cancel") }
             },
         )
     }
@@ -354,7 +380,7 @@ fun TransferHistoryScreen(
                                     onClick = { selectedEntry = entry },
                                     onActivate = { viewModel.activateEntry(entry) },
                                     onMarkAsCompleted = { viewModel.markAsCompleted(entry) },
-                                    onForgetTransfer = { viewModel.forgetTransfer(entry) },
+                                    onRemoveFromHistory = { pendingRemoval = entry },
                                 )
                                 HorizontalDivider()
                             }
@@ -373,7 +399,7 @@ private fun HistoryEntryRow(
     onClick: () -> Unit,
     onActivate: () -> Unit,
     onMarkAsCompleted: () -> Unit,
-    onForgetTransfer: () -> Unit,
+    onRemoveFromHistory: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -414,10 +440,10 @@ private fun HistoryEntryRow(
                 }
                 if (isCompleted) {
                     DropdownMenuItem(
-                        text = { Text("Forget transfer") },
+                        text = { Text("Remove from history") },
                         onClick = {
                             showMenu = false
-                            onForgetTransfer()
+                            onRemoveFromHistory()
                         },
                     )
                 }

@@ -93,6 +93,7 @@ import com.damarquez.putz.data.local.CalibreTransferStatus
 import com.damarquez.putz.ui.files.CalibreConfirmationSheet
 import com.damarquez.putz.ui.files.TransferRef
 import com.damarquez.putz.ui.GlobalSyncViewModel
+import com.damarquez.putz.ui.components.SyncProgressBanner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,6 +140,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     val googleAccount by syncViewModel.googleAccount.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
     val isSyncing by viewModel.isSyncing.collectAsState(initial = false)
+    val syncProgress by viewModel.syncProgress.collectAsState()
     val pendingDriveSyncConfirmation by viewModel.pendingDriveSyncConfirmation.collectAsState()
     val snackbarMessage by viewModel.snackbarMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -684,6 +686,13 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            SyncProgressBanner(
+                progress = syncProgress,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(12.dp),
+            )
             if (transfers.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),

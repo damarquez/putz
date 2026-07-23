@@ -5,8 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.model.AccountInfo
 import com.damarquez.putz.data.model.NetworkResult
+import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.FilesRepository
 import com.damarquez.putz.data.repository.LanFilesRepository
+import com.damarquez.putz.data.repository.SyncProgress
 import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import com.damarquez.putz.ui.files.LanFolderPickerState
@@ -33,6 +35,7 @@ class SettingsViewModel @Inject constructor(
     private val lanDaemonTransport: LanDaemonTransport,
     private val appUpdateManager: AppUpdateManager,
     private val filesRepository: FilesRepository,
+    private val calibreRepository: CalibreRepository,
 ) : AndroidViewModel(application) {
 
     private val _accountInfo = MutableStateFlow<AccountInfo?>(null)
@@ -146,6 +149,38 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _daemonLanReachable.value = null
             _daemonLanReachable.value = lanDaemonTransport.isReachable()
+        }
+    }
+
+    // Same CalibreRepository.performFullSync() call as CalibreTransfersScreen's sync button —
+    // both observe calibreRepository.syncProgress, so a sync started here is visible there too
+    // (and vice versa), and the shared mutex inside performFullSync means tapping both doesn't
+    // start two overlapping syncs.
+    private val _isSyncingLibrary = MutableStateFlow(false)
+    val isSyncingLibrary: StateFlow<Boolean> = _isSyncingLibrary.asStateFlow()
+    val syncProgress: StateFlow<SyncProgress?> = calibreRepository.syncProgress
+
+    fun syncLibraryNow() {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) {
+                _snackbarMessage.value = "No Google account configured"
+                return@launch
+            }
+            _isSyncingLibrary.value = true
+            try {
+                val result = calibreRepository.performFullSync(account)
+                _snackbarMessage.value = when (result) {
+                    is NetworkResult.Success -> "Calibre metadata refreshed"
+                    is NetworkResult.Error -> "Sync failed: ${result.message}"
+                    else -> "Could not refresh Calibre metadata"
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "syncLibraryNow failed", e)
+                _snackbarMessage.value = "Sync failed: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                _isSyncingLibrary.value = false
+            }
         }
     }
 

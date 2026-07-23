@@ -140,6 +140,7 @@ class TransfersRepository @Inject constructor(
         magnetOrUrl: String,
         saveParentId: Long = 0L,
         displayNameOverride: String? = null,
+        bypassHistoryCheck: Boolean = false,
     ): AddTransferOutcome = withContext(Dispatchers.IO) {
         val isMagnet = MagnetParser.isMagnetLink(magnetOrUrl)
         val infoHash = if (isMagnet) MagnetParser.extractInfoHash(magnetOrUrl) else null
@@ -152,7 +153,13 @@ class TransfersRepository @Inject constructor(
             return@withContext AddTransferOutcome.Failed("This transfer is already in the queue")
         }
 
-        if (infoHash != null && isCompletedInHistory(infoHash)) {
+        // bypassHistoryCheck: the user already saw and explicitly dismissed this exact warning
+        // once (via "Add anyway" in AddTransferSheet, itself gated behind removing the entry
+        // from history first) — a second silent block here would defeat that explicit choice,
+        // and worse, could never be un-stuck: this check reads the locally cached history blob
+        // (getCachedHistory()), which can lag the daemon's actual state by however long the
+        // re-upload + next heartbeat takes to propagate after a FORGET_TRANSFER_HISTORY delete.
+        if (!bypassHistoryCheck && infoHash != null && isCompletedInHistory(infoHash)) {
             return@withContext AddTransferOutcome.Failed(
                 "This was already completed previously — adding it again would re-download everything from scratch"
             )

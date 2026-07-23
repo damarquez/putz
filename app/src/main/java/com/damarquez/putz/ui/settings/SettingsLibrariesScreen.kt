@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.ui.components.SyncProgressBanner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +45,8 @@ fun SettingsLibrariesScreen(
     val lanConnections by viewModel.lanConnections.collectAsState()
     val plexRootPickerState by viewModel.plexRootPickerState.collectAsState()
     val plexampRootPickerState by viewModel.plexampRootPickerState.collectAsState()
+    val isSyncingLibrary by viewModel.isSyncingLibrary.collectAsState()
+    val syncProgress by viewModel.syncProgress.collectAsState()
 
     var showLanConnectionPicker by remember { mutableStateOf(false) }
     var editingLanPath by remember { mutableStateOf<String?>(null) }
@@ -67,6 +71,27 @@ fun SettingsLibrariesScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            SettingsSectionHeader("Calibre Library Sync")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Button(
+                    onClick = { viewModel.syncLibraryNow() },
+                    enabled = !isSyncingLibrary,
+                ) {
+                    Text(if (isSyncingLibrary) "Syncing..." else "Sync Now")
+                }
+            }
+            SyncProgressBanner(
+                progress = syncProgress,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
             ButtonRow(
                 label = "Manage LAN Connections",
                 onClick = onNavigateToLanConnections

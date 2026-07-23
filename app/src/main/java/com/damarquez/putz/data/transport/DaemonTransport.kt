@@ -26,8 +26,20 @@ interface DaemonTransport {
     // putz_manager._claim_priority_requests — so no client-side LAN-specific handling is needed.
     suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean
 
-    /** Return all pending responses for this app instance; each envelope contains the raw JSON and its delivery source. */
-    suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope>
+    /** Return all pending responses for this app instance; each envelope contains the raw JSON and
+     *  its delivery source. [onCleanupProgress], if given, reports progress retrying deletes for
+     *  responses already processed in an earlier poll but not yet successfully removed from Drive
+     *  — this can be a large, slow backlog on its own, well before any new envelope is fetched.
+     *  [onFetchProgress], if given, reports progress downloading the content of newly-listed
+     *  response files — the other silent gap: this happens entirely before the per-envelope
+     *  processing loop (whose own progress the caller reports separately) even starts, so without
+     *  this a large fresh batch looks identical to a genuine stall. */
+    suspend fun pollResponses(
+        googleAccount: String,
+        appId: String,
+        onCleanupProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onFetchProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): List<ResponseEnvelope>
 
     /** Acknowledge that a response was processed (delete from Drive / LAN buffer). */
     suspend fun acknowledgeResponse(googleAccount: String, envelope: ResponseEnvelope, appId: String)
@@ -48,6 +60,10 @@ interface DaemonTransport {
     // CONTRACT: SEARCH_HISTORY_FILES — server-side (daemon SQLite) file-name search, backing the
     // History screen's "search in files" toggle.
     suspend fun searchHistoryFiles(googleAccount: String, appId: String, query: String): List<HistoryFileSearchResult>?
+
+    // CONTRACT: FORGET_TRANSFER_HISTORY — permanently deletes a history entry so the same
+    // info_hash can be re-added later without tripping the "Already in history" duplicate check.
+    suspend fun forgetHistoryEntry(googleAccount: String, appId: String, infoHash: String): Boolean
 }
 
 data class ResponseEnvelope(

@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.damarquez.putz.data.model.AddTransferOutcome
 import com.damarquez.putz.data.model.HistoryEntryFile
 import com.damarquez.putz.data.model.HistoryFileEntry
-import com.damarquez.putz.data.model.NetworkResult
 import com.damarquez.putz.data.repository.CalibreRepository
 import com.damarquez.putz.data.repository.TransferHistoryRepository
 import com.damarquez.putz.data.repository.TransfersRepository
@@ -306,20 +305,25 @@ class TransferHistoryViewModel @Inject constructor(
         }
     }
 
-    /** Cancels the put.io transfer job behind a COMPLETED entry so it can't resurface as WAITING
-     *  through some other path — never touches the downloaded files or stubs. */
-    fun forgetTransfer(entry: HistoryFileEntry) {
+    /** Cancels the put.io transfer job (best-effort — the entry may have no `putioId`, or put.io
+     *  may have already cleared it; either way that shouldn't block the part the user actually
+     *  asked for) and permanently deletes the local history record for [entry], so the same
+     *  info_hash can be re-added/re-downloaded afterward without tripping the "Already in
+     *  history" duplicate check. Unlike every other history mutation, this really does remove
+     *  the row — see `TransferHistoryService.forget`'s docstring on the daemon side for why that
+     *  never otherwise happens. */
+    fun removeFromHistory(entry: HistoryFileEntry) {
         if (entry.status != "COMPLETED") return
         viewModelScope.launch {
             val token = secureStorage.authTokenFlow.value
-            if (token.isBlank()) {
-                _actionMessage.value = "Not authenticated with put.io"
-                return@launch
+            if (token.isNotBlank()) {
+                transfersRepository.forgetCompletedTransfer(token, entry)
             }
-            _actionMessage.value = when (val result = transfersRepository.forgetCompletedTransfer(token, entry)) {
-                is NetworkResult.Success -> "Removed from put.io's transfer list"
-                is NetworkResult.Error -> result.message
-                NetworkResult.Loading -> null
+            if (historyRepository.forgetEntry(entry.infoHash)) {
+                removeEntryFromUiState(entry.infoHash)
+                _actionMessage.value = "Removed from history — can be re-added now"
+            } else {
+                _actionMessage.value = "Couldn't remove from history — check your connection and try again"
             }
         }
     }
@@ -329,5 +333,10 @@ class TransferHistoryViewModel @Inject constructor(
         _uiState.value = HistoryUiState.Success(
             current.entries.map { if (it.infoHash == entry.infoHash) entry else it }
         )
+    }
+
+    private fun removeEntryFromUiState(infoHash: String) {
+        val current = _uiState.value as? HistoryUiState.Success ?: return
+        _uiState.value = HistoryUiState.Success(current.entries.filterNot { it.infoHash == infoHash })
     }
 }

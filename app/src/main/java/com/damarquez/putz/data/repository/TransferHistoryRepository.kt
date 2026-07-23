@@ -62,4 +62,25 @@ class TransferHistoryRepository @Inject constructor(
         val appId = settingsRepository.getOrCreateAppId()
         return daemonTransport.searchHistoryFiles(googleAccount, appId, query)
     }
+
+    // CONTRACT: FORGET_TRANSFER_HISTORY — permanently removes an entry so its info_hash can be
+    // re-added later without tripping the "Already in history" duplicate check.
+    suspend fun forgetEntry(infoHash: String): Boolean {
+        val googleAccount = settingsRepository.googleTokenFlow.first()
+        if (googleAccount.isBlank()) return false
+        val appId = settingsRepository.getOrCreateAppId()
+        val success = daemonTransport.forgetHistoryEntry(googleAccount, appId, infoHash)
+        if (success) {
+            // Patch the local cache immediately rather than waiting for the daemon's re-upload
+            // + next heartbeat to propagate the new transfer_history.json — TransfersRepository's
+            // isCompletedInHistory() reads this cache directly, so without this the "already
+            // completed" duplicate block can keep firing on a re-add for a while after the entry
+            // is actually gone.
+            getCachedHistory()?.let { cached ->
+                val patched = cached.copy(entries = cached.entries.filterNot { it.infoHash.equals(infoHash, ignoreCase = true) })
+                settingsRepository.saveHistoryJsonCache(json.encodeToString(patched))
+            }
+        }
+        return success
+    }
 }

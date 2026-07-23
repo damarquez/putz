@@ -19,12 +19,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -42,6 +45,21 @@ data class TransferDeleteProgress(
     val message: String,
     val current: Int,
     val total: Int,
+)
+
+enum class SyncPhase {
+    PROBING_DAEMON,
+    PULLING_RESPONSES,
+    DOWNLOADING_METADATA,
+    VERIFYING_TRANSFERS,
+    CHECKING_HEARTBEAT,
+}
+
+data class SyncProgress(
+    val phase: SyncPhase,
+    val message: String,
+    val current: Int? = null,
+    val total: Int? = null,
 )
 
 // CONTRACT: ADD_BOOK_BATCH
@@ -415,8 +433,82 @@ class CalibreRepository @Inject constructor(
     // not a new check. Synchronized since LAN/Drive polling can run concurrently.
     private val probesAwaitingResponse = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
 
+    // GlobalSyncViewModel's background loop and a manually-triggered sync (CalibreTransfersViewModel
+    // .syncMetadata) can both call pollResponses() around the same time. Without this, both would
+    // fetch/process/ack the same Drive backlog concurrently — duplicated network round-trips
+    // (turning a 30s backlog drain into 10+ minutes), spurious delete-already-gone 404s, and
+    // concurrent read-modify-write on the same transfer rows (a coroutine's `transfer.copy(...)`
+    // is based on a snapshot read at the start of its own processing, so one call finishing after
+    // the other can silently clobber a field the other just wrote, e.g. libraryVerified flipping
+    // back to false). The mutex makes pollResponses single-flight: a concurrent caller just waits
+    // for the in-flight run to finish (which will have already drained whatever it needed to)
+    // instead of starting a redundant second pass over the same backlog.
+    private val pollResponsesMutex = Mutex()
+
+    // Live status for whichever screen (Transfers or Settings > Libraries & Sync) has a sync in
+    // flight — both trigger the same performFullSync() and observe this same flow, so progress
+    // shows up no matter which one kicked it off. Null means no sync is currently running.
+    private val _syncProgress = MutableStateFlow<SyncProgress?>(null)
+    val syncProgress: StateFlow<SyncProgress?> = _syncProgress.asStateFlow()
+
+    // Guards the whole multi-step sync (not just pollResponses) so two taps — one from each
+    // screen, or a double-tap — can't run the same sequence of Drive round-trips concurrently.
+    private val fullSyncMutex = Mutex()
+
     fun updateDeleteProgress(progress: TransferDeleteProgress?) {
         _deleteProgress.value = progress
+    }
+
+    /** Single source of truth for "sync now", used by both CalibreTransfersViewModel's sync
+     *  button and Settings > Libraries & Sync. Reports phase-by-phase progress via
+     *  [syncProgress] instead of the old opaque spinner. */
+    suspend fun performFullSync(googleAccount: String): NetworkResult<Unit> = fullSyncMutex.withLock {
+        try {
+            _syncProgress.value = SyncProgress(SyncPhase.PROBING_DAEMON, "Checking daemon status...")
+            sendGlobalStatusProbe(googleAccount)
+
+            _syncProgress.value = SyncProgress(SyncPhase.PULLING_RESPONSES, "Checking for daemon responses...")
+            pollResponses(
+                googleAccount,
+                onProgress = { current, total ->
+                    _syncProgress.value = SyncProgress(
+                        SyncPhase.PULLING_RESPONSES, "Processing daemon responses ($current/$total)...", current, total,
+                    )
+                },
+                onCleanupProgress = { current, total ->
+                    _syncProgress.value = SyncProgress(
+                        SyncPhase.PULLING_RESPONSES,
+                        "Cleaning up $total already-processed response(s) ($current/$total)...", current, total,
+                    )
+                },
+                onFetchProgress = { current, total ->
+                    _syncProgress.value = SyncProgress(
+                        SyncPhase.PULLING_RESPONSES,
+                        "Fetching $total new response(s) ($current/$total)...", current, total,
+                    )
+                },
+            )
+
+            _syncProgress.value = SyncProgress(SyncPhase.DOWNLOADING_METADATA, "Downloading Calibre metadata...")
+            val dbFile = File(context.filesDir, "metadata.db")
+            val result = syncMetadataDb(googleAccount, dbFile)
+
+            if (result is NetworkResult.Success) {
+                _syncProgress.value = SyncProgress(SyncPhase.VERIFYING_TRANSFERS, "Verifying completed transfers...")
+                verifyCompletedTransfers(dbFile, googleAccount) { current, total ->
+                    _syncProgress.value = SyncProgress(
+                        SyncPhase.VERIFYING_TRANSFERS, "Verifying completed transfers ($current/$total)...", current, total,
+                    )
+                }
+            }
+
+            _syncProgress.value = SyncProgress(SyncPhase.CHECKING_HEARTBEAT, "Checking daemon status...")
+            pollHeartbeat(googleAccount)
+
+            result
+        } finally {
+            _syncProgress.value = null
+        }
     }
 
     // (filesDone, totalFiles) while a "send to Calibre" pack is being resolved/dispatched,
@@ -1331,13 +1423,18 @@ class CalibreRepository @Inject constructor(
         return driveId != null
     }
 
-    suspend fun pollResponses(googleAccount: String) {
+    suspend fun pollResponses(
+        googleAccount: String,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onCleanupProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onFetchProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): Unit = pollResponsesMutex.withLock {
         val myAppId = settingsRepository.getOrCreateAppId()
-        val envelopes = daemonTransport.pollResponses(googleAccount, myAppId)
+        val envelopes = daemonTransport.pollResponses(googleAccount, myAppId, onCleanupProgress, onFetchProgress)
         if (envelopes.isNotEmpty()) {
             android.util.Log.d("CalibreRepository", "pollResponses: fetched ${envelopes.size} envelope(s) for app_id=$myAppId")
         }
-        envelopes.forEach { envelope ->
+        envelopes.forEachIndexed { index, envelope ->
             try {
                 val response = json.decodeFromString<CalibreResponse>(envelope.content)
 
@@ -1451,6 +1548,7 @@ class CalibreRepository @Inject constructor(
                 // gets deleted, so it's re-fetched and re-fails on every subsequent poll forever.
                 android.util.Log.e("CalibreRepository", "pollResponses: failed to process/acknowledge envelope id=${envelope.id} source=${envelope.source} content=${envelope.content}", e)
             }
+            onProgress?.invoke(index + 1, envelopes.size)
         }
     }
 
@@ -1841,7 +1939,11 @@ class CalibreRepository @Inject constructor(
         "CONFIRM_DELETE_BOOK", "CONFIRM_DELETE_FORMATS", "CANCEL_DELETION",
     )
 
-    suspend fun verifyCompletedTransfers(dbFile: File, googleAccount: String) = withContext(Dispatchers.IO) {
+    suspend fun verifyCompletedTransfers(
+        dbFile: File,
+        googleAccount: String,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ) = withContext(Dispatchers.IO) {
         val transfers = calibreTransferDao.getAllTransfers().first().filter {
             it.status == CalibreTransferStatus.COMPLETED && !it.libraryVerified
         }
@@ -1855,55 +1957,67 @@ class CalibreRepository @Inject constructor(
         } catch (e: Exception) { return@withContext }
 
         db.use {
-            for (transfer in transfers) {
-                val action = transfer.lastRequestPayload?.let { payload ->
-                    try {
-                        json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content
-                    } catch (_: Exception) { null }
-                }
-                // Local row missing entirely for an action that requires the book to exist:
-                // don't treat it as a hard failure yet, since it may just be split out for
-                // protection. Ask the daemon (below) instead of leaving it stuck unverified
-                // forever — this is the fallback ADD_BOOK_BATCH (and anything else landing in
-                // the `else` branch below) needs just as much as REPLACE_COVER etc. do.
-                val rowMissingLocally = transfer.calibreBookUuid != null &&
-                    transfer.transferType != "PLEX" &&
-                    action !in NO_PRESENCE_CHECK_ACTIONS &&
-                    !checkBookUuidExists(db, transfer.calibreBookUuid)
+            for ((index, transfer) in transfers.withIndex()) {
+                // One malformed row (bad batchData JSON, an unexpected schema edge case, etc.)
+                // must not abort verification for the rest of the batch — this loop can be
+                // processing hundreds of transfers, and an uncaught exception here used to kill
+                // the whole pass silently (verifyCompletedTransfers has no catch of its own, and
+                // neither does its caller, syncMetadata — so it just looked like a no-op sync
+                // with no error shown, leaving everything after the bad row stuck unverified).
+                try {
+                    val action = transfer.lastRequestPayload?.let { payload ->
+                        try {
+                            json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content
+                        } catch (_: Exception) { null }
+                    }
+                    // Local row missing entirely for an action that requires the book to exist:
+                    // don't treat it as a hard failure yet, since it may just be split out for
+                    // protection. Ask the daemon (below) instead of leaving it stuck unverified
+                    // forever — this is the fallback ADD_BOOK_BATCH (and anything else landing in
+                    // the `else` branch below) needs just as much as REPLACE_COVER etc. do.
+                    val rowMissingLocally = transfer.calibreBookUuid != null &&
+                        transfer.transferType != "PLEX" &&
+                        action !in NO_PRESENCE_CHECK_ACTIONS &&
+                        !checkBookUuidExists(db, transfer.calibreBookUuid)
 
-                val verified = when {
-                    // Non-Calibre actions need no library check
-                    transfer.transferType == "PLEX" -> true
-                    action == "PRIORITY_PUTIO_SYNC" -> true
-                    // Must have a UUID to locate the book
-                    transfer.calibreBookUuid == null -> true
-                    rowMissingLocally -> false
-                    action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
-                    action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
-                    action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
-                    action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
-                    // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the
-                    // book may have since been deleted, so don't require it to still exist.
-                    action == "MARK_BOOK_FOR_DELETION" -> true
-                    action == "MARK_FORMATS_FOR_DELETION" -> true
-                    // Confirm-delete: verify the book / formats are gone from the library
-                    action == "CONFIRM_DELETE_BOOK" -> !checkBookUuidExists(db, transfer.calibreBookUuid)
-                    action == "CONFIRM_DELETE_FORMATS" -> checkFormatsDeleted(db, transfer.calibreBookUuid, transfer.lastRequestPayload)
-                    // Cancel-deletion is a client-side acknowledgement; no library state changes
-                    action == "CANCEL_DELETION" -> true
-                    else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
+                    val verified = when {
+                        // Non-Calibre actions need no library check
+                        transfer.transferType == "PLEX" -> true
+                        action == "PRIORITY_PUTIO_SYNC" -> true
+                        // Must have a UUID to locate the book
+                        transfer.calibreBookUuid == null -> true
+                        rowMissingLocally -> false
+                        action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                        action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                        action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                        action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
+                        // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the
+                        // book may have since been deleted, so don't require it to still exist.
+                        action == "MARK_BOOK_FOR_DELETION" -> true
+                        action == "MARK_FORMATS_FOR_DELETION" -> true
+                        // Confirm-delete: verify the book / formats are gone from the library
+                        action == "CONFIRM_DELETE_BOOK" -> !checkBookUuidExists(db, transfer.calibreBookUuid)
+                        action == "CONFIRM_DELETE_FORMATS" -> checkFormatsDeleted(db, transfer.calibreBookUuid, transfer.lastRequestPayload)
+                        // Cancel-deletion is a client-side acknowledgement; no library state changes
+                        action == "CANCEL_DELETION" -> true
+                        else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
+                    }
+                    if (verified) {
+                        calibreTransferDao.updateTransfer(
+                            transfer.copy(libraryVerified = true, lastUpdatedAt = System.currentTimeMillis())
+                        )
+                    } else if (rowMissingLocally && googleAccount.isNotBlank()) {
+                        // Daemon checks against its live, unsplit metadata.db (see
+                        // find_book_by_uuid in putz_manager.py), so it can confirm a protected
+                        // book that this local copy can't see. Response comes back through the
+                        // normal probe path in pollResponses(), which marks libraryVerified.
+                        sendProbeRequest(transfer.putioFileId, googleAccount)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("CalibreRepository",
+                        "verifyCompletedTransfers: failed for putio_file_id=${transfer.putioFileId} — skipping, will retry next sync", e)
                 }
-                if (verified) {
-                    calibreTransferDao.updateTransfer(
-                        transfer.copy(libraryVerified = true, lastUpdatedAt = System.currentTimeMillis())
-                    )
-                } else if (rowMissingLocally && googleAccount.isNotBlank()) {
-                    // Daemon checks against its live, unsplit metadata.db (see
-                    // find_book_by_uuid in putz_manager.py), so it can confirm a protected
-                    // book that this local copy can't see. Response comes back through the
-                    // normal probe path in pollResponses(), which marks libraryVerified.
-                    sendProbeRequest(transfer.putioFileId, googleAccount)
-                }
+                onProgress?.invoke(index + 1, transfers.size)
             }
         }
     }
@@ -2656,7 +2770,18 @@ class CalibreRepository @Inject constructor(
         }
         
         val items = if (!transfer.batchData.isNullOrBlank()) {
-            json.decodeFromString<List<CalibreBatchItem>>(transfer.batchData).map { item ->
+            val decoded = try {
+                json.decodeFromString<List<CalibreBatchItem>>(transfer.batchData)
+            } catch (e: Exception) {
+                // Unlike the callers above, nothing catches around sendProbeRequest() in most of
+                // its call sites (verifyCompletedTransfers' batch loop, the stuck-transfer
+                // watchdog) — letting this throw would silently kill whichever loop called it
+                // for every transfer after this one, not just fail this single probe.
+                android.util.Log.e("CalibreRepository",
+                    "sendProbeRequest: could not decode batchData for putio_file_id=$fileId", e)
+                return false
+            }
+            decoded.map { item ->
                 when (item.type) {
                     "PACK" -> item.copy(files = item.files?.map { it.copy(download_url = null) })
                     else -> item.copy(download_url = null)

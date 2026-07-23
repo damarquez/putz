@@ -436,27 +436,20 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    // CalibreRepository.performFullSync() is the single implementation shared with Settings >
+    // Libraries & Sync — both screens observe this same flow, so progress shows up wherever the
+    // sync was triggered from and stays in sync (pun intended) if triggered from the other screen.
+    val syncProgress: StateFlow<com.damarquez.putz.data.repository.SyncProgress?> = calibreRepository.syncProgress
+
     fun syncMetadata() {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isNotBlank()) {
                 _isSyncing.value = true
                 try {
-                    _snackbarMessage.value = "Refreshing Calibre metadata..."
                     val lanEnabled = settingsRepository.lanEnabledFlow.first()
                     val lanReachable = lanEnabled && lanDaemonTransport.isReachable()
-                    calibreRepository.sendGlobalStatusProbe(account)
-                    // Manual sync must also pull any daemon responses waiting in Drive — this used
-                    // to only happen on GlobalSyncViewModel's own timer, so tapping "sync" here gave
-                    // false reassurance while transfers actually sat unprocessed until that separate
-                    // loop's next tick (or recovered from a swallowed error).
-                    calibreRepository.pollResponses(account)
-                    val dbFile = File(context.filesDir, "metadata.db")
-                    val result = calibreRepository.syncMetadataDb(account, dbFile)
-                    if (result is NetworkResult.Success) {
-                        calibreRepository.verifyCompletedTransfers(dbFile, account)
-                    }
-                    calibreRepository.pollHeartbeat(account)
+                    val result = calibreRepository.performFullSync(account)
 
                     _snackbarMessage.value = when (result) {
                         is NetworkResult.Success -> if (lanEnabled && !lanReachable)
@@ -466,6 +459,13 @@ class CalibreTransfersViewModel @Inject constructor(
                         is NetworkResult.Error -> "Sync failed: ${result.message}"
                         else -> "Could not refresh Calibre metadata"
                     }
+                } catch (e: Exception) {
+                    // Without this, any uncaught exception anywhere in the chain above (a Drive
+                    // hiccup, a bad response envelope, etc.) fell straight through to `finally` —
+                    // the spinner stopped but no snackbar was ever set, so a failed sync looked
+                    // identical to one that quietly did nothing.
+                    android.util.Log.e("CalibreTransfersViewModel", "syncMetadata failed", e)
+                    _snackbarMessage.value = "Sync failed: ${e.message ?: e.javaClass.simpleName}"
                 } finally {
                     _isSyncing.value = false
                 }

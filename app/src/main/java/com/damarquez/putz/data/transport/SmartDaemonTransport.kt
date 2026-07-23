@@ -60,14 +60,21 @@ class SmartDaemonTransport @Inject constructor(
     override suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean =
         drive.promoteRequestToPriority(googleAccount, gdriveRequestId)
 
-    override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
+    override suspend fun pollResponses(
+        googleAccount: String,
+        appId: String,
+        onCleanupProgress: ((current: Int, total: Int) -> Unit)?,
+        onFetchProgress: ((current: Int, total: Int) -> Unit)?,
+    ): List<ResponseEnvelope> {
         val all = mutableListOf<ResponseEnvelope>()
 
         if (lanEnabled() && lan.isReachable()) {
             runCatching { all += lan.pollResponses(googleAccount, appId) }
         }
 
-        val driveEnvelopes = runCatching { drive.pollResponses(googleAccount, appId) }.getOrDefault(emptyList())
+        val driveEnvelopes = runCatching {
+            drive.pollResponses(googleAccount, appId, onCleanupProgress, onFetchProgress)
+        }.getOrDefault(emptyList())
 
         // Always add Drive envelopes; CalibreRepository's isNewerStatus guard prevents double-processing
         all += driveEnvelopes
@@ -121,6 +128,13 @@ class SmartDaemonTransport @Inject constructor(
             runCatching { lan.searchHistoryFiles(googleAccount, appId, query) }.getOrNull()?.let { return it }
         }
         return drive.searchHistoryFiles(googleAccount, appId, query)
+    }
+
+    override suspend fun forgetHistoryEntry(googleAccount: String, appId: String, infoHash: String): Boolean {
+        if (lanEnabled() && lan.isReachable()) {
+            if (runCatching { lan.forgetHistoryEntry(googleAccount, appId, infoHash) }.getOrDefault(false)) return true
+        }
+        return drive.forgetHistoryEntry(googleAccount, appId, infoHash)
     }
 
     private fun injectLanFlag(content: String): String = try {

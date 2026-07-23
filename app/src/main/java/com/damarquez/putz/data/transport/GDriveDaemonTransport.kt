@@ -37,12 +37,17 @@ class GDriveDaemonTransport @Inject constructor(
     override suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean =
         gDriveManager.promoteRequestToPriority(googleAccount, gdriveRequestId)
 
-    override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> {
+    override suspend fun pollResponses(
+        googleAccount: String,
+        appId: String,
+        onCleanupProgress: ((current: Int, total: Int) -> Unit)?,
+        onFetchProgress: ((current: Int, total: Int) -> Unit)?,
+    ): List<ResponseEnvelope> {
         // Retry deletes Putz already decided on in an earlier, interrupted poll (app backgrounded
         // mid-cycle, transient Drive error, etc.) before touching anything new. This is a bare
         // delete call per file — no content download, no reprocessing — so it stays cheap even
         // with a large backlog, unlike re-fetching and re-parsing content we've already acted on.
-        val stillPendingDeletion = retryPendingDeletions(googleAccount)
+        val stillPendingDeletion = retryPendingDeletions(googleAccount, onCleanupProgress)
 
         val files = gDriveManager.listResponses(googleAccount, appId)
             .filterNot { it.id in stillPendingDeletion }
@@ -52,11 +57,19 @@ class GDriveDaemonTransport @Inject constructor(
         // the backlog drains. Fetch in bounded-concurrency batches instead of one at a time
         // (bounded so we don't hammer the Drive API into rate-limiting us, which would make
         // things worse).
+        //
+        // This step sits entirely between the cleanup-retry progress above and the per-envelope
+        // processing progress the caller reports once this function returns — without its own
+        // progress a large fresh batch of genuinely new responses looks identical to a stall, so
+        // report per completed download here too, not just per completed chunk.
+        val fetchedCount = java.util.concurrent.atomic.AtomicInteger(0)
         return files.chunked(20).flatMap { chunk ->
             coroutineScope {
                 chunk.map { file ->
                     async {
-                        val content = gDriveManager.downloadFileContent(googleAccount, file.id) ?: return@async null
+                        val content = gDriveManager.downloadFileContent(googleAccount, file.id)
+                        onFetchProgress?.invoke(fetchedCount.incrementAndGet(), files.size)
+                        content ?: return@async null
                         val putioFileId = runCatching {
                             json.parseToJsonElement(content).jsonObject["putio_file_id"]?.jsonPrimitive?.content?.toLong()
                         }.getOrNull()
@@ -73,17 +86,35 @@ class GDriveDaemonTransport @Inject constructor(
     }
 
     /** Returns the subset of previously-pending file IDs that are still undeleted after this
-     *  retry, so the caller can skip re-downloading/re-processing their content this cycle too. */
-    private suspend fun retryPendingDeletions(googleAccount: String): Set<String> {
+     *  retry, so the caller can skip re-downloading/re-processing their content this cycle too.
+     *
+     *  This backlog can grow into the thousands if deletes start failing systematically (e.g. a
+     *  stretch of Drive rate-limiting) — it used to retry one bare delete call at a time, so a
+     *  large backlog alone could dominate an entire poll cycle (many minutes) before a single new
+     *  response was even listed, with nothing visible to the user during that time. Bounded
+     *  concurrency here mirrors the download step below (chunks of 20) instead of one at a time. */
+    private suspend fun retryPendingDeletions(
+        googleAccount: String,
+        onProgress: ((current: Int, total: Int) -> Unit)?,
+    ): Set<String> {
         val pending = pendingResponseDeletionDao.getAllIds()
         if (pending.isEmpty()) return emptySet()
-        val stillPending = mutableSetOf<String>()
-        pending.forEach { fileId ->
-            if (gDriveManager.deleteFile(googleAccount, fileId)) {
-                pendingResponseDeletionDao.deleteById(fileId)
-            } else {
-                stillPending += fileId
+        val stillPending = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        var completed = 0
+        pending.chunked(20).forEach { chunk ->
+            coroutineScope {
+                chunk.map { fileId ->
+                    async {
+                        if (gDriveManager.deleteFile(googleAccount, fileId)) {
+                            pendingResponseDeletionDao.deleteById(fileId)
+                        } else {
+                            stillPending += fileId
+                        }
+                    }
+                }.awaitAll()
             }
+            completed += chunk.size
+            onProgress?.invoke(completed, pending.size)
         }
         return stillPending
     }
@@ -185,6 +216,24 @@ class GDriveDaemonTransport @Inject constructor(
                 json.decodeFromJsonElement(ListSerializer(HistoryFileSearchResult.serializer()), it)
             }
         }.getOrNull()
+    }
+
+    // CONTRACT: FORGET_TRANSFER_HISTORY — same Drive-only fallback pattern as the other
+    // on-demand history actions above.
+    override suspend fun forgetHistoryEntry(googleAccount: String, appId: String, infoHash: String): Boolean {
+        val requestId = System.currentTimeMillis()
+        val body = JsonObject(mapOf(
+            "action" to JsonPrimitive("FORGET_TRANSFER_HISTORY"),
+            "putio_file_id" to JsonPrimitive(requestId),
+            "info_hash" to JsonPrimitive(infoHash),
+            "app_id" to JsonPrimitive(appId),
+        ))
+        submitRequest(googleAccount, "req_hist_forget_$requestId.json", json.encodeToString(JsonObject.serializer(), body))
+            ?: return false
+        val content = awaitResponse(googleAccount, appId, requestId) ?: return false
+        return runCatching {
+            json.parseToJsonElement(content).jsonObject["status"]?.jsonPrimitive?.content == "COMPLETED"
+        }.getOrDefault(false)
     }
 
     /** Bounded poll for a response matching [requestId] (the `putio_file_id` anchor this class

@@ -78,7 +78,12 @@ class LanDaemonTransport @Inject constructor(
     // CONTRACT: priority requests lane — irrelevant over LAN, so always a no-op.
     override suspend fun promoteRequestToPriority(googleAccount: String, gdriveRequestId: String): Boolean = false
 
-    override suspend fun pollResponses(googleAccount: String, appId: String): List<ResponseEnvelope> =
+    override suspend fun pollResponses(
+        googleAccount: String,
+        appId: String,
+        onCleanupProgress: ((current: Int, total: Int) -> Unit)?,
+        onFetchProgress: ((current: Int, total: Int) -> Unit)?,
+    ): List<ResponseEnvelope> =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
                 .url("${baseUrl()}/responses/$appId")
@@ -241,6 +246,19 @@ class LanDaemonTransport @Inject constructor(
                     }
                 }
             }.getOrNull()
+        }
+
+    // CONTRACT: FORGET_TRANSFER_HISTORY
+    override suspend fun forgetHistoryEntry(googleAccount: String, appId: String, infoHash: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${baseUrl()}/history/$infoHash")
+                .header("X-Sidekick-Key", apiKey())
+                .delete()
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response -> response.isSuccessful }
+            }.getOrDefault(false)
         }
 
     /** Download a book file directly from the library. */
