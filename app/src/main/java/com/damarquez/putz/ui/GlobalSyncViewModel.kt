@@ -41,7 +41,7 @@ class GlobalSyncViewModel @Inject constructor(
                         calibreRepository.pollLibraryUpdates(account)
                         calibreRepository.pollHeartbeat(account)
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        android.util.Log.e("GlobalSyncViewModel", "Poll cycle failed", e)
                     }
 
                     val now = System.currentTimeMillis()

@@ -262,6 +262,9 @@ data class FuseMetadata(
     val comments: String? = null,
 )
 
+// CONTRACT: FUSE_BOOKS / JOIN_BOOKS — one request shape shared by both actions (the "parse deep
+// link -> build JSON -> upload" plumbing is identical either way). `action` picks which; `formats`
+// is FUSE_BOOKS-only, `join_format`/`join_output_format` are JOIN_BOOKS-only.
 @Serializable
 data class FuseBooksRequest(
     val action: String = "FUSE_BOOKS",
@@ -269,7 +272,9 @@ data class FuseBooksRequest(
     val source_book_ids: List<Long>,
     val cover_source_book_id: Long?,
     val metadata: FuseMetadata,
-    val formats: List<FuseFormatEntry>,
+    val formats: List<FuseFormatEntry>? = null,
+    val join_format: String? = null,
+    val join_output_format: String? = null,
     val app_id: String? = null,
 )
 
@@ -1399,7 +1404,10 @@ class CalibreRepository @Inject constructor(
                             val isAutoRecoverable = response.error?.let {
                                 it.contains("not found", ignoreCase = true) || it.contains("missing formats", ignoreCase = true)
                             } == true
-                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && isAutoRecoverable) {
+                            // JOIN shares FUSION's exclusion here for the same reason: both create a
+                            // brand-new book id per attempt, so a naive auto-retry on "not found" would
+                            // produce a second duplicate book rather than fixing the original.
+                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && transfer.transferType != "JOIN" && isAutoRecoverable) {
                                 if (transfer.retryCount < 3) {
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val delayMs = Random.nextLong(2000, 60000)
@@ -1677,22 +1685,23 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
-    // CONTRACT: FUSE_BOOKS
+    // CONTRACT: FUSE_BOOKS / JOIN_BOOKS — shared upload path; request.action picks which.
     suspend fun sendFuseBooksRequest(
         request: FuseBooksRequest,
         displayTitle: String,
         googleAccount: String,
     ) {
+        val isJoin = request.action == "JOIN_BOOKS"
         val appId = settingsRepository.getOrCreateAppId()
         val jsonStr = json.encodeToString(request.copy(app_id = appId))
         val gDriveId = daemonTransport.submitRequest(
             googleAccount,
-            "req_fuse_${request.putio_file_id}.json",
+            "req_${if (isJoin) "join" else "fuse"}_${request.putio_file_id}.json",
             jsonStr,
         )
         val transfer = CalibreTransferEntity(
             putioFileId = request.putio_file_id,
-            fileName = "Fusing ${request.source_book_ids.size} books",
+            fileName = "${if (isJoin) "Joining" else "Fusing"} ${request.source_book_ids.size} books",
             title = displayTitle,
             author = request.metadata.authors,
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
@@ -1701,7 +1710,7 @@ class CalibreRepository @Inject constructor(
             allPutioFileIds = request.putio_file_id.toString(),
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            transferType = "FUSION",
+            transferType = if (isJoin) "JOIN" else "FUSION",
             lastRequestPayload = jsonStr,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }

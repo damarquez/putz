@@ -25,9 +25,11 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import javax.inject.Inject
 
-// CONTRACT: FUSE_BOOKS
-// Receives a fusion intent from CalibreAnywhere and submits a FUSE_BOOKS request to the daemon.
-// Intent extra "fusion_payload": JSON string produced by CalibreAnywhere's FusionViewModel.
+// CONTRACT: FUSE_BOOKS / JOIN_BOOKS
+// Receives a fusion or join intent from CalibreAnywhere and submits the corresponding request
+// to the daemon. Intent extra "fusion_payload" (putz://fuse_books) or "join_payload"
+// (putz://join_books): JSON string produced by CalibreAnywhere's FusionViewModel. One activity
+// handles both since the parse-build-upload plumbing is identical either way.
 @AndroidEntryPoint
 class FuseBooksActivity : ComponentActivity() {
 
@@ -37,9 +39,13 @@ class FuseBooksActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val payload = intent.getStringExtra(EXTRA_FUSION_PAYLOAD)
+        val fusionPayload = intent.getStringExtra(EXTRA_FUSION_PAYLOAD)
+        val joinPayload = intent.getStringExtra(EXTRA_JOIN_PAYLOAD)
+        val isJoin = joinPayload != null
+        val payload = joinPayload ?: fusionPayload
+        val actionLabel = if (isJoin) "Join" else "Fusion"
         if (payload.isNullOrBlank()) {
-            Toast.makeText(this, "Fusion: missing payload", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "$actionLabel: missing payload", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -47,14 +53,14 @@ class FuseBooksActivity : ComponentActivity() {
         lifecycleScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
-                Toast.makeText(this@FuseBooksActivity, "Fusion: Google account not set in Putz", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@FuseBooksActivity, "$actionLabel: Google account not set in Putz", Toast.LENGTH_LONG).show()
                 finish()
                 return@launch
             }
 
-            val request = buildRequest(payload)
+            val request = buildRequest(payload, isJoin)
             if (request == null) {
-                Toast.makeText(this@FuseBooksActivity, "Fusion: could not parse payload", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@FuseBooksActivity, "$actionLabel: could not parse payload", Toast.LENGTH_SHORT).show()
                 finish()
                 return@launch
             }
@@ -64,12 +70,12 @@ class FuseBooksActivity : ComponentActivity() {
                 displayTitle = request.metadata.title,
                 googleAccount = googleAccount,
             )
-            Toast.makeText(this@FuseBooksActivity, "Fusion submitted for \"${request.metadata.title}\"", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@FuseBooksActivity, "$actionLabel submitted for \"${request.metadata.title}\"", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
 
-    private fun buildRequest(payload: String): FuseBooksRequest? {
+    private fun buildRequest(payload: String, isJoin: Boolean): FuseBooksRequest? {
         return try {
             val json = Json { ignoreUnknownKeys = true }
             val root = json.parseToJsonElement(payload).jsonObject
@@ -83,7 +89,7 @@ class FuseBooksActivity : ComponentActivity() {
 
             val meta = root["metadata"]?.jsonObject ?: return null
             val metadata = FuseMetadata(
-                title = meta["title"]?.jsonPrimitive?.contentOrNull ?: "Fused Book",
+                title = meta["title"]?.jsonPrimitive?.contentOrNull ?: (if (isJoin) "Joined Book" else "Fused Book"),
                 authors = meta["authors"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
                 publisher = meta["publisher"]?.jsonPrimitive?.contentOrNull,
                 pubdate = meta["pubdate"]?.jsonPrimitive?.contentOrNull,
@@ -95,28 +101,44 @@ class FuseBooksActivity : ComponentActivity() {
                 comments = meta["comments"]?.jsonPrimitive?.contentOrNull,
             )
 
-            val formats = root["formats"]?.jsonArray?.mapNotNull { entry ->
-                val obj = entry.jsonObject
-                val fmt = obj["format"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val srcId = obj["source_book_id"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
-                FuseFormatEntry(format = fmt, source_book_id = srcId)
-            } ?: return null
-            if (formats.isEmpty()) return null
+            if (isJoin) {
+                val joinFormat = root["join_format"]?.jsonPrimitive?.contentOrNull ?: return null
+                val joinOutputFormat = root["join_output_format"]?.jsonPrimitive?.contentOrNull
+                FuseBooksRequest(
+                    action = "JOIN_BOOKS",
+                    putio_file_id = -System.currentTimeMillis(),  // negative = fileless, daemon-serialized
+                    source_book_ids = sourceIds,
+                    cover_source_book_id = coverSourceId,
+                    metadata = metadata,
+                    join_format = joinFormat,
+                    join_output_format = joinOutputFormat,
+                )
+            } else {
+                val formats = root["formats"]?.jsonArray?.mapNotNull { entry ->
+                    val obj = entry.jsonObject
+                    val fmt = obj["format"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val srcId = obj["source_book_id"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+                    FuseFormatEntry(format = fmt, source_book_id = srcId)
+                } ?: return null
+                if (formats.isEmpty()) return null
 
-            FuseBooksRequest(
-                putio_file_id = -System.currentTimeMillis(),  // negative = fileless, daemon-serialized
-                source_book_ids = sourceIds,
-                cover_source_book_id = coverSourceId,
-                metadata = metadata,
-                formats = formats,
-            )
+                FuseBooksRequest(
+                    action = "FUSE_BOOKS",
+                    putio_file_id = -System.currentTimeMillis(),  // negative = fileless, daemon-serialized
+                    source_book_ids = sourceIds,
+                    cover_source_book_id = coverSourceId,
+                    metadata = metadata,
+                    formats = formats,
+                )
+            }
         } catch (e: Exception) {
-            android.util.Log.e("FuseBooksActivity", "Failed to parse fusion payload", e)
+            android.util.Log.e("FuseBooksActivity", "Failed to parse ${if (isJoin) "join" else "fusion"} payload", e)
             null
         }
     }
 
     companion object {
         const val EXTRA_FUSION_PAYLOAD = "fusion_payload"
+        const val EXTRA_JOIN_PAYLOAD = "join_payload"
     }
 }

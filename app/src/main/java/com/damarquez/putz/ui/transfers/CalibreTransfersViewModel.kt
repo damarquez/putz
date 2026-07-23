@@ -446,6 +446,11 @@ class CalibreTransfersViewModel @Inject constructor(
                     val lanEnabled = settingsRepository.lanEnabledFlow.first()
                     val lanReachable = lanEnabled && lanDaemonTransport.isReachable()
                     calibreRepository.sendGlobalStatusProbe(account)
+                    // Manual sync must also pull any daemon responses waiting in Drive — this used
+                    // to only happen on GlobalSyncViewModel's own timer, so tapping "sync" here gave
+                    // false reassurance while transfers actually sat unprocessed until that separate
+                    // loop's next tick (or recovered from a swallowed error).
+                    calibreRepository.pollResponses(account)
                     val dbFile = File(context.filesDir, "metadata.db")
                     val result = calibreRepository.syncMetadataDb(account, dbFile)
                     if (result is NetworkResult.Success) {
