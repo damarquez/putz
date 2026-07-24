@@ -57,6 +57,7 @@ import com.damarquez.putz.data.repository.PendingCommentsRepository
 import com.damarquez.putz.data.repository.PendingConvertFormatRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
+import com.damarquez.putz.data.repository.PendingExtractOrRandomCoverRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
@@ -71,6 +72,7 @@ fun AppNavGraph(
     pendingCoverRepository: PendingCoverRepository,
     pendingCommentsRepository: PendingCommentsRepository,
     pendingGenerateCoverRepository: PendingGenerateCoverRepository,
+    pendingExtractOrRandomCoverRepository: PendingExtractOrRandomCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
     pendingConvertFormatRepository: PendingConvertFormatRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
@@ -90,6 +92,7 @@ fun AppNavGraph(
                 pendingCoverRepository.flow,
                 pendingCommentsRepository.flow,
                 pendingGenerateCoverRepository.flow,
+                pendingExtractOrRandomCoverRepository.flow,
                 pendingProtectBookRepository.flow,
                 pendingUnprotectBookRepository.flow,
                 pendingSetPageCountRepository.flow,
@@ -527,6 +530,7 @@ fun AppNavGraph(
                     pendingCoverRepository = pendingCoverRepository,
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
+                    pendingExtractOrRandomCoverRepository = pendingExtractOrRandomCoverRepository,
                     pendingProtectBookRepository = pendingProtectBookRepository,
                     pendingUnprotectBookRepository = pendingUnprotectBookRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,

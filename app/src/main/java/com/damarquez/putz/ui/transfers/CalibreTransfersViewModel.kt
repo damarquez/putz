@@ -172,6 +172,19 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    fun extractOrRandomCover(uuid: String, title: String, author: String) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            calibreRepository.sendExtractOrRandomCoverRequest(
+                title = title,
+                author = author,
+                calibreBookUuid = uuid,
+                googleAccount = account,
+            )
+        }
+    }
+
     fun convertFormat(uuid: String, sourceFormat: String, targetFormat: String, title: String, author: String) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()

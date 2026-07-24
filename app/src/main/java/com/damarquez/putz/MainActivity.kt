@@ -20,6 +20,7 @@ import com.damarquez.putz.data.repository.PendingConvertFormatRepository
 import com.damarquez.putz.data.repository.PendingCoverRepository
 import com.damarquez.putz.data.repository.PendingDeletionAction
 import com.damarquez.putz.data.repository.PendingDeletionActionRepository
+import com.damarquez.putz.data.repository.PendingExtractOrRandomCoverRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
 import com.damarquez.putz.data.repository.PendingUnprotectBookRepository
@@ -45,6 +46,7 @@ private sealed class PendingClipboardAction {
     data class Tags(val uuid: String, val autoAddTags: String?) : PendingClipboardAction()
     data class BatchTags(val uuids: List<String>) : PendingClipboardAction()
     data class GenerateCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
+    data class ExtractOrRandomCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class ProtectBook(val uuid: String, val title: String, val author: String, val keepCover: Boolean = false) : PendingClipboardAction()
     data class UnprotectBook(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class SetPageCount(val uuid: String, val pageCount: Int, val title: String? = null, val author: String? = null) : PendingClipboardAction()
@@ -70,6 +72,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var pendingCoverRepository: PendingCoverRepository
     @Inject lateinit var pendingCommentsRepository: PendingCommentsRepository
     @Inject lateinit var pendingGenerateCoverRepository: PendingGenerateCoverRepository
+    @Inject lateinit var pendingExtractOrRandomCoverRepository: PendingExtractOrRandomCoverRepository
     @Inject lateinit var pendingProtectBookRepository: PendingProtectBookRepository
     @Inject lateinit var pendingUnprotectBookRepository: PendingUnprotectBookRepository
     @Inject lateinit var pendingSetPageCountRepository: PendingSetPageCountRepository
@@ -117,6 +120,7 @@ class MainActivity : ComponentActivity() {
                     pendingCoverRepository = pendingCoverRepository,
                     pendingCommentsRepository = pendingCommentsRepository,
                     pendingGenerateCoverRepository = pendingGenerateCoverRepository,
+                    pendingExtractOrRandomCoverRepository = pendingExtractOrRandomCoverRepository,
                     pendingProtectBookRepository = pendingProtectBookRepository,
                     pendingUnprotectBookRepository = pendingUnprotectBookRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
@@ -168,6 +172,12 @@ class MainActivity : ComponentActivity() {
                 val title = uri.getQueryParameter("title") ?: ""
                 val author = uri.getQueryParameter("author") ?: ""
                 if (uuid != null) pendingClipboardAction = PendingClipboardAction.GenerateCover(uuid, title, author)
+            }
+            uri.scheme == "putz" && uri.host == "extract_or_random_cover" -> {  // CONTRACT: EXTRACT_OR_RANDOM_COVER
+                val uuid = uri.getQueryParameter("uuid")
+                val title = uri.getQueryParameter("title") ?: ""
+                val author = uri.getQueryParameter("author") ?: ""
+                if (uuid != null) pendingClipboardAction = PendingClipboardAction.ExtractOrRandomCover(uuid, title, author)
             }
             uri.scheme == "putz" && uri.host == "protect_book" -> {  // CONTRACT: PROTECT_BOOK
                 val uuid = uri.getQueryParameter("uuid")
@@ -293,6 +303,7 @@ class MainActivity : ComponentActivity() {
                 is PendingClipboardAction.Tags -> pendingCommentsRepository.setTagsOnly(action.uuid, action.autoAddTags)
                 is PendingClipboardAction.BatchTags -> pendingCommentsRepository.setBatchTags(action.uuids)
                 is PendingClipboardAction.GenerateCover -> pendingGenerateCoverRepository.set(action.uuid, action.title, action.author)
+                is PendingClipboardAction.ExtractOrRandomCover -> pendingExtractOrRandomCoverRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.ProtectBook -> pendingProtectBookRepository.set(action.uuid, action.title, action.author, action.keepCover)
                 is PendingClipboardAction.UnprotectBook -> pendingUnprotectBookRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.SetPageCount -> pendingSetPageCountRepository.set(action.uuid, action.pageCount, action.title, action.author)

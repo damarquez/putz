@@ -2027,6 +2027,7 @@ class CalibreRepository @Inject constructor(
                         rowMissingLocally -> false
                         action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                         action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                        action == "EXTRACT_OR_RANDOM_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                         action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
                         action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
                         // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the
@@ -2484,6 +2485,46 @@ class CalibreRepository @Inject constructor(
             putioFileId = putioFileId,
             fileName = "Generate cover for $title",
             title = "Generate cover for $title",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+            hasPutioFile = false,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: EXTRACT_OR_RANDOM_COVER
+    suspend fun sendExtractOrRandomCoverRequest(
+        title: String,
+        author: String,
+        calibreBookUuid: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            action = "EXTRACT_OR_RANDOM_COVER",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = emptyList(),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_extractorrandomcover_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Extract or generate cover for $title",
+            title = "Extract or generate cover for $title",
             author = author,
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),

@@ -80,6 +80,14 @@
                 <data android:scheme="putz" android:host="generate_cover" />
             </intent-filter>
 
+            <!-- CONTRACT: EXTRACT_OR_RANDOM_COVER — putz://extract_or_random_cover?uuid=UUID&title=TITLE&author=AUTHOR -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="extract_or_random_cover" />
+            </intent-filter>
+
             <!-- CONTRACT: SET_PAGE_COUNT — putz://set_page_count?uuid=UUID&pages=N -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
