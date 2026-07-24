@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PriorityHigh
@@ -81,6 +82,7 @@ fun CalibreTransferItem(
     onMakePriority: (() -> Unit)? = null,
     onRemoveFromChain: (() -> Unit)? = null,
     onOpenChain: (() -> Unit)? = null,
+    onSetCoverFromClipboard: (() -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     var showContextMenu by remember { mutableStateOf(false) }
@@ -225,6 +227,15 @@ fun CalibreTransferItem(
                             imageVector = Icons.Default.PriorityHigh,
                             contentDescription = "Priority",
                             tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                    if (transfer.pendingCoverPutioFileId != null) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = "Cover staged from clipboard",
+                            tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.size(12.dp),
                         )
                     }
@@ -383,6 +394,25 @@ fun CalibreTransferItem(
                 onClick = {
                     showContextMenu = false
                     onMakePriority()
+                },
+            )
+        }
+        if (onSetCoverFromClipboard != null && (
+                transfer.status == CalibreTransferStatus.ASSEMBLED ||
+                transfer.status == CalibreTransferStatus.CHAINED
+            )
+        ) {
+            // Stages a clipboard image as this not-yet-dispatched request's future cover —
+            // applied automatically via REPLACE_COVER once the book is added and its real
+            // calibre_book_uuid is known (see CalibreRepository.attachClipboardCoverToAssembly).
+            DropdownMenuItem(
+                text = { Text("Set cover from clipboard") },
+                leadingIcon = {
+                    Icon(Icons.Default.Image, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onSetCoverFromClipboard()
                 },
             )
         }

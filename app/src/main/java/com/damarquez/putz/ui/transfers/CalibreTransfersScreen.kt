@@ -51,6 +51,9 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +64,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.shape.RoundedCornerShape
+import coil.compose.AsyncImage
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -163,6 +169,38 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     var prefilledUuid by remember { mutableStateOf<String?>(null) }
     var pendingBatchUuids by remember { mutableStateOf<List<String>?>(null) }
     var batchTagInput by remember { mutableStateOf("") }
+
+    var assemblyCoverTarget by remember { mutableStateOf<CalibreTransferEntity?>(null) }
+    var assemblyCoverPreviewUri by remember { mutableStateOf<Uri?>(null) }
+    val cacheAssemblyCoverImage: (Uri, CalibreTransferEntity) -> Unit = { uri: Uri, target: CalibreTransferEntity ->
+        scope.launch {
+            val cachedFile = withContext(Dispatchers.IO) {
+                try {
+                    val previewsDir = File(context.cacheDir, "previews")
+                    if (!previewsDir.exists()) previewsDir.mkdirs()
+                    previewsDir.listFiles { f -> f.name.startsWith("assembly_cover_") }
+                        ?.forEach { it.delete() }
+                    val tempFile = File(previewsDir, "assembly_cover_${System.currentTimeMillis()}.jpg")
+                    val stream = context.contentResolver.openInputStream(uri)
+                    if (stream == null) return@withContext null
+                    stream.use { input ->
+                        FileOutputStream(tempFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    if (tempFile.length() == 0L) null else tempFile
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (cachedFile != null) {
+                assemblyCoverPreviewUri = FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", cachedFile)
+                assemblyCoverTarget = target
+            } else {
+                snackbarHostState.showSnackbar("Clipboard image is empty or unavailable")
+            }
+        }
+    }
 
     val cacheClipboardImage: (Uri, String?) -> Unit = { uri: Uri, uuid: String? ->
         scope.launch {
@@ -339,6 +377,51 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             initialUuid = prefilledUuid ?: "",
             transferRefs = completedTransferRefs,
             coverImageUri = clipboardImageUri,
+        )
+    }
+
+    if (assemblyCoverTarget != null && assemblyCoverPreviewUri != null) {
+        AlertDialog(
+            onDismissRequest = {
+                assemblyCoverTarget = null
+                assemblyCoverPreviewUri = null
+            },
+            title = { Text("Set cover for \"${assemblyCoverTarget!!.title}\"") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    AsyncImage(
+                        model = assemblyCoverPreviewUri,
+                        contentDescription = "Cover preview",
+                        modifier = Modifier
+                            .size(160.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Applied once this book finishes assembling and is added to Calibre.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.setAssemblyCoverFromClipboard(assemblyCoverTarget!!.putioFileId, assemblyCoverPreviewUri!!)
+                    assemblyCoverTarget = null
+                    assemblyCoverPreviewUri = null
+                }) {
+                    Text("Set as cover")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    assemblyCoverTarget = null
+                    assemblyCoverPreviewUri = null
+                }) {
+                    Text("Cancel")
+                }
+            },
         )
     }
 
@@ -804,6 +887,16 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 },
                                 onRemoveFromChain = { viewModel.removeFromChain(transfer.putioFileId) },
                                 onOpenChain = onOpenChain,
+                                onSetCoverFromClipboard = {
+                                    val clip = context.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+                                    val imgUri = clip?.getItemAt(0)?.uri
+                                    val mime = imgUri?.let { context.contentResolver.getType(it) }
+                                    if (imgUri != null && mime?.startsWith("image/") == true) {
+                                        cacheAssemblyCoverImage(imgUri, transfer)
+                                    } else {
+                                        scope.launch { snackbarHostState.showSnackbar("No image in clipboard") }
+                                    }
+                                },
                             )
                         }
                         item {

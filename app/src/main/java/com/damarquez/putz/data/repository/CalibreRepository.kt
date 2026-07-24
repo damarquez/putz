@@ -106,7 +106,11 @@ data class CalibreBatchRequest(
     val tags: String? = null, // For UPDATE_COMMENTS
     val source_format: String? = null, // For CONVERT_FORMAT
     val target_format: String? = null, // For CONVERT_FORMAT
-    val keep_cover: Boolean? = null, // For PROTECT_BOOK — when true, don't replace the existing cover
+    // For PROTECT_BOOK — when true, don't replace the existing cover. Also reused for
+    // ADD_BOOK_BATCH: when true and a protected item is being added, the daemon skips
+    // generating its default obfuscated cover, since a real cover is already staged to
+    // follow via REPLACE_COVER (see attachClipboardCoverToAssembly/pollResponses).
+    val keep_cover: Boolean? = null,
     val app_id: String? = null, // Device ID — daemon echoes back so each device only reads its own responses
 )
 
@@ -1473,6 +1477,7 @@ class CalibreRepository @Inject constructor(
                             )
                             val libraryVerified = newStatus == CalibreTransferStatus.COMPLETED &&
                                 (transfer.transferType == "PLEX" || transfer.transferType == "PLEXAMP" || response.action in selfVerifyingActions)
+                            val resolvedUuid = if (newStatus == CalibreTransferStatus.COMPLETED) response.calibre_book_uuid ?: transfer.calibreBookUuid else null
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 status = newStatus,
                                 errorMessage = response.error,
@@ -1481,7 +1486,11 @@ class CalibreRepository @Inject constructor(
                                 warnings = if (newStatus == CalibreTransferStatus.COMPLETED) response.warnings?.joinToString("\n")?.takeIf { it.isNotBlank() } else transfer.warnings,
                                 durationSeconds = if (newStatus == CalibreTransferStatus.COMPLETED && response.duration_seconds != null) response.duration_seconds else transfer.durationSeconds,
                                 libraryVerified = libraryVerified,
-                                lastUpdatedAt = System.currentTimeMillis()
+                                lastUpdatedAt = System.currentTimeMillis(),
+                                // Consumed below via the pre-update `transfer` snapshot, then cleared here.
+                                pendingCoverPutioFileId = if (newStatus == CalibreTransferStatus.COMPLETED) null else transfer.pendingCoverPutioFileId,
+                                pendingCoverDownloadUrl = if (newStatus == CalibreTransferStatus.COMPLETED) null else transfer.pendingCoverDownloadUrl,
+                                pendingCoverFileName = if (newStatus == CalibreTransferStatus.COMPLETED) null else transfer.pendingCoverFileName,
                             ))
 
                             if (newStatus == CalibreTransferStatus.COMPLETED && transfer.isTempUpload && transfer.hasPutioFile) {
@@ -1489,6 +1498,24 @@ class CalibreRepository @Inject constructor(
                                 if (token.isNotBlank()) {
                                     deleteFileFromPutio(token, transfer.putioFileId)
                                 }
+                            }
+
+                            // A cover was staged from the clipboard while this was still an
+                            // unsent ASSEMBLED/CHAINED request (attachClipboardCoverToAssembly) —
+                            // now that the book's real calibre_book_uuid is known, apply it via
+                            // the same REPLACE_COVER path calibreAnywhere's clipboard-cover flow uses.
+                            if (newStatus == CalibreTransferStatus.COMPLETED && resolvedUuid != null && transfer.pendingCoverDownloadUrl != null && transfer.pendingCoverPutioFileId != null) {
+                                sendReplaceCoverRequest(
+                                    putioFileId = transfer.pendingCoverPutioFileId,
+                                    fileName = transfer.pendingCoverFileName ?: "cover.jpg",
+                                    title = transfer.title,
+                                    author = transfer.author,
+                                    calibreBookId = (response.calibre_book_id ?: transfer.calibreBookId ?: 0).toLong(),
+                                    googleAccount = googleAccount,
+                                    downloadUrl = transfer.pendingCoverDownloadUrl,
+                                    calibreBookUuid = resolvedUuid,
+                                    isPriority = transfer.priority,
+                                )
                             }
 
                             // "missing formats" is just as auto-recoverable as "not found": it's
@@ -2342,6 +2369,7 @@ class CalibreRepository @Inject constructor(
         useLocal: Boolean = false,
         localPath: String? = null,
         addToChain: Boolean = false,
+        isPriority: Boolean = false,
     ) {
         val item = CalibreBatchItem(
             type = "SINGLE",
@@ -2363,7 +2391,7 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        dispatchOrStage(googleAccount, "req_cover_$putioFileId.json", jsonStr, addToChain) { status, gDriveId, errorMessage, chainPosition ->
+        dispatchOrStage(googleAccount, "req_cover_$putioFileId.json", jsonStr, addToChain, isPriority) { status, gDriveId, errorMessage, chainPosition ->
             CalibreTransferEntity(
                 putioFileId = putioFileId,
                 fileName = fileName,
@@ -2379,8 +2407,45 @@ class CalibreRepository @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 lastRequestPayload = jsonStr,
                 chainPosition = chainPosition,
+                priority = isPriority,
             )
         }
+    }
+
+    /** Uploads a clipboard image to `.putz_attachments` on put.io and stashes it on [transferId]'s
+     *  row as a not-yet-applied cover. See pollResponses' COMPLETED handling — once this
+     *  (ASSEMBLED/CHAINED) request completes and its real calibre_book_uuid is known, the stashed
+     *  download URL is used to fire sendReplaceCoverRequest() automatically, the same way
+     *  calibreAnywhere's putz://replace_cover flow already does for existing books. */
+    suspend fun attachClipboardCoverToAssembly(transferId: Long, imageUri: android.net.Uri, googleAccount: String): Boolean {
+        val token = secureStorage.authTokenFlow.value
+        if (token.isBlank()) return false
+        val transfer = calibreTransferDao.getTransferById(transferId) ?: return false
+
+        val rootFiles = withContext(Dispatchers.IO) {
+            (putioApiClient.listFiles(token, 0) as? NetworkResult.Success)?.data?.first ?: emptyList()
+        }
+        var folderId = rootFiles.find { it.name == ".putz_attachments" && it.isFolder }?.id
+        if (folderId == null) {
+            val result = withContext(Dispatchers.IO) { putioApiClient.createFolder(token, 0, ".putz_attachments") }
+            folderId = (result as? NetworkResult.Success)?.data?.id
+        }
+        val resolvedFolderId = folderId ?: return false
+
+        val fileName = "clipboard_cover_${System.currentTimeMillis()}.jpg"
+        val uploadResult = withContext(Dispatchers.IO) {
+            putioApiClient.uploadFile(token, resolvedFolderId, fileName, imageUri, context.contentResolver) { _, _ -> }
+        }
+        val uploaded = (uploadResult as? NetworkResult.Success)?.data ?: return false
+        val downloadUrl = "${PutioApiClient.BASE_URL}/files/${uploaded.id}/download?oauth_token=$token"
+
+        calibreTransferDao.updateTransfer(transfer.copy(
+            pendingCoverPutioFileId = uploaded.id,
+            pendingCoverDownloadUrl = downloadUrl,
+            pendingCoverFileName = fileName,
+            lastUpdatedAt = System.currentTimeMillis(),
+        ))
+        return true
     }
 
     // CONTRACT: GENERATE_COVER
@@ -2974,6 +3039,15 @@ class CalibreRepository @Inject constructor(
                     updated = updated.copy(calibre_book_id = transfer.calibreBookId.toLong())
                 if (transfer.tags != null && req.tags == null)
                     updated = updated.copy(tags = transfer.tags)
+                // A clipboard cover is already staged for this assembly (attachClipboardCoverToAssembly)
+                // and will be applied via REPLACE_COVER once this completes — tell the daemon to skip
+                // generating its default obfuscated cover for the protected item(s) in this request,
+                // since it would just be immediately overwritten.
+                if (transfer.pendingCoverPutioFileId != null && req.action == "ADD_BOOK_BATCH" &&
+                    req.keep_cover != true && updated.items.any { it.protected == true }
+                ) {
+                    updated = updated.copy(keep_cover = true)
+                }
                 if (updated !== req) current = json.encodeToString(updated)
             } catch (_: Exception) {}
             current

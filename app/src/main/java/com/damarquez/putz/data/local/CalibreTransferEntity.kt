@@ -89,6 +89,19 @@ data class CalibreTransferEntity(
      *  chain screen sorts by this. Meaningless once placed; left as-is rather than cleared,
      *  since it's harmless dead weight after that point. */
     val chainPosition: Int? = null,
+
+    /** Put.io file id of a clipboard image already uploaded to `.putz_attachments`, staged as
+     *  this not-yet-dispatched (ASSEMBLED/CHAINED) request's future cover. Null once consumed —
+     *  see [pendingCoverDownloadUrl] and CalibreRepository.pollResponses' COMPLETED handling,
+     *  which fires REPLACE_COVER automatically once this book's real calibre_book_uuid is known. */
+    val pendingCoverPutioFileId: Long? = null,
+
+    /** Download URL for [pendingCoverPutioFileId], stashed so REPLACE_COVER can be sent without
+     *  re-uploading once this transfer completes. */
+    val pendingCoverDownloadUrl: String? = null,
+
+    /** Display filename for [pendingCoverPutioFileId]. */
+    val pendingCoverFileName: String? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 

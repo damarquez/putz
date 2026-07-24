@@ -312,6 +312,17 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    fun setAssemblyCoverFromClipboard(putioFileId: Long, uri: android.net.Uri) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            _snackbarMessage.value = "Uploading clipboard image..."
+            val ok = calibreRepository.attachClipboardCoverToAssembly(putioFileId, uri, account)
+            _snackbarMessage.value = if (ok) "Cover attached — will be set once this book is added"
+                else "Failed to upload clipboard image"
+        }
+    }
+
     private fun startPolling() {
         // NOTE: pollResponses/pollLibraryUpdates/pollHeartbeat are NOT called here — that's
         // GlobalSyncViewModel's job, and it's a true app-wide singleton (see AppNavGraph). This
