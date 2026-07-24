@@ -492,9 +492,10 @@ class CalibreTransfersViewModel @Inject constructor(
         author: String,
         tags: String?,
         items: List<CalibreBatchItem>,
+        ignoreCover: Boolean = false,
     ) {
         viewModelScope.launch {
-            calibreRepository.updateAssemblyMetadata(fileId, title, author, tags, items)
+            calibreRepository.updateAssemblyMetadata(fileId, title, author, tags, items, ignoreCover)
         }
     }
 

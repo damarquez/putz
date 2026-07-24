@@ -258,6 +258,7 @@ class FilesViewModel @Inject constructor(
         val isAltVersion: Boolean = false,
         val isProtected: Boolean = false,
         val convertToPdf: Boolean = false,
+        val ignoreCover: Boolean = false,
     )
 
     private val _calibreSingleDraft = MutableStateFlow<CalibreSingleDraft?>(null)
@@ -1199,9 +1200,9 @@ class FilesViewModel @Inject constructor(
         } }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addToChain: Boolean = false) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, ignoreCover: Boolean = false, addToChain: Boolean = false) {
         trackTransferPreparation { appScope.launch {
-            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, convertToPdf, tags, preresolvedLocalPath, addToChain = addToChain)
+            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, convertToPdf, tags, preresolvedLocalPath, ignoreCover = ignoreCover, addToChain = addToChain)
         } }
     }
 
@@ -1212,7 +1213,7 @@ class FilesViewModel @Inject constructor(
      *  FilesViewModel.prefetchBatchLocalPaths), skips the stub-content read below entirely.
      *  [addedAt], when supplied by a concurrent batch caller, overrides the real dispatch time
      *  so the local transfer list's display order still matches list order despite the race. */
-    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, addedAt: Long? = null, addToChain: Boolean = false) {
+    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, ignoreCover: Boolean = false, addedAt: Long? = null, addToChain: Boolean = false) {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1253,6 +1254,7 @@ class FilesViewModel @Inject constructor(
                         useLocal = true,
                         localPath = null,
                         isProtected = isProtected,
+                        ignoreCover = ignoreCover,
                         convertToPdf = convertToPdf,
                         tags = tags,
                         addedAt = addedAt,
@@ -1308,6 +1310,7 @@ class FilesViewModel @Inject constructor(
                         useLocal = true,
                         localPath = null,
                         isProtected = isProtected,
+                        ignoreCover = ignoreCover,
                         convertToPdf = convertToPdf,
                         tags = tags,
                         addedAt = addedAt,
@@ -1330,6 +1333,7 @@ class FilesViewModel @Inject constructor(
                     useLocal = true,
                     localPath = localPath,
                     isProtected = isProtected,
+                    ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
@@ -1360,6 +1364,7 @@ class FilesViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     smbPath = buildUncPath(conn.host, conn.shareName, file.lanPath),
                     isProtected = isProtected,
+                    ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
@@ -1386,6 +1391,7 @@ class FilesViewModel @Inject constructor(
                     isUploading = true,
                     localUrisJson = file.localUri?.let { """["$it"]""" },
                     isProtected = isProtected,
+                    ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
@@ -1433,6 +1439,7 @@ class FilesViewModel @Inject constructor(
                                 assembleBook = true,
                                 calibreBookUuid = calibreBookUuid,
                                 isProtected = isProtected,
+                                ignoreCover = ignoreCover,
                                 convertToPdf = convertToPdf,
                                 tags = tags,
                                 addedAt = addedAt,
@@ -1479,6 +1486,7 @@ class FilesViewModel @Inject constructor(
                     assembleBook = assembleBook,
                     calibreBookUuid = calibreBookUuid,
                     isProtected = isProtected,
+                    ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
                     addedAt = addedAt,
@@ -1675,6 +1683,7 @@ class FilesViewModel @Inject constructor(
         tags: String? = null,
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
+        ignoreCover: Boolean = false,
         addToChain: Boolean = false,
     ) {
         trackTransferPreparation { appScope.launch {
@@ -1701,7 +1710,7 @@ class FilesViewModel @Inject constructor(
                     files = files.map { it to AudiobookFile(it.id, it.name) },
                     title = title, author = author, googleAccount = googleAccount,
                     isUploading = true, localUrisJson = localUrisJson,
-                    calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected,
+                    calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
                 )
 
                 val resolved = mutableListOf<AudiobookFile>()
@@ -1723,7 +1732,7 @@ class FilesViewModel @Inject constructor(
                         type = type, fileName = fileName,
                         files = files.zip(resolved),
                         title = title, author = author, googleAccount = googleAccount,
-                        assembleBook = true, calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected,
+                        assembleBook = true, calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
                     )
                 } else {
                     calibreRepository.updateMergeAfterUpload(tempId, resolved, googleAccount)
@@ -1751,6 +1760,7 @@ class FilesViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
                 isProtected = isProtected,
+                ignoreCover = ignoreCover,
                 addToChain = addToChain,
             )
             _snackbarMessage.value = when {
@@ -1772,6 +1782,7 @@ class FilesViewModel @Inject constructor(
         tags: String? = null,
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
+        ignoreCover: Boolean = false,
         addToChain: Boolean = false,
     ) {
         trackTransferPreparation { appScope.launch {
@@ -1824,6 +1835,7 @@ class FilesViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
                 isProtected = isProtected,
+                ignoreCover = ignoreCover,
                 addToChain = addToChain,
             )
             _snackbarMessage.value = when {

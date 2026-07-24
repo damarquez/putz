@@ -97,10 +97,10 @@ fun CalibreConfirmationSheet(
     initialAuthor: String,
     onPreview: () -> Unit = {},
     onDismiss: () -> Unit,
-    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean, convertToPdf: Boolean) -> Unit,
+    onConfirm: (title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean, convertToPdf: Boolean, ignoreCover: Boolean) -> Unit,
     // CONTRACT: CHAIN — same signature as onConfirm: stages a complete request rather than
     // dispatching it. Null hides the button (not offered for this sheet's caller).
-    onAddToChain: ((title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean, convertToPdf: Boolean) -> Unit)? = null,
+    onAddToChain: ((title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean, convertToPdf: Boolean, ignoreCover: Boolean) -> Unit)? = null,
     checkExists: suspend (String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: (suspend () -> CalibreTransferEntity?)? = null,
@@ -126,7 +126,8 @@ fun CalibreConfirmationSheet(
         isAltVersion: Boolean,
         isProtected: Boolean,
         convertToPdf: Boolean,
-    ) -> Unit = { _, _, _, _, _, _, _, _, _, _ -> },
+        ignoreCover: Boolean,
+    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _ -> },
 ) {
     var title by remember { mutableStateOf(initialTitle) }
     var author by remember { mutableStateOf(initialAuthor) }
@@ -173,6 +174,7 @@ fun CalibreConfirmationSheet(
     var assembleBook by remember { mutableStateOf(false) }
     var isAltVersion by remember { mutableStateOf(false) }
     var isProtected by remember { mutableStateOf(false) }
+    var ignoreCover by remember { mutableStateOf(false) }
     var convertToPdf by remember { mutableStateOf(false) }
 
     // Pushes every edit up to the caller as it happens (not just on confirm) so a caller can keep
@@ -182,8 +184,8 @@ fun CalibreConfirmationSheet(
     // uniformly instead of hooking each individual button/text-field's onValueChange, since edits
     // land here through several different paths (typing, "use match", swap, autofix, transfer
     // picker selection).
-    LaunchedEffect(title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected, convertToPdf) {
-        onDraftFieldsChanged(title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected, convertToPdf)
+    LaunchedEffect(title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected, convertToPdf, ignoreCover) {
+        onDraftFieldsChanged(title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected, convertToPdf, ignoreCover)
     }
 
     val context = LocalContext.current
@@ -611,6 +613,7 @@ fun CalibreConfirmationSheet(
                                     if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                                     isProtected,
                                     convertToPdf,
+                                    ignoreCover,
                                 )
                             }
                         }),
@@ -711,8 +714,32 @@ fun CalibreConfirmationSheet(
                         }
                         androidx.compose.material3.Switch(
                             checked = isProtected,
-                            onCheckedChange = { isProtected = it }
+                            onCheckedChange = { isProtected = it; if (!it) ignoreCover = false }
                         )
+                    }
+
+                    if (isProtected) {
+                        Spacer(Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Ignore random cover",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(
+                                    text = "Don't generate an obfuscated cover — behave like an unprotected book",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            androidx.compose.material3.Switch(
+                                checked = ignoreCover,
+                                onCheckedChange = { ignoreCover = it }
+                            )
+                        }
                     }
 
                     if (MetadataUtils.canConvertToPdf(displayName)) {
@@ -787,6 +814,7 @@ fun CalibreConfirmationSheet(
                                 if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                                 isProtected,
                                 convertToPdf,
+                                ignoreCover,
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -813,6 +841,7 @@ fun CalibreConfirmationSheet(
                             if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                             isProtected,
                             convertToPdf,
+                            ignoreCover,
                         )
                     },
                     modifier = Modifier.fillMaxWidth(),

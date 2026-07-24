@@ -115,7 +115,7 @@ private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
 internal fun TransferBrowserSheet(
     transfer: CalibreTransferEntity,
     onDismiss: () -> Unit = {},
-    onSave: ((title: String, author: String, tags: String?, items: List<CalibreBatchItem>) -> Unit)? = null,
+    onSave: ((title: String, author: String, tags: String?, items: List<CalibreBatchItem>, ignoreCover: Boolean) -> Unit)? = null,
 ) {
     val clipboard = LocalClipboardManager.current
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.getDefault()) }
@@ -132,6 +132,7 @@ internal fun TransferBrowserSheet(
     var editAuthor by rememberSaveable(transfer.author) { mutableStateOf(transfer.author) }
     var editTags by rememberSaveable(transfer.tags) { mutableStateOf(transfer.tags ?: "") }
     var editProtected by rememberSaveable(transfer.batchData) { mutableStateOf(originalProtected) }
+    var editIgnoreCover by rememberSaveable(transfer.ignoreCover) { mutableStateOf(transfer.ignoreCover) }
     var editStates by remember(transfer.batchData) { mutableStateOf(buildEditState(originalItems)) }
     var expandedInEdit by remember(transfer.batchData) { mutableStateOf(originalItems.indices.toSet()) }
     var collapseNames by rememberSaveable { mutableStateOf(true) }
@@ -173,6 +174,7 @@ internal fun TransferBrowserSheet(
                         editAuthor = transfer.author
                         editTags = transfer.tags ?: ""
                         editProtected = originalProtected
+                        editIgnoreCover = transfer.ignoreCover
                         editStates = buildEditState(originalItems)
                         expandedInEdit = originalItems.indices.toSet()
                         isEditMode = false
@@ -186,6 +188,7 @@ internal fun TransferBrowserSheet(
                                 editAuthor.trim(),
                                 editTags.trim().takeIf { it.isNotBlank() },
                                 saveItems,
+                                editIgnoreCover,
                             )
                             isEditMode = false
                         },
@@ -232,8 +235,28 @@ internal fun TransferBrowserSheet(
                         }
                         Switch(
                             checked = editProtected,
-                            onCheckedChange = { editProtected = it },
+                            onCheckedChange = { editProtected = it; if (!it) editIgnoreCover = false },
                         )
+                    }
+                    if (editProtected) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Ignore random cover", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Don't generate an obfuscated cover — behave like an unprotected book",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = editIgnoreCover,
+                                onCheckedChange = { editIgnoreCover = it },
+                            )
+                        }
                     }
                 }
             } else {

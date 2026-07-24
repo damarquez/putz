@@ -928,6 +928,7 @@ class ArchiveViewModel @Inject constructor(
         isProtected: Boolean = false,
         assembleBook: Boolean = false,
         outputFormat: MergeOutputFormat,
+        ignoreCover: Boolean = false,
     ) {
         val contentType = _activeArchiveMergeContentType.value ?: return
         val effectiveType = outputFormat.itemType
@@ -940,7 +941,7 @@ class ArchiveViewModel @Inject constructor(
             }
 
             if (source is ArchiveSource.Local) {
-                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount, outputFormat)
+                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount, outputFormat, ignoreCover)
                 return@launch
             }
 
@@ -970,6 +971,7 @@ class ArchiveViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
                 isProtected = isProtected,
+                ignoreCover = ignoreCover,
             )
             _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
         }
@@ -1073,6 +1075,7 @@ class ArchiveViewModel @Inject constructor(
         assembleBook: Boolean,
         googleAccount: String,
         outputFormat: MergeOutputFormat,
+        ignoreCover: Boolean = false,
     ) {
         val effectiveType = outputFormat.itemType
         val effectiveFileName = outputFormat.outputFileName
@@ -1138,6 +1141,7 @@ class ArchiveViewModel @Inject constructor(
                 calibreBookUuid = calibreBookUuid,
                 tags = tags,
                 isProtected = isProtected,
+                ignoreCover = ignoreCover,
             )
             _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
         } finally {

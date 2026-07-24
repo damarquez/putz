@@ -788,6 +788,7 @@ class CalibreRepository @Inject constructor(
         archiveEntry: String? = null,
         localPath: String? = null,   // CONTRACT: stub convention — relative path within the local mirror repo
         isProtected: Boolean = false,
+        ignoreCover: Boolean = false,
         convertToPdf: Boolean = false,
         tags: String? = null,
         // Lets a concurrent batch caller (see FilesViewModel.sendBatchToCalibre) stamp a
@@ -830,6 +831,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
             tags = tags?.ifBlank { null },
+            keep_cover = if (isProtected && ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
         val transfer = CalibreTransferEntity(
@@ -855,6 +857,7 @@ class CalibreRepository @Inject constructor(
             priority = priority,
             chainPosition = chainPosition,
             lastRequestPayload = if (addToChain) jsonStr else null,
+            ignoreCover = ignoreCover,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -924,6 +927,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
             tags = transfer.tags,
+            keep_cover = if (transfer.ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount, "req_${transfer.putioFileId}.json", jsonStr, isPriority = transfer.priority)
@@ -957,6 +961,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
             tags = transfer.tags,
+            keep_cover = if (transfer.ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPutioFileId.json", jsonStr, isPriority = transfer.priority)
@@ -991,6 +996,7 @@ class CalibreRepository @Inject constructor(
         localUrisJson: String? = null,
         tags: String? = null,
         isProtected: Boolean = false,
+        ignoreCover: Boolean = false,
         priority: Boolean = false,
         addToChain: Boolean = false,
     ) {
@@ -1021,6 +1027,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
             tags = tags?.ifBlank { null },
+            keep_cover = if (isProtected && ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
         val transfer = CalibreTransferEntity(
@@ -1044,6 +1051,7 @@ class CalibreRepository @Inject constructor(
             priority = priority,
             chainPosition = chainPosition,
             lastRequestPayload = if (addToChain) jsonStr else null,
+            ignoreCover = ignoreCover,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -1102,6 +1110,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
             tags = transfer.tags,
+            keep_cover = if (transfer.ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$newPrimaryId.json", jsonStr, isPriority = transfer.priority)
@@ -1335,6 +1344,7 @@ class CalibreRepository @Inject constructor(
         author: String,
         tags: String?,
         items: List<CalibreBatchItem>,
+        ignoreCover: Boolean = false,
     ) {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return
         val newAllIds = items.flatMap { item ->
@@ -1350,6 +1360,7 @@ class CalibreRepository @Inject constructor(
             batchData = json.encodeToString(items),
             allPutioFileIds = newAllIds.joinToString(","),
             lastUpdatedAt = System.currentTimeMillis(),
+            ignoreCover = ignoreCover,
         ))
     }
 
@@ -3023,6 +3034,7 @@ class CalibreRepository @Inject constructor(
                 calibre_book_id = transfer.calibreBookId?.toLong(),
                 app_id = appId,
                 tags = transfer.tags,
+                keep_cover = if (transfer.ignoreCover) true else null,
             )
             json.encodeToString(request)
         }

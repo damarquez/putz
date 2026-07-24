@@ -102,6 +102,13 @@ data class CalibreTransferEntity(
 
     /** Display filename for [pendingCoverPutioFileId]. */
     val pendingCoverFileName: String? = null,
+
+    /** When true and this transfer's item(s) are [CalibreBatchItem.protected], the daemon skips
+     *  generating its default obfuscated cover on ADD_BOOK_BATCH — the added book's cover behaves
+     *  exactly like an unprotected book's (embedded/extracted cover, or none). Set from the
+     *  "Send to Calibre" / "Edit assembly" dialogs' "Ignore random cover" toggle; has no effect
+     *  when the item isn't protected. See CalibreBatchRequest.keep_cover. */
+    val ignoreCover: Boolean = false,
     ) {
 
     fun parsedFileIds(): List<Long> = 
