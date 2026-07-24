@@ -18,7 +18,9 @@ import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
@@ -111,12 +113,52 @@ class TransferPrepareService : Service() {
         private const val CHANNEL_ID = "transfer_prepare"
         private const val NOTIFICATION_ID = 4302
 
+        // Callers overlap (concurrent sends from different screens can each bracket their own
+        // work with start()/stop()) and, more importantly, a "preparation" that finishes
+        // essentially instantly (nothing to resolve) can call stop() right on the heels of
+        // start(). Android arms its "must call startForeground within 5s" timer the instant
+        // startForegroundService() is called, and a stopService() that lands before this
+        // service's own onStartCommand()/startForeground() has actually run doesn't reliably
+        // cancel that timer — so the OS can still kill the process with
+        // ForegroundServiceDidNotStartInTimeException even though the code goes on to call
+        // startForeground() correctly, just a beat too late for an instance already being torn
+        // down. Ref-count start/stop pairs and debounce the real stopService() call so a quick
+        // start-then-stop can't race the service's own startup, and an overlapping caller's stop
+        // can't tear down the service while another caller is still using it.
+        private const val STOP_DEBOUNCE_MS = 1500L
+        private val lock = Any()
+        private var activeSessions = 0
+        private var pendingStopJob: Job? = null
+        private val stopScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
         fun start(context: Context) {
-            ContextCompat.startForegroundService(context, Intent(context, TransferPrepareService::class.java))
+            val shouldStart = synchronized(lock) {
+                pendingStopJob?.cancel()
+                pendingStopJob = null
+                activeSessions++
+                activeSessions == 1
+            }
+            if (shouldStart) {
+                ContextCompat.startForegroundService(context, Intent(context, TransferPrepareService::class.java))
+            }
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, TransferPrepareService::class.java))
+            val appContext = context.applicationContext
+            synchronized(lock) {
+                activeSessions = (activeSessions - 1).coerceAtLeast(0)
+                if (activeSessions == 0) {
+                    pendingStopJob?.cancel()
+                    pendingStopJob = stopScope.launch {
+                        delay(STOP_DEBOUNCE_MS)
+                        synchronized(lock) {
+                            if (activeSessions == 0) {
+                                appContext.stopService(Intent(appContext, TransferPrepareService::class.java))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
