@@ -192,10 +192,16 @@ class LanDaemonTransport @Inject constructor(
             }.getOrNull()
         }
 
+    // CONTRACT: protection split — Putz fetches metadata_full.db, not metadata.db: unlike
+    // calibreAnywhere/Web (casual viewers protection is meant to hide titles from),
+    // Putz already manages protected books directly via other actions (REPLACE_COVER,
+    // ADD_BOOK_BATCH, etc.), so the redacted copy only broke Putz's own local verification
+    // for protected books, forcing every one of them through the slower daemon-probe
+    // fallback for no privacy benefit. See sidekick's http_server.py for the unsplit route.
     override suspend fun downloadMetadataDb(googleAccount: String, destination: File): Boolean =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
-                .url("${baseUrl()}/library/metadata.db")
+                .url("${baseUrl()}/library/metadata_full.db")
                 .header("X-Sidekick-Key", apiKey())
                 .get()
                 .build()

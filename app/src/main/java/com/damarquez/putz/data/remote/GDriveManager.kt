@@ -200,18 +200,23 @@ class GDriveManager @Inject constructor(
         }
     }
 
+    // CONTRACT: protection split — fetches metadata_full.db (the unsplit copy sidekick
+    // publishes alongside the redacted metadata.db), not metadata.db itself. Putz manages
+    // protected books directly via other actions, so the redaction meant for
+    // calibreAnywhere/Web's casual viewers only broke Putz's own local verification. See
+    // sync_engine.py's _upload_shadow_as_metadata_db(shadow_db, ..., "metadata_full.db").
     suspend fun downloadMetadataDb(accountName: String, destination: File): com.damarquez.putz.data.model.NetworkResult<Unit> = withContext(Dispatchers.IO) {
         try {
-            Log.d("GDriveManager", "Downloading metadata.db for $accountName")
+            Log.d("GDriveManager", "Downloading metadata_full.db for $accountName")
             val service = getDriveService(accountName)
             val libFolderId = getLibraryFolderId(service) ?: return@withContext com.damarquez.putz.data.model.NetworkResult.Error("Could not find Calibre library root (metadata.db missing in your Google Drive)")
-            
+
             val result = service.files().list()
-                .setQ("name = 'metadata.db' and '$libFolderId' in parents and trashed = false")
+                .setQ("name = 'metadata_full.db' and '$libFolderId' in parents and trashed = false")
                 .setFields("files(id, name)")
                 .execute()
-            
-            val fileId = result.files.firstOrNull()?.id ?: return@withContext com.damarquez.putz.data.model.NetworkResult.Error("metadata.db not found in library folder")
+
+            val fileId = result.files.firstOrNull()?.id ?: return@withContext com.damarquez.putz.data.model.NetworkResult.Error("metadata_full.db not found in library folder")
             
             FileOutputStream(destination).use { output ->
                 service.files().get(fileId).executeMediaAndDownloadTo(output)

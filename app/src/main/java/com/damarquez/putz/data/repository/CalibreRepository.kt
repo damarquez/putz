@@ -27,7 +27,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -1977,6 +1982,11 @@ class CalibreRepository @Inject constructor(
         "CONFIRM_DELETE_BOOK", "CONFIRM_DELETE_FORMATS", "CANCEL_DELETION",
     )
 
+    // Caps how many verifyCompletedTransfers probes (each a Drive API round trip) run at once —
+    // enough to erase the "sum of every sequential round trip" slowdown without risking Drive
+    // API rate limits when a large backlog of protected/split books needs probing at once.
+    private val PROBE_CONCURRENCY = 5
+
     suspend fun verifyCompletedTransfers(
         dbFile: File,
         googleAccount: String,
@@ -1994,70 +2004,93 @@ class CalibreRepository @Inject constructor(
             )
         } catch (e: Exception) { return@withContext }
 
+        // Most transfers resolve via a fast local SQLite read against dbFile, but any whose book
+        // isn't found there (split out for protection — see rowMissingLocally below) fall back to
+        // sendProbeRequest(), a real Google Drive API round trip. Run those concurrently instead
+        // of one at a time — a backlog of protected books used to mean minutes of "10s per
+        // transfer" here, entirely spent waiting on sequential network calls one after another.
+        // Bounded (rather than fully parallel) to avoid tripping Drive API rate limits when the
+        // backlog is large.
+        val progressCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val semaphore = Semaphore(PROBE_CONCURRENCY)
         db.use {
-            for ((index, transfer) in transfers.withIndex()) {
-                // One malformed row (bad batchData JSON, an unexpected schema edge case, etc.)
-                // must not abort verification for the rest of the batch — this loop can be
-                // processing hundreds of transfers, and an uncaught exception here used to kill
-                // the whole pass silently (verifyCompletedTransfers has no catch of its own, and
-                // neither does its caller, syncMetadata — so it just looked like a no-op sync
-                // with no error shown, leaving everything after the bad row stuck unverified).
-                try {
-                    val action = transfer.lastRequestPayload?.let { payload ->
-                        try {
-                            json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content
-                        } catch (_: Exception) { null }
+            coroutineScope {
+                transfers.map { transfer ->
+                    async {
+                        semaphore.withPermit {
+                            verifyOneCompletedTransfer(db, transfer, googleAccount)
+                            onProgress?.invoke(progressCount.incrementAndGet(), transfers.size)
+                        }
                     }
-                    // Local row missing entirely for an action that requires the book to exist:
-                    // don't treat it as a hard failure yet, since it may just be split out for
-                    // protection. Ask the daemon (below) instead of leaving it stuck unverified
-                    // forever — this is the fallback ADD_BOOK_BATCH (and anything else landing in
-                    // the `else` branch below) needs just as much as REPLACE_COVER etc. do.
-                    val rowMissingLocally = transfer.calibreBookUuid != null &&
-                        transfer.transferType != "PLEX" &&
-                        action !in NO_PRESENCE_CHECK_ACTIONS &&
-                        !checkBookUuidExists(db, transfer.calibreBookUuid)
-
-                    val verified = when {
-                        // Non-Calibre actions need no library check
-                        transfer.transferType == "PLEX" -> true
-                        action == "PRIORITY_PUTIO_SYNC" -> true
-                        // Must have a UUID to locate the book
-                        transfer.calibreBookUuid == null -> true
-                        rowMissingLocally -> false
-                        action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
-                        action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
-                        action == "EXTRACT_OR_RANDOM_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
-                        action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
-                        action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
-                        // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the
-                        // book may have since been deleted, so don't require it to still exist.
-                        action == "MARK_BOOK_FOR_DELETION" -> true
-                        action == "MARK_FORMATS_FOR_DELETION" -> true
-                        // Confirm-delete: verify the book / formats are gone from the library
-                        action == "CONFIRM_DELETE_BOOK" -> !checkBookUuidExists(db, transfer.calibreBookUuid)
-                        action == "CONFIRM_DELETE_FORMATS" -> checkFormatsDeleted(db, transfer.calibreBookUuid, transfer.lastRequestPayload)
-                        // Cancel-deletion is a client-side acknowledgement; no library state changes
-                        action == "CANCEL_DELETION" -> true
-                        else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
-                    }
-                    if (verified) {
-                        calibreTransferDao.updateTransfer(
-                            transfer.copy(libraryVerified = true, lastUpdatedAt = System.currentTimeMillis())
-                        )
-                    } else if (rowMissingLocally && googleAccount.isNotBlank()) {
-                        // Daemon checks against its live, unsplit metadata.db (see
-                        // find_book_by_uuid in putz_manager.py), so it can confirm a protected
-                        // book that this local copy can't see. Response comes back through the
-                        // normal probe path in pollResponses(), which marks libraryVerified.
-                        sendProbeRequest(transfer.putioFileId, googleAccount)
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("CalibreRepository",
-                        "verifyCompletedTransfers: failed for putio_file_id=${transfer.putioFileId} — skipping, will retry next sync", e)
-                }
-                onProgress?.invoke(index + 1, transfers.size)
+                }.awaitAll()
             }
+        }
+    }
+
+    private suspend fun verifyOneCompletedTransfer(
+        db: android.database.sqlite.SQLiteDatabase,
+        transfer: CalibreTransferEntity,
+        googleAccount: String,
+    ) {
+        // One malformed row (bad batchData JSON, an unexpected schema edge case, etc.) must not
+        // abort verification for the rest of the batch — this loop can be processing hundreds of
+        // transfers, and an uncaught exception here used to kill the whole pass silently
+        // (verifyCompletedTransfers has no catch of its own, and neither does its caller,
+        // syncMetadata — so it just looked like a no-op sync with no error shown, leaving
+        // everything after the bad row stuck unverified).
+        try {
+            val action = transfer.lastRequestPayload?.let { payload ->
+                try {
+                    json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content
+                } catch (_: Exception) { null }
+            }
+            // Local row missing entirely for an action that requires the book to exist: don't
+            // treat it as a hard failure yet, since it may just be split out for protection. Ask
+            // the daemon (below) instead of leaving it stuck unverified forever — this is the
+            // fallback ADD_BOOK_BATCH (and anything else landing in the `else` branch below)
+            // needs just as much as REPLACE_COVER etc. do.
+            val rowMissingLocally = transfer.calibreBookUuid != null &&
+                transfer.transferType != "PLEX" &&
+                action !in NO_PRESENCE_CHECK_ACTIONS &&
+                !checkBookUuidExists(db, transfer.calibreBookUuid)
+
+            val verified = when {
+                // Non-Calibre actions need no library check
+                transfer.transferType == "PLEX" -> true
+                action == "PRIORITY_PUTIO_SYNC" -> true
+                // Must have a UUID to locate the book
+                transfer.calibreBookUuid == null -> true
+                rowMissingLocally -> false
+                action == "REPLACE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                action == "GENERATE_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                action == "EXTRACT_OR_RANDOM_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
+                action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
+                // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the book may
+                // have since been deleted, so don't require it to still exist.
+                action == "MARK_BOOK_FOR_DELETION" -> true
+                action == "MARK_FORMATS_FOR_DELETION" -> true
+                // Confirm-delete: verify the book / formats are gone from the library
+                action == "CONFIRM_DELETE_BOOK" -> !checkBookUuidExists(db, transfer.calibreBookUuid)
+                action == "CONFIRM_DELETE_FORMATS" -> checkFormatsDeleted(db, transfer.calibreBookUuid, transfer.lastRequestPayload)
+                // Cancel-deletion is a client-side acknowledgement; no library state changes
+                action == "CANCEL_DELETION" -> true
+                else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
+            }
+            if (verified) {
+                calibreTransferDao.updateTransfer(
+                    transfer.copy(libraryVerified = true, lastUpdatedAt = System.currentTimeMillis())
+                )
+            } else if (rowMissingLocally && googleAccount.isNotBlank()) {
+                // Daemon checks against its live, unsplit metadata.db (see find_book_by_uuid in
+                // putz_manager.py), so it can confirm a protected book that this local copy can't
+                // see. Response comes back through the normal probe path in pollResponses(),
+                // which marks libraryVerified.
+                sendProbeRequest(transfer.putioFileId, googleAccount)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CalibreRepository",
+                "verifyCompletedTransfers: failed for putio_file_id=${transfer.putioFileId} — skipping, will retry next sync", e)
         }
     }
 
