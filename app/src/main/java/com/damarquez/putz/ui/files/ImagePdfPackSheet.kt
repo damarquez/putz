@@ -39,10 +39,11 @@ fun ImagePackSheet(
     imageFiles: List<PutioFile>,
     defaultFormat: ImageOutputFormat,
     onDismiss: () -> Unit,
-    onConfirm: (selectedFiles: List<PutioFile>, format: ImageOutputFormat) -> Unit,
+    onConfirm: (selectedFiles: List<PutioFile>, format: ImageOutputFormat, quality: ImageCompressionLevel) -> Unit,
     readStubFileSize: suspend (PutioFile) -> Long?,
 ) {
     var format by remember(defaultFormat) { mutableStateOf(defaultFormat) }
+    var compression by remember { mutableStateOf(ImageCompressionLevel.ORIGINAL) }
     var caseSensitiveSort by remember(imageFiles) { mutableStateOf(false) }
     var orderedFiles by remember(imageFiles, caseSensitiveSort) {
         mutableStateOf(MetadataUtils.sortByName(imageFiles, caseSensitiveSort) { it.displayName })
@@ -132,6 +133,29 @@ fun ImagePackSheet(
                             label = { Text(fmt.label) },
                             modifier = Modifier.padding(start = 4.dp),
                         )
+                    }
+                }
+
+                // Compression only affects the PDF engine (ImagePdfPackJob) — CBZ/EPUB embed
+                // source image bytes as-is by design, so animated GIFs survive intact.
+                if (format == ImageOutputFormat.PDF) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Compression",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        ImageCompressionLevel.entries.forEach { level ->
+                            FilterChip(
+                                selected = compression == level,
+                                onClick = { compression = level },
+                                label = { Text(level.label) },
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        }
                     }
                 }
 
@@ -238,7 +262,7 @@ fun ImagePackSheet(
                 Spacer(Modifier.height(16.dp))
 
                 Button(
-                    onClick = { onConfirm(selectedFiles, format) },
+                    onClick = { onConfirm(selectedFiles, format, compression) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = selectedFiles.isNotEmpty(),
                 ) {

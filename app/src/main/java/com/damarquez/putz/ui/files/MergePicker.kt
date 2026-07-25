@@ -66,6 +66,32 @@ fun defaultImageOutputFormat(fileNames: Iterable<String>): ImageOutputFormat =
     else ImageOutputFormat.PDF
 
 /**
+ * JPEG re-encode quality for the image-to-PDF pack engines (ImagePdfPackJob/CbrPdfPackJob —
+ * see CONTRACTS.md "Merge framework"). Only meaningful for PDF output: CBZ/CBR/EPUB embed
+ * source image bytes as-is by design (so animated GIFs survive), so a compression choice
+ * there would be a no-op. ORIGINAL (null) keeps the pre-existing lossless-but-large behavior.
+ */
+enum class ImageCompressionLevel(val quality: Int?, val label: String) {
+    ORIGINAL(null, "Original"),
+    HIGH(85, "High"),
+    MEDIUM(70, "Medium"),
+    SMALL(50, "Small"),
+}
+
+/** Item types whose engine (ImagePdfPackJob/CbrPdfPackJob) honors [ImageCompressionLevel]. */
+fun compressionApplicableTo(itemType: String): Boolean =
+    itemType == "IMAGE_PDF_PACK" || itemType == "CBR_PDF_PACK"
+
+/** Which [MergeOutputFormat] options (if any) exist for a wire item type already in flight —
+ * used by the pending-assembly editor (TransferBrowserSheet) to let a user switch e.g.
+ * IMAGE_CBZ_PACK to IMAGE_PDF_PACK before the request is sent, without re-running the whole
+ * picker flow. Null when the type isn't part of a switchable output-format family (SINGLE,
+ * PACK, ARCHIVE, etc — those have exactly one engine, nothing to switch between). */
+fun formatOptionsForItemType(itemType: String): List<MergeOutputFormat>? =
+    MergeContentType.entries.map { it.outputFormatOptions() }
+        .firstOrNull { options -> options.any { it.itemType == itemType } }
+
+/**
  * A concrete output choice (item type + file name + display label) for a merge-framework
  * folder/archive trigger. Generalizes the per-content-type default in [MergeContentType] and
  * the images-only [ImageOutputFormat] so every content type can offer/confirm a target format.

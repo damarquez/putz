@@ -1685,6 +1685,7 @@ class FilesViewModel @Inject constructor(
         assembleBook: Boolean = false,
         ignoreCover: Boolean = false,
         addToChain: Boolean = false,
+        imageQuality: Int? = null,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1711,6 +1712,7 @@ class FilesViewModel @Inject constructor(
                     title = title, author = author, googleAccount = googleAccount,
                     isUploading = true, localUrisJson = localUrisJson,
                     calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
+                    imageQuality = imageQuality,
                 )
 
                 val resolved = mutableListOf<AudiobookFile>()
@@ -1733,6 +1735,7 @@ class FilesViewModel @Inject constructor(
                         files = files.zip(resolved),
                         title = title, author = author, googleAccount = googleAccount,
                         assembleBook = true, calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
+                        imageQuality = imageQuality,
                     )
                 } else {
                     calibreRepository.updateMergeAfterUpload(tempId, resolved, googleAccount)
@@ -1762,6 +1765,7 @@ class FilesViewModel @Inject constructor(
                 isProtected = isProtected,
                 ignoreCover = ignoreCover,
                 addToChain = addToChain,
+                imageQuality = imageQuality,
             )
             _snackbarMessage.value = when {
                 addToChain -> "Added to chain"
@@ -1784,6 +1788,7 @@ class FilesViewModel @Inject constructor(
         assembleBook: Boolean = false,
         ignoreCover: Boolean = false,
         addToChain: Boolean = false,
+        imageQuality: Int? = null,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1837,6 +1842,7 @@ class FilesViewModel @Inject constructor(
                 isProtected = isProtected,
                 ignoreCover = ignoreCover,
                 addToChain = addToChain,
+                imageQuality = imageQuality,
             )
             _snackbarMessage.value = when {
                 addToChain -> "Added to chain"

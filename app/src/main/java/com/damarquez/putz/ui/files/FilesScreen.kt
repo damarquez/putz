@@ -311,6 +311,7 @@ fun FilesScreen(
     var imagePackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedImageFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
     var selectedImageFilesFormat by remember { mutableStateOf(ImageOutputFormat.PDF) }
+    var selectedImageFilesQuality by remember { mutableStateOf<Int?>(null) }
 
     // CBR PDF pack flow
     var cbrPdfPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
@@ -323,6 +324,7 @@ fun FilesScreen(
     // Merge framework flow (folder trigger) — see CONTRACTS.md "Merge framework"
     var selectedMergeFlatFiles by remember { mutableStateOf<List<MergeCandidateFile>?>(null) }
     var selectedMergeGroups by remember { mutableStateOf<List<MergeCandidateGroup>?>(null) }
+    var mergeImageQuality by remember { mutableStateOf<Int?>(null) }
     val mergeChoiceState by viewModel.mergeChoiceState.collectAsState()
     val mergePickerState by viewModel.mergePickerState.collectAsState()
 
@@ -345,10 +347,10 @@ fun FilesScreen(
                     "TEXT_PDF_PACK" -> selectedTextFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
                     "CBR_CBZ_PACK" -> selectedCbrCbzFiles = pd.files
-                    else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
+                    else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat; selectedImageFilesQuality = pd.imageQuality }
                 }
-                is PendingDestination.MergeFlat -> selectedMergeFlatFiles = pd.files
-                is PendingDestination.MergeGrouped -> selectedMergeGroups = pd.groups
+                is PendingDestination.MergeFlat -> { selectedMergeFlatFiles = pd.files; mergeImageQuality = pd.imageQuality }
+                is PendingDestination.MergeGrouped -> { selectedMergeGroups = pd.groups; mergeImageQuality = pd.imageQuality }
             }
             pendingDestination = null
         }
@@ -369,10 +371,10 @@ fun FilesScreen(
                     "TEXT_PDF_PACK" -> selectedTextFiles = pd.files
                     "CBR_PDF_PACK" -> selectedCbrFiles = pd.files
                     "CBR_CBZ_PACK" -> selectedCbrCbzFiles = pd.files
-                    else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat }
+                    else -> { selectedImageFiles = pd.files; selectedImageFilesFormat = pd.imageFormat; selectedImageFilesQuality = pd.imageQuality }
                 }
-                is PendingDestination.MergeFlat -> selectedMergeFlatFiles = pd.files
-                is PendingDestination.MergeGrouped -> selectedMergeGroups = pd.groups
+                is PendingDestination.MergeFlat -> { selectedMergeFlatFiles = pd.files; mergeImageQuality = pd.imageQuality }
+                is PendingDestination.MergeGrouped -> { selectedMergeGroups = pd.groups; mergeImageQuality = pd.imageQuality }
             }
             pendingDestination = null
         }
@@ -785,8 +787,8 @@ fun FilesScreen(
             imageFiles = imageFiles,
             defaultFormat = defaultFormat,
             onDismiss = { imagePackTriggerFile = null },
-            onConfirm = { files, format ->
-                pendingDestination = PendingDestination.Pack(format.itemType, files, format.outputFileName, "${files.size} images", format)
+            onConfirm = { files, format, quality ->
+                pendingDestination = PendingDestination.Pack(format.itemType, files, format.outputFileName, "${files.size} images", format, quality.quality)
                 imagePackTriggerFile = null
             },
             readStubFileSize = { viewModel.readStubFileSize(it) },
@@ -796,6 +798,7 @@ fun FilesScreen(
     if (selectedImageFiles != null) {
         val imageFiles = selectedImageFiles!!
         val format = selectedImageFilesFormat
+        val quality = selectedImageFilesQuality
         val (initialTitle, initialAuthor) = remember(imageFiles) {
             MetadataUtils.extractMetadata(imageFiles.first().displayName)
         }
@@ -806,11 +809,11 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             onDismiss = { selectedImageFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = quality)
                 selectedImageFiles = null
             },
             onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = quality)
                 selectedImageFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -857,6 +860,8 @@ fun FilesScreen(
         null -> {}
     }
 
+    var mergePickerCompression by remember { mutableStateOf(ImageCompressionLevel.ORIGINAL) }
+
     val outputFormatPicker: (@Composable () -> Unit)? = activeMergeContentType?.let { ct ->
         val options = ct.outputFormatOptions()
         val selectedFormat = mergeOutputFormat ?: ct.defaultOutputFormat()
@@ -879,6 +884,28 @@ fun FilesScreen(
                     )
                 }
             }
+            // Compression only affects the PDF-from-images engines (ImagePdfPackJob/
+            // CbrPdfPackJob) — CBZ/CBR/EPUB embed source image bytes as-is by design.
+            if (compressionApplicableTo(selectedFormat.itemType)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Compression",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    ImageCompressionLevel.entries.forEach { level ->
+                        FilterChip(
+                            selected = mergePickerCompression == level,
+                            onClick = { mergePickerCompression = level },
+                            label = { Text(level.label) },
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                }
+            }
         })
     }
 
@@ -889,12 +916,16 @@ fun FilesScreen(
                 onDismiss = { viewModel.dismissMergePicker() },
                 onConfirmFlat = { files ->
                     val ct = activeMergeContentType ?: MergeContentType.IMAGES
-                    pendingDestination = PendingDestination.MergeFlat(ct, mergeOutputFormat ?: ct.defaultOutputFormat(), files)
+                    val fmt = mergeOutputFormat ?: ct.defaultOutputFormat()
+                    val quality = if (compressionApplicableTo(fmt.itemType)) mergePickerCompression.quality else null
+                    pendingDestination = PendingDestination.MergeFlat(ct, fmt, files, quality)
                     viewModel.dismissMergePicker()
                 },
                 onConfirmGrouped = { groups ->
                     val ct = activeMergeContentType ?: MergeContentType.IMAGES
-                    pendingDestination = PendingDestination.MergeGrouped(ct, mergeOutputFormat ?: ct.defaultOutputFormat(), groups)
+                    val fmt = mergeOutputFormat ?: ct.defaultOutputFormat()
+                    val quality = if (compressionApplicableTo(fmt.itemType)) mergePickerCompression.quality else null
+                    pendingDestination = PendingDestination.MergeGrouped(ct, fmt, groups, quality)
                     viewModel.dismissMergePicker()
                 },
                 readStubFileSize = { viewModel.readStubFileSize(it) },
@@ -919,11 +950,11 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeFlatFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality)
                 selectedMergeFlatFiles = null
             },
             onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality)
                 selectedMergeFlatFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -950,11 +981,11 @@ fun FilesScreen(
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeGroups = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality)
                 selectedMergeGroups = null
             },
             onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality)
                 selectedMergeGroups = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -1973,16 +2004,19 @@ private sealed class PendingDestination {
         val outputFileName: String,
         val displayName: String,
         val imageFormat: ImageOutputFormat = ImageOutputFormat.PDF,
+        val imageQuality: Int? = null,
     ) : PendingDestination()
     data class MergeFlat(
         val contentType: MergeContentType,
         val outputFormat: MergeOutputFormat,
         val files: List<MergeCandidateFile>,
+        val imageQuality: Int? = null,
     ) : PendingDestination()
     data class MergeGrouped(
         val contentType: MergeContentType,
         val outputFormat: MergeOutputFormat,
         val groups: List<MergeCandidateGroup>,
+        val imageQuality: Int? = null,
     ) : PendingDestination()
 }
 

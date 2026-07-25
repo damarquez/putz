@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,7 +55,11 @@ import com.damarquez.putz.data.repository.CalibreBatchItem
 import com.damarquez.putz.data.repository.PackGroup
 import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.ui.files.CollapsedFileNameText
+import com.damarquez.putz.ui.files.ImageCompressionLevel
+import com.damarquez.putz.ui.files.MergeOutputFormat
 import com.damarquez.putz.ui.files.ReorderArrowButton
+import com.damarquez.putz.ui.files.compressionApplicableTo
+import com.damarquez.putz.ui.files.formatOptionsForItemType
 import com.damarquez.putz.util.MetadataUtils
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,7 +85,18 @@ private data class ItemEditState(
     val checkedKeys: Set<String>,
     val isIncluded: Boolean = true,
     val editedBatchLabels: Map<Int, String> = emptyMap(),
+    // Non-null only when item.type belongs to a switchable output-format family (e.g. the
+    // IMAGE_*_PACK/CBR_*_PACK engines) — see formatOptionsForItemType. Lets the user change
+    // e.g. IMAGE_CBZ_PACK to IMAGE_PDF_PACK on an already-staged assembly.
+    val formatOptions: List<MergeOutputFormat>? = null,
+    val editedFormat: MergeOutputFormat? = null,
+    val editedQuality: ImageCompressionLevel = ImageCompressionLevel.ORIGINAL,
 )
+
+/** Swaps a pack item's generic output filename (e.g. "Book.cbz") for the new format's,
+ * preserving the "_bkp" alt-version suffix addMergeTransfer/applyAltVersion appends. */
+private fun applyFormatToFileName(oldName: String, format: MergeOutputFormat): String =
+    if (oldName.endsWith("_bkp")) "${format.outputFileName}_bkp" else format.outputFileName
 
 /** Stable unique key for one file within a pack, safe for LazyColumn and checked-state tracking.
  *  Regular files: putio_file_id is unique per file.
@@ -92,12 +108,17 @@ private fun fileKey(file: AudiobookFile): String =
 private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
     items.map { item ->
         val files = item.files ?: emptyList()
+        val formatOptions = formatOptionsForItemType(item.type)
         ItemEditState(
             item = item,
             orderedFiles = files,
             checkedKeys = files.map { fileKey(it) }.toSet(),
             isIncluded = true,
             editedBatchLabels = item.sourceBatchLabels ?: emptyMap(),
+            formatOptions = formatOptions,
+            editedFormat = formatOptions?.firstOrNull { it.itemType == item.type },
+            editedQuality = ImageCompressionLevel.entries.firstOrNull { it.quality == item.image_quality }
+                ?: ImageCompressionLevel.ORIGINAL,
         )
     }
 
@@ -140,16 +161,23 @@ internal fun TransferBrowserSheet(
     fun buildSaveItems(): List<CalibreBatchItem> = editStates.mapNotNull { state ->
         if (!state.isIncluded) return@mapNotNull null
         val protectedValue = if (editProtected) true else null
+        val format = state.editedFormat
+        val newType = format?.itemType ?: state.item.type
+        val newFileName = format?.let { applyFormatToFileName(state.item.fileName, it) } ?: state.item.fileName
+        val newQuality = if (format != null && compressionApplicableTo(format.itemType)) state.editedQuality.quality else null
         val files = state.item.files
         if (files == null) {
-            state.item.copy(protected = protectedValue)
+            state.item.copy(type = newType, fileName = newFileName, protected = protectedValue, image_quality = newQuality)
         } else {
             val remaining = state.orderedFiles.filter { fileKey(it) in state.checkedKeys }
             if (remaining.isEmpty()) null
             else state.item.copy(
+                type = newType,
+                fileName = newFileName,
                 files = remaining,
                 protected = protectedValue,
                 sourceBatchLabels = state.editedBatchLabels.ifEmpty { null },
+                image_quality = newQuality,
             )
         }
     }
@@ -435,6 +463,62 @@ internal fun TransferBrowserSheet(
                                     if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                     contentDescription = if (expanded) "Collapse" else "Expand",
                                 )
+                            }
+                        }
+                    }
+                }
+
+                if (state.isIncluded && state.formatOptions != null) {
+                    item(key = "edit_format_$itemIndex") {
+                        Column(modifier = Modifier.padding(start = 46.dp, end = 8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "Output format",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                state.formatOptions.forEach { fmt ->
+                                    FilterChip(
+                                        selected = state.editedFormat == fmt,
+                                        onClick = {
+                                            editStates = editStates.toMutableList().also {
+                                                it[itemIndex] = state.copy(editedFormat = fmt)
+                                            }
+                                        },
+                                        label = { Text(fmt.label) },
+                                        modifier = Modifier.padding(start = 4.dp),
+                                    )
+                                }
+                            }
+                            // Compression only applies to the PDF-from-images engines
+                            // (ImagePdfPackJob/CbrPdfPackJob) — CBZ/CBR/EPUB embed source
+                            // image bytes as-is by design (e.g. to keep animated GIFs intact).
+                            if (state.editedFormat?.let { compressionApplicableTo(it.itemType) } == true) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "Compression",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    ImageCompressionLevel.entries.forEach { level ->
+                                        FilterChip(
+                                            selected = state.editedQuality == level,
+                                            onClick = {
+                                                editStates = editStates.toMutableList().also {
+                                                    it[itemIndex] = state.copy(editedQuality = level)
+                                                }
+                                            },
+                                            label = { Text(level.label) },
+                                            modifier = Modifier.padding(start = 4.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

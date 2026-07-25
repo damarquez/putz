@@ -13,10 +13,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -327,8 +331,16 @@ private fun MergeGroupedContent(
     extraControls: (@Composable () -> Unit)? = null,
 ) {
     var orderedGroups by remember(groups) { mutableStateOf(groups) }
+    var expandedGroups by remember(groups) { mutableStateOf(groups.map { it.label }.toSet()) }
+    var collapseNames by remember { mutableStateOf(true) }
     val allFiles = remember(groups) { groups.flatMap { it.files } }
     val sizeProgress = rememberSizeProgress(allFiles.map { it.file }, readStubFileSize)
+
+    fun updateGroupFiles(groupIndex: Int, newFiles: List<MergeCandidateFile>) {
+        orderedGroups = orderedGroups.toMutableList().also {
+            it[groupIndex] = it[groupIndex].copy(files = newFiles)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -339,7 +351,7 @@ private fun MergeGroupedContent(
         Text(text = "Order chapters", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Each subfolder becomes one chapter, in the listed order — use ▲▼ to reorder.",
+            text = "Each subfolder becomes one chapter — use ▲▼ to reorder chapters, or expand one to reorder its files.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -349,47 +361,125 @@ private fun MergeGroupedContent(
             color = MaterialTheme.colorScheme.primary,
         )
 
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Collapse names",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = collapseNames,
+                onCheckedChange = { collapseNames = it },
+            )
+        }
+
         extraControls?.invoke()
 
         Spacer(Modifier.height(16.dp))
 
         LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
             itemsIndexed(orderedGroups, key = { _, g -> g.label }) { index, group ->
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(group.label, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "${group.files.size} file(s)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                val expanded = group.label in expandedGroups
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(group.label, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "${group.files.size} file(s)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = {
+                            expandedGroups = if (expanded) expandedGroups - group.label else expandedGroups + group.label
+                        }) {
+                            Icon(
+                                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (expanded) "Collapse chapter" else "Expand chapter",
+                            )
+                        }
+                        ReorderArrowButton(
+                            icon = Icons.Default.ArrowUpward,
+                            contentDescription = "Move up",
+                            enabled = index > 0,
+                            onClick = {
+                                if (index > 0) orderedGroups = orderedGroups.toMutableList().also {
+                                    val tmp = it[index]; it[index] = it[index - 1]; it[index - 1] = tmp
+                                }
+                            },
+                            onLongClick = {
+                                if (index > 0) orderedGroups = orderedGroups.toMutableList().also { it.add(0, it.removeAt(index)) }
+                            },
+                        )
+                        ReorderArrowButton(
+                            icon = Icons.Default.ArrowDownward,
+                            contentDescription = "Move down",
+                            enabled = index < orderedGroups.lastIndex,
+                            onClick = {
+                                if (index < orderedGroups.lastIndex) orderedGroups = orderedGroups.toMutableList().also {
+                                    val tmp = it[index]; it[index] = it[index + 1]; it[index + 1] = tmp
+                                }
+                            },
+                            onLongClick = {
+                                if (index < orderedGroups.lastIndex) orderedGroups = orderedGroups.toMutableList().also { it.add(it.removeAt(index)) }
+                            },
                         )
                     }
-                    ReorderArrowButton(
-                        icon = Icons.Default.ArrowUpward,
-                        contentDescription = "Move up",
-                        enabled = index > 0,
-                        onClick = {
-                            if (index > 0) orderedGroups = orderedGroups.toMutableList().also {
-                                val tmp = it[index]; it[index] = it[index - 1]; it[index - 1] = tmp
+
+                    if (expanded) {
+                        group.files.forEachIndexed { fileIndex, candidate ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(start = 24.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (collapseNames) {
+                                    CollapsedFileNameText(
+                                        name = candidate.relativePath,
+                                        previousName = group.files.getOrNull(fileIndex - 1)?.relativePath,
+                                        nextName = group.files.getOrNull(fileIndex + 1)?.relativePath,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                } else {
+                                    Text(
+                                        text = candidate.relativePath,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                ReorderArrowButton(
+                                    icon = Icons.Default.ArrowUpward,
+                                    contentDescription = "Move up",
+                                    enabled = fileIndex > 0,
+                                    onClick = {
+                                        if (fileIndex > 0) updateGroupFiles(index, group.files.toMutableList().also {
+                                            val tmp = it[fileIndex]; it[fileIndex] = it[fileIndex - 1]; it[fileIndex - 1] = tmp
+                                        })
+                                    },
+                                    onLongClick = {
+                                        if (fileIndex > 0) updateGroupFiles(index, group.files.toMutableList().also {
+                                            it.add(0, it.removeAt(fileIndex))
+                                        })
+                                    },
+                                )
+                                ReorderArrowButton(
+                                    icon = Icons.Default.ArrowDownward,
+                                    contentDescription = "Move down",
+                                    enabled = fileIndex < group.files.lastIndex,
+                                    onClick = {
+                                        if (fileIndex < group.files.lastIndex) updateGroupFiles(index, group.files.toMutableList().also {
+                                            val tmp = it[fileIndex]; it[fileIndex] = it[fileIndex + 1]; it[fileIndex + 1] = tmp
+                                        })
+                                    },
+                                    onLongClick = {
+                                        if (fileIndex < group.files.lastIndex) updateGroupFiles(index, group.files.toMutableList().also {
+                                            it.add(it.removeAt(fileIndex))
+                                        })
+                                    },
+                                )
                             }
-                        },
-                        onLongClick = {
-                            if (index > 0) orderedGroups = orderedGroups.toMutableList().also { it.add(0, it.removeAt(index)) }
-                        },
-                    )
-                    ReorderArrowButton(
-                        icon = Icons.Default.ArrowDownward,
-                        contentDescription = "Move down",
-                        enabled = index < orderedGroups.lastIndex,
-                        onClick = {
-                            if (index < orderedGroups.lastIndex) orderedGroups = orderedGroups.toMutableList().also {
-                                val tmp = it[index]; it[index] = it[index + 1]; it[index + 1] = tmp
-                            }
-                        },
-                        onLongClick = {
-                            if (index < orderedGroups.lastIndex) orderedGroups = orderedGroups.toMutableList().also { it.add(it.removeAt(index)) }
-                        },
-                    )
+                        }
+                    }
                 }
             }
         }

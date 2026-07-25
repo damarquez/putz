@@ -91,7 +91,7 @@ class LocalFilesRepository @Inject constructor(
                 if (docUri.toString() in hiddenUris) continue
 
                 val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                if (isDir || MetadataUtils.isEbook(name)) {
+                if (isDir || MetadataUtils.isEbook(name) || MetadataUtils.isImage(name)) {
                     results.add(
                         PutioFile(
                             id = (docUri.toString().hashCode().toLong().let { if (it > 0) -it else it })
@@ -187,7 +187,7 @@ class LocalFilesRepository @Inject constructor(
                         val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
                         val isMatch = matches(name)
 
-                        if (isMatch && (isDir || MetadataUtils.isEbook(name))) {
+                        if (isMatch && (isDir || MetadataUtils.isEbook(name) || MetadataUtils.isImage(name))) {
                             results.add(
                                 PutioFile(
                                     id = (docUri.toString().hashCode().toLong().let { if (it > 0) -it else it })

@@ -83,6 +83,10 @@ data class CalibreBatchItem(
     val smb_path: String? = null,    // When set the daemon reads directly from this UNC path; no download needed
     val archive_entry: String? = null, // For ARCHIVE_ENTRY: path of the entry within the archive file
     val protected: Boolean? = null,  // When true the daemon encrypts the file before adding to Calibre
+    // CONTRACT: Merge framework — 1-100 JPEG quality for IMAGE_PDF_PACK/CBR_PDF_PACK's
+    // raster-image-to-PDF step (ImagePdfPackJob/CbrPdfPackJob in pack_jobs.py). null (default)
+    // keeps the original lossless-but-large embed; every other pack engine ignores this field.
+    val image_quality: Int? = null,
     // CONTRACT: ADD_BOOK_BATCH "to PDF" — when true and fileName's format is convertible
     // (see MetadataUtils.canConvertToPdf), the daemon converts it to PDF via ebook-convert
     // and adds the PDF as an additional format alongside the original (never replacing it).
@@ -1031,6 +1035,7 @@ class CalibreRepository @Inject constructor(
         ignoreCover: Boolean = false,
         priority: Boolean = false,
         addToChain: Boolean = false,
+        imageQuality: Int? = null,
     ) {
         val allPairs = files ?: groups?.flatMap { (_, groupFiles) -> groupFiles }
             ?: error("addMergeTransfer requires either files or groups")
@@ -1046,6 +1051,7 @@ class CalibreRepository @Inject constructor(
             files = files?.map { (_, f) -> f.copy(sourceBatch = 1) },
             groups = groups?.map { (label, groupFiles) -> PackGroup(label, groupFiles.map { (_, f) -> f }) },
             protected = if (isProtected) true else null,
+            image_quality = imageQuality,
         )
         // CONTRACT: CHAIN — see addTransfer's identical comment; placeChain() reads
         // lastRequestPayload verbatim for every staged chain member.
