@@ -85,6 +85,10 @@ private data class ItemEditState(
     val checkedKeys: Set<String>,
     val isIncluded: Boolean = true,
     val editedBatchLabels: Map<Int, String> = emptyMap(),
+    // Non-null only for chaptered (groups) items — the "subfolders as chapters" merge-picker
+    // shape (see MergePicker.kt "Merge framework"). checkedKeys above is shared across both
+    // orderedFiles and every file in every group here, since fileKey() is globally unique.
+    val orderedGroups: List<PackGroup>? = null,
     // Non-null only when item.type belongs to a switchable output-format family (e.g. the
     // IMAGE_*_PACK/CBR_*_PACK engines) — see formatOptionsForItemType. Lets the user change
     // e.g. IMAGE_CBZ_PACK to IMAGE_PDF_PACK on an already-staged assembly.
@@ -108,11 +112,14 @@ private fun fileKey(file: AudiobookFile): String =
 private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
     items.map { item ->
         val files = item.files ?: emptyList()
+        val groups = item.groups
+        val allKeyedFiles = files + (groups?.flatMap { it.files } ?: emptyList())
         val formatOptions = formatOptionsForItemType(item.type)
         ItemEditState(
             item = item,
             orderedFiles = files,
-            checkedKeys = files.map { fileKey(it) }.toSet(),
+            orderedGroups = groups,
+            checkedKeys = allKeyedFiles.map { fileKey(it) }.toSet(),
             isIncluded = true,
             editedBatchLabels = item.sourceBatchLabels ?: emptyMap(),
             formatOptions = formatOptions,
@@ -121,6 +128,13 @@ private fun buildEditState(items: List<CalibreBatchItem>): List<ItemEditState> =
                 ?: ImageCompressionLevel.ORIGINAL,
         )
     }
+
+/** All "$itemIndex:$groupIndex" keys for [items]' groups, chapters expanded by default —
+ *  matches expandedInEdit's "everything starts expanded" default for flat items. */
+private fun defaultExpandedGroupKeys(items: List<CalibreBatchItem>): Set<String> =
+    items.flatMapIndexed { itemIndex, item ->
+        item.groups?.indices?.map { gi -> "$itemIndex:$gi" } ?: emptyList()
+    }.toSet()
 
 /**
  * Structured view of a Calibre transfer: general info, then a tree of
@@ -156,6 +170,7 @@ internal fun TransferBrowserSheet(
     var editIgnoreCover by rememberSaveable(transfer.ignoreCover) { mutableStateOf(transfer.ignoreCover) }
     var editStates by remember(transfer.batchData) { mutableStateOf(buildEditState(originalItems)) }
     var expandedInEdit by remember(transfer.batchData) { mutableStateOf(originalItems.indices.toSet()) }
+    var expandedGroupsInEdit by remember(transfer.batchData) { mutableStateOf(defaultExpandedGroupKeys(originalItems)) }
     var collapseNames by rememberSaveable { mutableStateOf(true) }
 
     fun buildSaveItems(): List<CalibreBatchItem> = editStates.mapNotNull { state ->
@@ -165,8 +180,21 @@ internal fun TransferBrowserSheet(
         val newType = format?.itemType ?: state.item.type
         val newFileName = format?.let { applyFormatToFileName(state.item.fileName, it) } ?: state.item.fileName
         val newQuality = if (format != null && compressionApplicableTo(format.itemType)) state.editedQuality.quality else null
-        val files = state.item.files
-        if (files == null) {
+        val groups = state.orderedGroups
+        if (groups != null) {
+            val remainingGroups = groups.mapNotNull { g ->
+                val remainingFiles = g.files.filter { fileKey(it) in state.checkedKeys }
+                if (remainingFiles.isEmpty()) null else g.copy(files = remainingFiles)
+            }
+            if (remainingGroups.isEmpty()) null
+            else state.item.copy(
+                type = newType,
+                fileName = newFileName,
+                groups = remainingGroups,
+                protected = protectedValue,
+                image_quality = newQuality,
+            )
+        } else if (state.item.files == null) {
             state.item.copy(type = newType, fileName = newFileName, protected = protectedValue, image_quality = newQuality)
         } else {
             val remaining = state.orderedFiles.filter { fileKey(it) in state.checkedKeys }
@@ -205,6 +233,7 @@ internal fun TransferBrowserSheet(
                         editIgnoreCover = transfer.ignoreCover
                         editStates = buildEditState(originalItems)
                         expandedInEdit = originalItems.indices.toSet()
+                        expandedGroupsInEdit = defaultExpandedGroupKeys(originalItems)
                         isEditMode = false
                     }) { Text("Cancel") }
                     Text("Edit assembly", style = MaterialTheme.typography.titleSmall)
@@ -401,11 +430,13 @@ internal fun TransferBrowserSheet(
         if (isEditMode) {
             editStates.forEachIndexed { itemIndex, state ->
                 val files = state.item.files
+                val groups = state.orderedGroups
+                val hasChildren = files != null || groups != null
                 val expanded = itemIndex in expandedInEdit
 
                 item(key = "edit_header_$itemIndex") {
                     val selectedCount = state.checkedKeys.size
-                    val totalCount = files?.size ?: 1
+                    val totalCount = files?.size ?: groups?.sumOf { it.files.size } ?: 1
                     val includedCount = editStates.count { it.isIncluded }
                     val isLastIncluded = state.isIncluded && includedCount == 1
                     val dimColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
@@ -438,19 +469,19 @@ internal fun TransferBrowserSheet(
                                 color = if (state.isIncluded) Color.Unspecified else dimColor,
                             )
                             Text(
-                                text = if (files != null)
+                                text = if (hasChildren)
                                     "$selectedCount / $totalCount selected"
                                 else
                                     MetadataUtils.stripStubExtension(state.item.fileName),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = when {
                                     !state.isIncluded -> dimColor
-                                    files != null && selectedCount == 0 -> MaterialTheme.colorScheme.error
+                                    hasChildren && selectedCount == 0 -> MaterialTheme.colorScheme.error
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 },
                             )
                         }
-                        if (files != null && state.isIncluded) {
+                        if (hasChildren && state.isIncluded) {
                             IconButton(
                                 onClick = {
                                     expandedInEdit = if (expanded)
@@ -714,6 +745,207 @@ internal fun TransferBrowserSheet(
                                         }
                                     },
                                 )
+                            }
+                        }
+                    }
+                }
+
+                if (groups != null && expanded && state.isIncluded) {
+                    // Collapse-names toggle + select-all across every chapter's files
+                    item(key = "edit_group_controls_$itemIndex") {
+                        val allGroupFiles = groups.flatMap { it.files }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 46.dp, end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "${state.checkedKeys.size} of ${allGroupFiles.size} selected",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = {
+                                    editStates = editStates.toMutableList().also {
+                                        it[itemIndex] = state.copy(
+                                            checkedKeys = if (state.checkedKeys.size == allGroupFiles.size)
+                                                emptySet()
+                                            else
+                                                allGroupFiles.map { f -> fileKey(f) }.toSet(),
+                                        )
+                                    }
+                                },
+                            ) {
+                                Text(if (state.checkedKeys.size == allGroupFiles.size) "Deselect all" else "Select all")
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 46.dp, end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Collapse names", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Switch(checked = collapseNames, onCheckedChange = { collapseNames = it })
+                        }
+                    }
+
+                    groups.forEachIndexed { groupIndex, group ->
+                        val groupKey = "$itemIndex:$groupIndex"
+                        val groupExpanded = groupKey in expandedGroupsInEdit
+                        val capturedGroupIndex = groupIndex
+
+                        item(key = "edit_chapter_${itemIndex}_$groupIndex") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(start = 46.dp, end = 8.dp, top = 4.dp, bottom = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(group.label, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "${group.files.count { fileKey(it) in state.checkedKeys }} of ${group.files.size} selected",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    expandedGroupsInEdit = if (groupExpanded) expandedGroupsInEdit - groupKey else expandedGroupsInEdit + groupKey
+                                }) {
+                                    Icon(
+                                        if (groupExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = if (groupExpanded) "Collapse chapter" else "Expand chapter",
+                                    )
+                                }
+                                ReorderArrowButton(
+                                    icon = Icons.Default.ArrowUpward,
+                                    contentDescription = "Move up",
+                                    enabled = groupIndex > 0,
+                                    onClick = {
+                                        if (groupIndex > 0) editStates = editStates.toMutableList().also { states ->
+                                            val newGroups = groups.toMutableList()
+                                            val tmp = newGroups[groupIndex]; newGroups[groupIndex] = newGroups[groupIndex - 1]; newGroups[groupIndex - 1] = tmp
+                                            states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (groupIndex > 0) editStates = editStates.toMutableList().also { states ->
+                                            val newGroups = groups.toMutableList()
+                                            newGroups.add(0, newGroups.removeAt(groupIndex))
+                                            states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                        }
+                                    },
+                                )
+                                ReorderArrowButton(
+                                    icon = Icons.Default.ArrowDownward,
+                                    contentDescription = "Move down",
+                                    enabled = groupIndex < groups.lastIndex,
+                                    onClick = {
+                                        if (groupIndex < groups.lastIndex) editStates = editStates.toMutableList().also { states ->
+                                            val newGroups = groups.toMutableList()
+                                            val tmp = newGroups[groupIndex]; newGroups[groupIndex] = newGroups[groupIndex + 1]; newGroups[groupIndex + 1] = tmp
+                                            states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (groupIndex < groups.lastIndex) editStates = editStates.toMutableList().also { states ->
+                                            val newGroups = groups.toMutableList()
+                                            newGroups.add(newGroups.removeAt(groupIndex))
+                                            states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                        }
+                                    },
+                                )
+                            }
+                        }
+
+                        if (groupExpanded) {
+                            group.files.forEachIndexed { fileIndex, file ->
+                                val capturedFileIndex = fileIndex
+                                val capturedFile = file
+                                item(key = "edit_gfile_${itemIndex}_${groupIndex}_${fileKey(file)}") {
+                                    val displayName = MetadataUtils.stripStubExtension(capturedFile.fileName)
+                                    val key = fileKey(capturedFile)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(start = 66.dp, end = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Checkbox(
+                                            checked = key in state.checkedKeys,
+                                            onCheckedChange = { checked ->
+                                                editStates = editStates.toMutableList().also {
+                                                    it[itemIndex] = state.copy(
+                                                        checkedKeys = if (checked) state.checkedKeys + key else state.checkedKeys - key,
+                                                    )
+                                                }
+                                            },
+                                        )
+                                        if (collapseNames) {
+                                            val prevDisplay = group.files.getOrNull(capturedFileIndex - 1)
+                                                ?.let { MetadataUtils.stripStubExtension(it.fileName) }
+                                            val nextDisplay = group.files.getOrNull(capturedFileIndex + 1)
+                                                ?.let { MetadataUtils.stripStubExtension(it.fileName) }
+                                            CollapsedFileNameText(
+                                                name = displayName,
+                                                previousName = prevDisplay,
+                                                nextName = nextDisplay,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        } else {
+                                            Text(text = displayName, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                        }
+                                        ReorderArrowButton(
+                                            icon = Icons.Default.ArrowUpward,
+                                            contentDescription = "Move up",
+                                            enabled = capturedFileIndex > 0,
+                                            onClick = {
+                                                if (capturedFileIndex > 0) editStates = editStates.toMutableList().also { states ->
+                                                    val newGroups = groups.toMutableList()
+                                                    val newFiles = newGroups[capturedGroupIndex].files.toMutableList()
+                                                    val tmp = newFiles[capturedFileIndex]; newFiles[capturedFileIndex] = newFiles[capturedFileIndex - 1]; newFiles[capturedFileIndex - 1] = tmp
+                                                    newGroups[capturedGroupIndex] = newGroups[capturedGroupIndex].copy(files = newFiles)
+                                                    states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                                }
+                                            },
+                                            onLongClick = {
+                                                if (capturedFileIndex > 0) editStates = editStates.toMutableList().also { states ->
+                                                    val newGroups = groups.toMutableList()
+                                                    val newFiles = newGroups[capturedGroupIndex].files.toMutableList()
+                                                    newFiles.add(0, newFiles.removeAt(capturedFileIndex))
+                                                    newGroups[capturedGroupIndex] = newGroups[capturedGroupIndex].copy(files = newFiles)
+                                                    states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                                }
+                                            },
+                                        )
+                                        ReorderArrowButton(
+                                            icon = Icons.Default.ArrowDownward,
+                                            contentDescription = "Move down",
+                                            enabled = capturedFileIndex < group.files.lastIndex,
+                                            onClick = {
+                                                if (capturedFileIndex < group.files.lastIndex) editStates = editStates.toMutableList().also { states ->
+                                                    val newGroups = groups.toMutableList()
+                                                    val newFiles = newGroups[capturedGroupIndex].files.toMutableList()
+                                                    val tmp = newFiles[capturedFileIndex]; newFiles[capturedFileIndex] = newFiles[capturedFileIndex + 1]; newFiles[capturedFileIndex + 1] = tmp
+                                                    newGroups[capturedGroupIndex] = newGroups[capturedGroupIndex].copy(files = newFiles)
+                                                    states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                                }
+                                            },
+                                            onLongClick = {
+                                                if (capturedFileIndex < group.files.lastIndex) editStates = editStates.toMutableList().also { states ->
+                                                    val newGroups = groups.toMutableList()
+                                                    val newFiles = newGroups[capturedGroupIndex].files.toMutableList()
+                                                    newFiles.add(newFiles.removeAt(capturedFileIndex))
+                                                    newGroups[capturedGroupIndex] = newGroups[capturedGroupIndex].copy(files = newFiles)
+                                                    states[itemIndex] = state.copy(orderedGroups = newGroups)
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
