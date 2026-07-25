@@ -235,7 +235,14 @@ class GDriveManager @Inject constructor(
     }
 
     // CONTRACT: IPC transport
-    suspend fun listResponses(accountName: String, appId: String): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
+    // [onListProgress], if given, reports the running file count as each page comes in — a large
+    // backlog (thousands of stale response files) can take multiple page round-trips here before
+    // this function returns anything, which otherwise looks identical to a frozen UI.
+    suspend fun listResponses(
+        accountName: String,
+        appId: String,
+        onListProgress: ((current: Int) -> Unit)? = null,
+    ): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)
             val libFolderId = getLibraryFolderId(service) ?: run {
@@ -268,6 +275,7 @@ class GDriveManager @Inject constructor(
                     .execute()
                 all += result.files ?: emptyList()
                 pageToken = result.nextPageToken
+                onListProgress?.invoke(all.size)
             } while (pageToken != null)
             Log.d("GDriveManager", "listResponses: found ${all.size} file(s) in app folder $appFolderId (appId=$appId)")
             all

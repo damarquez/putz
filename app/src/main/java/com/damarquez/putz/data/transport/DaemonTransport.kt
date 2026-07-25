@@ -33,12 +33,15 @@ interface DaemonTransport {
      *  [onFetchProgress], if given, reports progress downloading the content of newly-listed
      *  response files — the other silent gap: this happens entirely before the per-envelope
      *  processing loop (whose own progress the caller reports separately) even starts, so without
-     *  this a large fresh batch looks identical to a genuine stall. */
+     *  this a large fresh batch looks identical to a genuine stall. [onListProgress], if given,
+     *  reports the running file count while paging through Drive's file listing itself — the
+     *  earliest silent gap of all on a large backlog, before onFetchProgress has anything to report. */
     suspend fun pollResponses(
         googleAccount: String,
         appId: String,
         onCleanupProgress: ((current: Int, total: Int) -> Unit)? = null,
         onFetchProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onListProgress: ((current: Int) -> Unit)? = null,
     ): List<ResponseEnvelope>
 
     /** Acknowledge that a response was processed (delete from Drive / LAN buffer). */

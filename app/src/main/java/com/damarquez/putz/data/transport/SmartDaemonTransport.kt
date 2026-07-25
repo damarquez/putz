@@ -65,6 +65,7 @@ class SmartDaemonTransport @Inject constructor(
         appId: String,
         onCleanupProgress: ((current: Int, total: Int) -> Unit)?,
         onFetchProgress: ((current: Int, total: Int) -> Unit)?,
+        onListProgress: ((current: Int) -> Unit)?,
     ): List<ResponseEnvelope> {
         val all = mutableListOf<ResponseEnvelope>()
 
@@ -73,7 +74,7 @@ class SmartDaemonTransport @Inject constructor(
         }
 
         val driveEnvelopes = runCatching {
-            drive.pollResponses(googleAccount, appId, onCleanupProgress, onFetchProgress)
+            drive.pollResponses(googleAccount, appId, onCleanupProgress, onFetchProgress, onListProgress)
         }.getOrDefault(emptyList())
 
         // Always add Drive envelopes; CalibreRepository's isNewerStatus guard prevents double-processing

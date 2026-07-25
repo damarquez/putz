@@ -13,6 +13,7 @@ import com.damarquez.putz.security.SecureStorage
 import com.damarquez.putz.util.MetadataUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -417,6 +418,7 @@ class CalibreRepository @Inject constructor(
     private val secureStorage: SecureStorage,
     private val settingsRepository: com.damarquez.putz.settings.SettingsRepository,
     private val lanDaemonTransport: com.damarquez.putz.data.transport.LanDaemonTransport,
+    @com.damarquez.putz.di.ApplicationScope private val appScope: CoroutineScope,
 ) {
     private val _daemonStatus = MutableStateFlow<String?>(null)
     val daemonStatus = _daemonStatus.asStateFlow()
@@ -464,14 +466,34 @@ class CalibreRepository @Inject constructor(
     // screen, or a double-tap — can't run the same sequence of Drive round-trips concurrently.
     private val fullSyncMutex = Mutex()
 
+    // The actual sync work runs on [appScope], not whichever ViewModel's coroutine called
+    // performFullSync() — a plain viewModelScope job used to get cancelled the instant its
+    // ViewModel's NavBackStackEntry was popped (switching screens), silently killing a sync that
+    // might be minutes into draining a large Drive response backlog. A concurrent caller (the
+    // other screen, or a double-tap) joins this same in-flight Deferred instead of starting a
+    // redundant second pass — `isActive` naturally goes false once it completes, so the next call
+    // starts fresh. Guarded by syncLaunchMutex since check-then-launch isn't otherwise atomic.
+    private var activeSyncJob: Deferred<NetworkResult<Unit>>? = null
+    private val syncLaunchMutex = Mutex()
+
     fun updateDeleteProgress(progress: TransferDeleteProgress?) {
         _deleteProgress.value = progress
     }
 
     /** Single source of truth for "sync now", used by both CalibreTransfersViewModel's sync
      *  button and Settings > Libraries & Sync. Reports phase-by-phase progress via
-     *  [syncProgress] instead of the old opaque spinner. */
-    suspend fun performFullSync(googleAccount: String): NetworkResult<Unit> = fullSyncMutex.withLock {
+     *  [syncProgress] instead of the old opaque spinner. Survives the calling screen being
+     *  navigated away from — see [activeSyncJob]. */
+    suspend fun performFullSync(googleAccount: String): NetworkResult<Unit> {
+        val job = syncLaunchMutex.withLock {
+            activeSyncJob?.takeIf { it.isActive } ?: appScope.async {
+                performFullSyncInternal(googleAccount)
+            }.also { activeSyncJob = it }
+        }
+        return job.await()
+    }
+
+    private suspend fun performFullSyncInternal(googleAccount: String): NetworkResult<Unit> = fullSyncMutex.withLock {
         try {
             _syncProgress.value = SyncProgress(SyncPhase.PROBING_DAEMON, "Checking daemon status...")
             sendGlobalStatusProbe(googleAccount)
@@ -494,6 +516,11 @@ class CalibreRepository @Inject constructor(
                     _syncProgress.value = SyncProgress(
                         SyncPhase.PULLING_RESPONSES,
                         "Fetching $total new response(s) ($current/$total)...", current, total,
+                    )
+                },
+                onListProgress = { current ->
+                    _syncProgress.value = SyncProgress(
+                        SyncPhase.PULLING_RESPONSES, "Listing daemon responses ($current found so far)...", current,
                     )
                 },
             )
@@ -1448,9 +1475,10 @@ class CalibreRepository @Inject constructor(
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onCleanupProgress: ((current: Int, total: Int) -> Unit)? = null,
         onFetchProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onListProgress: ((current: Int) -> Unit)? = null,
     ): Unit = pollResponsesMutex.withLock {
         val myAppId = settingsRepository.getOrCreateAppId()
-        val envelopes = daemonTransport.pollResponses(googleAccount, myAppId, onCleanupProgress, onFetchProgress)
+        val envelopes = daemonTransport.pollResponses(googleAccount, myAppId, onCleanupProgress, onFetchProgress, onListProgress)
         if (envelopes.isNotEmpty()) {
             android.util.Log.d("CalibreRepository", "pollResponses: fetched ${envelopes.size} envelope(s) for app_id=$myAppId")
         }

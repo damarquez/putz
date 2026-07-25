@@ -83,6 +83,7 @@ class LanDaemonTransport @Inject constructor(
         appId: String,
         onCleanupProgress: ((current: Int, total: Int) -> Unit)?,
         onFetchProgress: ((current: Int, total: Int) -> Unit)?,
+        onListProgress: ((current: Int) -> Unit)?,
     ): List<ResponseEnvelope> =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()

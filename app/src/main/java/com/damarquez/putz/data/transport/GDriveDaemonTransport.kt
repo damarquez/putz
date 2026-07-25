@@ -42,6 +42,7 @@ class GDriveDaemonTransport @Inject constructor(
         appId: String,
         onCleanupProgress: ((current: Int, total: Int) -> Unit)?,
         onFetchProgress: ((current: Int, total: Int) -> Unit)?,
+        onListProgress: ((current: Int) -> Unit)?,
     ): List<ResponseEnvelope> {
         // Retry deletes Putz already decided on in an earlier, interrupted poll (app backgrounded
         // mid-cycle, transient Drive error, etc.) before touching anything new. This is a bare
@@ -49,7 +50,7 @@ class GDriveDaemonTransport @Inject constructor(
         // with a large backlog, unlike re-fetching and re-parsing content we've already acted on.
         val stillPendingDeletion = retryPendingDeletions(googleAccount, onCleanupProgress)
 
-        val files = gDriveManager.listResponses(googleAccount, appId)
+        val files = gDriveManager.listResponses(googleAccount, appId, onListProgress)
             .filterNot { it.id in stillPendingDeletion }
         // Fetching each file's content is a separate network round-trip; done sequentially,
         // a backlog of hundreds of responses takes minutes to even finish listing before any
