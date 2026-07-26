@@ -40,6 +40,7 @@ class GlobalSyncViewModel @Inject constructor(
                         calibreRepository.pollResponses(account)
                         calibreRepository.pollLibraryUpdates(account)
                         calibreRepository.pollHeartbeat(account)
+                        calibreRepository.refreshDriveRequestCount(account)
                     } catch (e: Exception) {
                         android.util.Log.e("GlobalSyncViewModel", "Poll cycle failed", e)
                     }

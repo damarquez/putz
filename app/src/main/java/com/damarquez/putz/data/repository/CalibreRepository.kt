@@ -427,6 +427,16 @@ class CalibreRepository @Inject constructor(
     private val _daemonStatus = MutableStateFlow<String?>(null)
     val daemonStatus = _daemonStatus.asStateFlow()
 
+    // CONTRACT: Putz's own Drive inspection (GDriveManager.countPendingRequests), not the
+    // daemon's — see CalibreTransfersScreen's "Daemon: ... / N Drive requests" label. Kept
+    // separate from _daemonStatus deliberately; the two must never be derived from each other.
+    private val _driveRequestCount = MutableStateFlow<Int?>(null)
+    val driveRequestCount = _driveRequestCount.asStateFlow()
+
+    suspend fun refreshDriveRequestCount(googleAccount: String) {
+        gDriveManager.countPendingRequests(googleAccount)?.let { _driveRequestCount.value = it }
+    }
+
     private val _uploadProgress = MutableStateFlow<Map<Long, String>>(emptyMap())
     val uploadProgress = _uploadProgress.asStateFlow()
 

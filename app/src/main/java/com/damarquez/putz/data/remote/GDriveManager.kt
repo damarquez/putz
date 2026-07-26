@@ -183,6 +183,44 @@ class GDriveManager @Inject constructor(
         }
     }
 
+    // CONTRACT: mirrors the folders uploadRequest() writes into (requests/ and
+    // requests/priority/). Deliberately independent of daemon heartbeat/status — this is
+    // Putz's own inspection of what's actually sitting on Drive, not what the daemon reports
+    // about itself. Priority requests are always summed into the total, not shown separately.
+    suspend fun countPendingRequests(accountName: String): Int? = withContext(Dispatchers.IO) {
+        try {
+            val service = getDriveService(accountName)
+            val libFolderId = getLibraryFolderId(service) ?: return@withContext null
+            val rootFolderId = findFolder(service, ".calibre_integration", libFolderId) ?: return@withContext 0
+            val requestsFolderId = findFolder(service, "requests", rootFolderId) ?: return@withContext 0
+            val priorityFolderId = findFolder(service, "priority", requestsFolderId)
+
+            countFilesInFolder(service, requestsFolderId) +
+                (priorityFolderId?.let { countFilesInFolder(service, it) } ?: 0)
+        } catch (e: Exception) {
+            Log.e("GDriveManager", "countPendingRequests: FAILED", e)
+            null
+        }
+    }
+
+    // Excludes folders (e.g. the "priority" subfolder itself, a child of requestsFolderId)
+    // so a nested folder entry isn't miscounted as a request file.
+    private suspend fun countFilesInFolder(service: Drive, folderId: String): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        var pageToken: String? = null
+        do {
+            val result = service.files().list()
+                .setQ("'$folderId' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'")
+                .setFields("nextPageToken, files(id)")
+                .setPageSize(1000)
+                .also { if (pageToken != null) it.pageToken = pageToken }
+                .execute()
+            count += result.files?.size ?: 0
+            pageToken = result.nextPageToken
+        } while (pageToken != null)
+        count
+    }
+
     suspend fun getFileMetadata(accountName: String, fileName: String): Pair<String, Long>? = withContext(Dispatchers.IO) {
         try {
             val service = getDriveService(accountName)

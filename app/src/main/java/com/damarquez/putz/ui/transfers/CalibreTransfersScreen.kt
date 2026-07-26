@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -143,6 +145,8 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     }
     val chainedCount by viewModel.chainedCount.collectAsState()
     val daemonStatus by viewModel.daemonStatus.collectAsState()
+    val driveRequestCount by viewModel.driveRequestCount.collectAsState()
+    val isRefreshingDaemonInfo by viewModel.isRefreshingDaemonInfo.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
     val pendingAssemblyAppends by viewModel.pendingAssemblyAppends.collectAsState()
     val googleAccount by syncViewModel.googleAccount.collectAsState()
@@ -709,13 +713,21 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                             Text("Calibre Transfers")
                             daemonStatus?.let { status ->
                                 val isIdle = status.equals("IDLE", ignoreCase = true)
+                                val requestSuffix = driveRequestCount?.let {
+                                    " / $it Drive request${if (it == 1) "" else "s"}"
+                                } ?: ""
                                 Text(
-                                    text = "Daemon: ${if (isIdle) "Idle" else "Running"}",
+                                    text = "Daemon: ${if (isIdle) "Idle" else "Running"}$requestSuffix${if (isRefreshingDaemonInfo) " ⟳" else ""}",
                                     style = MaterialTheme.typography.labelSmall,
+                                    textDecoration = TextDecoration.Underline,
                                     color = if (isIdle)
                                         MaterialTheme.colorScheme.outline
                                     else
-                                        com.damarquez.putz.ui.theme.SuccessGreen
+                                        com.damarquez.putz.ui.theme.SuccessGreen,
+                                    modifier = Modifier.clickable(
+                                        enabled = !isRefreshingDaemonInfo,
+                                        onClick = { viewModel.refreshDaemonInfo() },
+                                    ),
                                 )
                             }
                         }

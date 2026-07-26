@@ -63,6 +63,9 @@ class CalibreTransfersViewModel @Inject constructor(
     val daemonStatus: StateFlow<String?> = settingsRepository.daemonStatusFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val driveRequestCount: StateFlow<Int?> = calibreRepository.driveRequestCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val uploadProgress: StateFlow<Map<Long, String>> = calibreRepository.uploadProgress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -385,6 +388,29 @@ class CalibreTransfersViewModel @Inject constructor(
                     }
                 }
                 delay(10_000) // Poll every 10 seconds
+            }
+        }
+    }
+
+    private val _isRefreshingDaemonInfo = MutableStateFlow(false)
+    val isRefreshingDaemonInfo: StateFlow<Boolean> = _isRefreshingDaemonInfo.asStateFlow()
+
+    // CONTRACT: manual tap-to-refresh on the "Daemon: ... / N Drive requests" label. Re-checks
+    // the daemon heartbeat AND re-lists Drive's requests/ folders directly (via
+    // refreshDriveRequestCount) rather than waiting for GlobalSyncViewModel's next poll tick.
+    fun refreshDaemonInfo() {
+        if (_isRefreshingDaemonInfo.value) return
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            _isRefreshingDaemonInfo.value = true
+            try {
+                calibreRepository.pollHeartbeat(account)
+                calibreRepository.refreshDriveRequestCount(account)
+            } catch (e: Exception) {
+                android.util.Log.e("CalibreTransfersViewModel", "refreshDaemonInfo failed", e)
+            } finally {
+                _isRefreshingDaemonInfo.value = false
             }
         }
     }
