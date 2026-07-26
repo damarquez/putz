@@ -1200,9 +1200,9 @@ class FilesViewModel @Inject constructor(
         } }
     }
 
-    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, ignoreCover: Boolean = false, addToChain: Boolean = false) {
+    fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, ignoreCover: Boolean = false, addToChain: Boolean = false, comments: String? = null) {
         trackTransferPreparation { appScope.launch {
-            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, convertToPdf, tags, preresolvedLocalPath, ignoreCover = ignoreCover, addToChain = addToChain)
+            sendToCalibreSuspend(file, title, author, archiveMode, assembleBook, isAltVersion, calibreBookUuid, isProtected, convertToPdf, tags, preresolvedLocalPath, ignoreCover = ignoreCover, addToChain = addToChain, comments = comments)
         } }
     }
 
@@ -1213,7 +1213,7 @@ class FilesViewModel @Inject constructor(
      *  FilesViewModel.prefetchBatchLocalPaths), skips the stub-content read below entirely.
      *  [addedAt], when supplied by a concurrent batch caller, overrides the real dispatch time
      *  so the local transfer list's display order still matches list order despite the race. */
-    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, ignoreCover: Boolean = false, addedAt: Long? = null, addToChain: Boolean = false) {
+    private suspend fun sendToCalibreSuspend(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, ignoreCover: Boolean = false, addedAt: Long? = null, addToChain: Boolean = false, comments: String? = null) {
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1257,6 +1257,7 @@ class FilesViewModel @Inject constructor(
                         ignoreCover = ignoreCover,
                         convertToPdf = convertToPdf,
                         tags = tags,
+                        comments = comments,
                         addedAt = addedAt,
                     )
                     _snackbarMessage.value = "Book assembled"
@@ -1313,6 +1314,7 @@ class FilesViewModel @Inject constructor(
                         ignoreCover = ignoreCover,
                         convertToPdf = convertToPdf,
                         tags = tags,
+                        comments = comments,
                         addedAt = addedAt,
                     )
                     calibreRepository.markPackUploadFailed(file.syncedFileId, reason)
@@ -1336,6 +1338,7 @@ class FilesViewModel @Inject constructor(
                     ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
+                    comments = comments,
                     addedAt = addedAt,
                     addToChain = addToChain,
                 )
@@ -1367,6 +1370,7 @@ class FilesViewModel @Inject constructor(
                     ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
+                    comments = comments,
                     addedAt = addedAt,
                     addToChain = addToChain,
                 )
@@ -1394,6 +1398,7 @@ class FilesViewModel @Inject constructor(
                     ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
+                    comments = comments,
                     addedAt = addedAt,
                 )
 
@@ -1442,6 +1447,7 @@ class FilesViewModel @Inject constructor(
                                 ignoreCover = ignoreCover,
                                 convertToPdf = convertToPdf,
                                 tags = tags,
+                                comments = comments,
                                 addedAt = addedAt,
                             )
                         }
@@ -1489,6 +1495,7 @@ class FilesViewModel @Inject constructor(
                     ignoreCover = ignoreCover,
                     convertToPdf = convertToPdf,
                     tags = tags,
+                    comments = comments,
                     addedAt = addedAt,
                     addToChain = addToChain,
                 )
@@ -1686,6 +1693,7 @@ class FilesViewModel @Inject constructor(
         ignoreCover: Boolean = false,
         addToChain: Boolean = false,
         imageQuality: Int? = null,
+        comments: String? = null,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1712,7 +1720,7 @@ class FilesViewModel @Inject constructor(
                     title = title, author = author, googleAccount = googleAccount,
                     isUploading = true, localUrisJson = localUrisJson,
                     calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
-                    imageQuality = imageQuality,
+                    imageQuality = imageQuality, comments = comments,
                 )
 
                 val resolved = mutableListOf<AudiobookFile>()
@@ -1735,7 +1743,7 @@ class FilesViewModel @Inject constructor(
                         files = files.zip(resolved),
                         title = title, author = author, googleAccount = googleAccount,
                         assembleBook = true, calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
-                        imageQuality = imageQuality,
+                        imageQuality = imageQuality, comments = comments,
                     )
                 } else {
                     calibreRepository.updateMergeAfterUpload(tempId, resolved, googleAccount)
@@ -1766,6 +1774,7 @@ class FilesViewModel @Inject constructor(
                 ignoreCover = ignoreCover,
                 addToChain = addToChain,
                 imageQuality = imageQuality,
+                comments = comments,
             )
             _snackbarMessage.value = when {
                 addToChain -> "Added to chain"
@@ -1789,6 +1798,7 @@ class FilesViewModel @Inject constructor(
         ignoreCover: Boolean = false,
         addToChain: Boolean = false,
         imageQuality: Int? = null,
+        comments: String? = null,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1843,6 +1853,7 @@ class FilesViewModel @Inject constructor(
                 ignoreCover = ignoreCover,
                 addToChain = addToChain,
                 imageQuality = imageQuality,
+                comments = comments,
             )
             _snackbarMessage.value = when {
                 addToChain -> "Added to chain"

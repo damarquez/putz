@@ -368,12 +368,12 @@ fun CalibreConfirmationSheet(
                     }
                 }
 
-                if (isUpdateComments && includeComments) {
+                if (!isReplaceCover && includeComments) {
                     Spacer(Modifier.height(24.dp))
                     OutlinedTextField(
                         value = comments,
                         onValueChange = { comments = it },
-                        label = { Text("Comments (HTML supported)") },
+                        label = { Text(if (isUpdateComments) "Comments (HTML supported)" else "Comments (optional, HTML supported)") },
                         modifier = Modifier.fillMaxWidth().height(120.dp),
                         placeholder = { Text("Book description or notes...") },
                     )
@@ -609,7 +609,7 @@ fun CalibreConfirmationSheet(
                                     isAltVersion,
                                     matchedBookId,
                                     uuid.trim().ifBlank { null },
-                                    if (isUpdateComments && includeComments) comments.trim() else null,
+                                    if (!includeComments) null else if (isUpdateComments) comments.trim() else comments.trim().ifBlank { null },
                                     if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                                     isProtected,
                                     convertToPdf,
@@ -810,7 +810,7 @@ fun CalibreConfirmationSheet(
                                 isAltVersion,
                                 matchedBookId,
                                 uuid.trim().ifBlank { null },
-                                if (isUpdateComments && includeComments) comments.trim() else null,
+                                if (!includeComments) null else if (isUpdateComments) comments.trim() else comments.trim().ifBlank { null },
                                 if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                                 isProtected,
                                 convertToPdf,
@@ -837,7 +837,7 @@ fun CalibreConfirmationSheet(
                             isAltVersion,
                             matchedBookId,
                             uuid.trim().ifBlank { null },
-                            if (isUpdateComments && includeComments) comments.trim() else null,
+                            if (!includeComments) null else if (isUpdateComments) comments.trim() else comments.trim().ifBlank { null },
                             if (isUpdateComments) tags.trim().ifBlank { null } else additionalTags.trim().ifBlank { null },
                             isProtected,
                             convertToPdf,

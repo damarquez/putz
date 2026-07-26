@@ -827,6 +827,7 @@ class CalibreRepository @Inject constructor(
         ignoreCover: Boolean = false,
         convertToPdf: Boolean = false,
         tags: String? = null,
+        comments: String? = null,
         // Lets a concurrent batch caller (see FilesViewModel.sendBatchToCalibre) stamp a
         // deterministic, list-order-preserving value instead of real dispatch time — when
         // several items are sent in parallel, whichever coroutine happens to reach this line
@@ -867,6 +868,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
             tags = tags?.ifBlank { null },
+            comments = comments?.ifBlank { null },
             keep_cover = if (isProtected && ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
@@ -890,6 +892,7 @@ class CalibreRepository @Inject constructor(
             calibreBookUuid = calibreBookUuid,
             localUrisJson = localUrisJson,
             tags = tags?.ifBlank { null },
+            comments = comments?.ifBlank { null },
             priority = priority,
             chainPosition = chainPosition,
             lastRequestPayload = if (addToChain) jsonStr else null,
@@ -963,6 +966,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
             tags = transfer.tags,
+            comments = transfer.comments,
             keep_cover = if (transfer.ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
@@ -997,6 +1001,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
             tags = transfer.tags,
+            comments = transfer.comments,
             keep_cover = if (transfer.ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
@@ -1036,6 +1041,7 @@ class CalibreRepository @Inject constructor(
         priority: Boolean = false,
         addToChain: Boolean = false,
         imageQuality: Int? = null,
+        comments: String? = null,
     ) {
         val allPairs = files ?: groups?.flatMap { (_, groupFiles) -> groupFiles }
             ?: error("addMergeTransfer requires either files or groups")
@@ -1065,6 +1071,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = calibreBookUuid,
             app_id = appId,
             tags = tags?.ifBlank { null },
+            comments = comments?.ifBlank { null },
             keep_cover = if (isProtected && ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
@@ -1086,6 +1093,7 @@ class CalibreRepository @Inject constructor(
             calibreBookUuid = calibreBookUuid,
             localUrisJson = localUrisJson,
             tags = tags?.ifBlank { null },
+            comments = comments?.ifBlank { null },
             priority = priority,
             chainPosition = chainPosition,
             lastRequestPayload = if (addToChain) jsonStr else null,
@@ -1148,6 +1156,7 @@ class CalibreRepository @Inject constructor(
             calibre_book_uuid = transfer.calibreBookUuid,
             app_id = appId,
             tags = transfer.tags,
+            comments = transfer.comments,
             keep_cover = if (transfer.ignoreCover) true else null,
         )
         val jsonStr = json.encodeToString(request)
@@ -1383,6 +1392,7 @@ class CalibreRepository @Inject constructor(
         tags: String?,
         items: List<CalibreBatchItem>,
         ignoreCover: Boolean = false,
+        comments: String? = null,
     ) {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return
         val newAllIds = items.flatMap { item ->
@@ -1395,6 +1405,7 @@ class CalibreRepository @Inject constructor(
             title = title,
             author = author,
             tags = tags?.takeIf { it.isNotBlank() },
+            comments = comments?.takeIf { it.isNotBlank() },
             batchData = json.encodeToString(items),
             allPutioFileIds = newAllIds.joinToString(","),
             lastUpdatedAt = System.currentTimeMillis(),
@@ -3142,6 +3153,7 @@ class CalibreRepository @Inject constructor(
                 calibre_book_id = transfer.calibreBookId?.toLong(),
                 app_id = appId,
                 tags = transfer.tags,
+                comments = transfer.comments,
                 keep_cover = if (transfer.ignoreCover) true else null,
             )
             json.encodeToString(request)
@@ -3159,6 +3171,11 @@ class CalibreRepository @Inject constructor(
                     updated = updated.copy(calibre_book_id = transfer.calibreBookId.toLong())
                 if (transfer.tags != null && req.tags == null)
                     updated = updated.copy(tags = transfer.tags)
+                // Comments have replace (not merge) semantics — unlike tags above, the entity's
+                // value always wins over whatever the stored payload was last built with, so an
+                // edit-assembly comments change reliably takes effect on the next send.
+                if (transfer.comments != null && transfer.comments != req.comments)
+                    updated = updated.copy(comments = transfer.comments)
                 // A clipboard cover is already staged for this assembly (attachClipboardCoverToAssembly)
                 // and will be applied via REPLACE_COVER once this completes — tell the daemon to skip
                 // generating its default obfuscated cover for the protected item(s) in this request,

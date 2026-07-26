@@ -502,12 +502,12 @@ fun FilesScreen(
             initialTags = draft.tags,
             onPreview = { viewModel.previewFile(singleFile) },
             onDismiss = { viewModel.dismissCalibreSingleDraft() },
-            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, convertToPdf, ignoreCover ->
-                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, convertToPdf, tags, ignoreCover = ignoreCover)
+            onConfirm = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, convertToPdf, ignoreCover ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, convertToPdf, tags, ignoreCover = ignoreCover, comments = comments)
                 viewModel.dismissCalibreSingleDraft()
             },
-            onAddToChain = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, convertToPdf, ignoreCover ->
-                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, convertToPdf, tags, ignoreCover = ignoreCover, addToChain = true)
+            onAddToChain = { title, author, archiveMode, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, convertToPdf, ignoreCover ->
+                viewModel.sendToCalibre(singleFile, title, author, archiveMode, assembleBook, isAltVersion, uuid, isProtected, convertToPdf, tags, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 viewModel.dismissCalibreSingleDraft()
             },
             onDraftFieldsChanged = { title, author, uuid, comments, tags, archiveMode, assembleBook, isAltVersion, isProtected, convertToPdf, ignoreCover ->
@@ -610,14 +610,14 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPackFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
-                viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+                viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
                 selectedPackFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
-                viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+                viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedPackFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -638,12 +638,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedPdfFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
                 selectedPdfFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedPdfFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -679,12 +679,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedEpubFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
                 selectedEpubFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedEpubFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -720,12 +720,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMobiFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
                 selectedMobiFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedMobiFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -761,12 +761,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedTextFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
                 selectedTextFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedTextFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -808,12 +808,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedImageFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = quality)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = quality, comments = comments)
                 selectedImageFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = quality)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = quality, comments = comments)
                 selectedImageFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -949,12 +949,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeFlatFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality, comments = comments)
                 selectedMergeFlatFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality, comments = comments)
                 selectedMergeFlatFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -980,12 +980,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedMergeGroups = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality, comments = comments)
                 selectedMergeGroups = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality, comments = comments)
                 selectedMergeGroups = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -1023,12 +1023,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedCbrFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
                 selectedCbrFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedCbrFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -1065,12 +1065,12 @@ fun FilesScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { selectedCbrCbzFiles = null },
-            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover)
+            onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
                 selectedCbrCbzFiles = null
             },
-            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true)
+            onAddToChain = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
+                viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedCbrCbzFiles = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },

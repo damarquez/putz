@@ -150,7 +150,7 @@ private fun defaultExpandedGroupKeys(items: List<CalibreBatchItem>): Set<String>
 internal fun TransferBrowserSheet(
     transfer: CalibreTransferEntity,
     onDismiss: () -> Unit = {},
-    onSave: ((title: String, author: String, tags: String?, items: List<CalibreBatchItem>, ignoreCover: Boolean) -> Unit)? = null,
+    onSave: ((title: String, author: String, tags: String?, items: List<CalibreBatchItem>, ignoreCover: Boolean, comments: String?) -> Unit)? = null,
 ) {
     val clipboard = LocalClipboardManager.current
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.getDefault()) }
@@ -166,6 +166,7 @@ internal fun TransferBrowserSheet(
     var editTitle by rememberSaveable(transfer.title) { mutableStateOf(transfer.title) }
     var editAuthor by rememberSaveable(transfer.author) { mutableStateOf(transfer.author) }
     var editTags by rememberSaveable(transfer.tags) { mutableStateOf(transfer.tags ?: "") }
+    var editComments by rememberSaveable(transfer.comments) { mutableStateOf(transfer.comments ?: "") }
     var editProtected by rememberSaveable(transfer.batchData) { mutableStateOf(originalProtected) }
     var editIgnoreCover by rememberSaveable(transfer.ignoreCover) { mutableStateOf(transfer.ignoreCover) }
     var editStates by remember(transfer.batchData) { mutableStateOf(buildEditState(originalItems)) }
@@ -229,6 +230,7 @@ internal fun TransferBrowserSheet(
                         editTitle = transfer.title
                         editAuthor = transfer.author
                         editTags = transfer.tags ?: ""
+                        editComments = transfer.comments ?: ""
                         editProtected = originalProtected
                         editIgnoreCover = transfer.ignoreCover
                         editStates = buildEditState(originalItems)
@@ -246,6 +248,7 @@ internal fun TransferBrowserSheet(
                                 editTags.trim().takeIf { it.isNotBlank() },
                                 saveItems,
                                 editIgnoreCover,
+                                editComments.trim().takeIf { it.isNotBlank() },
                             )
                             isEditMode = false
                         },
@@ -276,6 +279,15 @@ internal fun TransferBrowserSheet(
                         label = "Tags (comma-separated)",
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    CompactOutlinedTextField(
+                        value = editComments,
+                        onValueChange = { editComments = it },
+                        label = "Comments (HTML supported)",
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        singleLine = false,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(

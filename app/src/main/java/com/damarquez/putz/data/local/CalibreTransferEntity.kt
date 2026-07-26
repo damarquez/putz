@@ -51,6 +51,10 @@ data class CalibreTransferEntity(
     /** Comma-separated tags to append to the book on the daemon side (always merged with existing). */
     val tags: String? = null,
 
+    /** Book comments/description (HTML) to set on the daemon side — replaces any existing value,
+     *  unlike [tags] which always merges. Null = leave untouched. */
+    val comments: String? = null,
+
     /** "CALIBRE" or "PLEX". Used to route dispatch and display logic. */
     val transferType: String = "CALIBRE",
 

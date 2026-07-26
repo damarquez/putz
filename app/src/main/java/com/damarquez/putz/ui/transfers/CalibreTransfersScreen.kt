@@ -1029,8 +1029,8 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                     transfer = transfer,
                     onDismiss = { transferToBrowse = null },
                     onSave = if (transfer.status == CalibreTransferStatus.ASSEMBLED) {
-                        { title, author, tags, items, ignoreCover ->
-                            viewModel.updateAssemblyMetadata(transfer.putioFileId, title, author, tags, items, ignoreCover)
+                        { title, author, tags, items, ignoreCover, comments ->
+                            viewModel.updateAssemblyMetadata(transfer.putioFileId, title, author, tags, items, ignoreCover, comments)
                             transferToBrowse = null
                         }
                     } else null,
