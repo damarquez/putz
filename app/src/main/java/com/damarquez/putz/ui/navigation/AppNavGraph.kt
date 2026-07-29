@@ -10,7 +10,6 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -199,19 +198,6 @@ fun AppNavGraph(
                         },
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Torrents") },
                         label = { Text("Torrents") },
-                    )
-                    NavigationBarItem(
-                        selected = searchSelected,
-                        onClick = {
-                            if (!searchSelected) {
-                                if (isOnNonFilesTab) navController.popBackStack()
-                                navController.navigate(Screen.Search.route) {
-                                    launchSingleTop = true
-                                }
-                            }
-                        },
-                        icon = { Icon(Icons.Default.TravelExplore, contentDescription = "Content") },
-                        label = { Text("Content") },
                     )
                     NavigationBarItem(
                         selected = calibreSelected,
@@ -440,6 +426,14 @@ fun AppNavGraph(
                         navController.navigate(Screen.Files.createRoute(parentId, folderName, highlightId))
                     },
                     onNavigateToHistory = { navController.navigate(Screen.TransferHistory.route) },
+                    onNavigateToContent = {
+                        if (!searchSelected) {
+                            if (isOnNonFilesTab) navController.popBackStack()
+                            navController.navigate(Screen.Search.route) {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
                 )
             }
 

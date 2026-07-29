@@ -188,7 +188,14 @@ object MetadataUtils {
     }
 
     fun extractMetadata(fileName: String): Pair<String, String> {
+        // Some release naming conventions mix dash characters (e.g. an en-dash after the
+        // author but a plain hyphen before the title) or slip in a non-breaking/unicode space
+        // next to just one separator. Normalize both to plain "-" and " " first, or splitting
+        // on literal " - " only catches some separators and misparses author/title (author
+        // swallows the series tag, title loses it).
         val nameWithoutExt = cleanStubSuffix(fileName).substringBeforeLast('.')
+            .replace(Regex("[‐-―−]"), "-")
+            .replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000]"), " ")
 
         // Pattern: Author - Title (Title may itself contain " - " separated parts,
         // e.g. a "[Series NN]" tag between the author and the real title)

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -70,6 +71,7 @@ fun TransfersScreen(
     viewModel: TransfersViewModel,
     onNavigateToFiles: (Long, String, Long) -> Unit = { _, _, _ -> },
     onNavigateToHistory: () -> Unit = {},
+    onNavigateToContent: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val showAddSheet by viewModel.showAddSheet.collectAsState()
@@ -142,6 +144,9 @@ fun TransfersScreen(
             TopAppBar(
                 title = { Text("Transfers") },
                 actions = {
+                    IconButton(onClick = onNavigateToContent) {
+                        Icon(Icons.Default.TravelExplore, contentDescription = "Content")
+                    }
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(Icons.Default.History, contentDescription = "History")
                     }
