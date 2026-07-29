@@ -113,7 +113,7 @@ fun SettingsAccountScreen(
     val gso = remember(googleWebClientId) {
         val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_METADATA_READONLY))
+            .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_METADATA_READONLY), Scope(DriveScopes.DRIVE_READONLY))
 
         if (googleWebClientId.isNotBlank()) {
             builder.requestIdToken(googleWebClientId)

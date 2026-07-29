@@ -110,7 +110,7 @@ import com.damarquez.putz.ui.viewer.ViewerKind
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilesScreen(
-    onNavigateToFolder: (Long, String, String?, Long, String?, String?) -> Unit,
+    onNavigateToFolder: (Long, String, String?, Long, String?, String?, String?) -> Unit,
     onNavigateToFolderHighlighted: (folderId: Long, folderName: String, highlightId: Long) -> Unit,
     onNavigateToArchive: (localUri: String?, lanConnectionId: Long, lanPath: String?, archiveName: String, autoJoin: Boolean) -> Unit,
     onNavigateToPutioArchive: (fileId: Long, stubFileId: Long, fileName: String, downloadUrl: String, fileSize: Long, parentFolderId: Long, isSynced: Boolean, autoJoin: Boolean) -> Unit,
@@ -1732,8 +1732,11 @@ fun FilesScreen(
                                                     file.localUri,
                                                     file.lanConnectionId ?: -1L,
                                                     file.lanPath,
-                                                    if (isInHiddenScope) "hidden" else currentTab.name,
+                                                    if (isInHiddenScope) "hidden" else if (file.isDrive) "DRIVE" else currentTab.name,
+                                                    file.driveFileId,
                                                 )
+                                            } else if (file.isDrive) {
+                                                viewModel.previewFile(file)
                                             } else if (MetadataUtils.isArchive(file.displayName)) {
                                                 openArchive(file, autoJoin = false)
                                             } else if (!file.isLocal && !file.isLan && file.isSynced) {
@@ -1746,7 +1749,9 @@ fun FilesScreen(
                                                 }
                                             }
                                         },
-                                        onLongClick = { viewModel.setSelectedFiles(selectedFiles + file) },
+                                        onLongClick = {
+                                            if (!file.isDrive) viewModel.setSelectedFiles(selectedFiles + file)
+                                        },
                                         // CONTRACT: bulk-select popup — only reached once already
                                         // in selection mode (FileItem shows this instead of
                                         // calling onLongClick directly in that case; see its own
@@ -1754,7 +1759,7 @@ fun FilesScreen(
                                         // CONTRACT: selection-type invariant — a file whose
                                         // regular-remote-ness doesn't match the in-progress
                                         // selection is inert (no tap toggle, no long-press popup).
-                                        isSelectable = !isSelectionMode || file.isRegularRemote == selectionIsRemoteOnly,
+                                        isSelectable = !isSelectionMode || (!file.isDrive && file.isRegularRemote == selectionIsRemoteOnly),
                                         selectionCount = selectedFiles.size,
                                         onSelectNextN = {
                                             // Selects the next N items after whichever selected

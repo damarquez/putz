@@ -115,7 +115,7 @@ object MetadataUtils {
 
     fun isTxt(fileName: String): Boolean {
         val ext = cleanStubSuffix(fileName).substringAfterLast('.', "").lowercase()
-        return ext == "txt"
+        return ext == "txt" || ext == "json"
     }
 
     /** True for source formats the daemon's ebook-convert wrapper can turn into a PDF

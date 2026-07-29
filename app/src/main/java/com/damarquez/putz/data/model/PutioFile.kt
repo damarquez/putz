@@ -29,9 +29,13 @@ data class PutioFile(
 
     // Trash virtual folder
     val isTrash: Boolean = false,
+
+    // Google Drive integration (read-only)
+    val isDrive: Boolean = false,
+    val driveFileId: String? = null,
 ) {
     val isFolder: Boolean get() = fileType == "FOLDER"
-    val isSpecialRootFolder: Boolean get() = id == LOCAL_ROOT_ID || id == LAN_ROOT_ID || id == TRASH_ROOT_ID || id == PUTIO_LOCAL_ROOT_ID
+    val isSpecialRootFolder: Boolean get() = id == LOCAL_ROOT_ID || id == LAN_ROOT_ID || id == TRASH_ROOT_ID || id == PUTIO_LOCAL_ROOT_ID || id == DRIVE_ROOT_ID
     val isPutzAttachments: Boolean get() = name == ".putz_attachments"
     val isPutzHistory: Boolean get() = name == ".putz_history"
     val isPutzHidden: Boolean get() = name == ".putz_hidden"
@@ -43,7 +47,7 @@ data class PutioFile(
     // at all yet (no local stub, no local copy, no LAN copy). Shown dimmed in the file list and,
     // per the file-selection invariant, can never be selected alongside a non-"regular remote"
     // file — see FilesScreen.kt's selectionIsRemoteOnly.
-    val isRegularRemote: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder &&
+    val isRegularRemote: Boolean get() = !isLocal && !isLan && !isTrash && !isDrive && !isFolder &&
         !isSpecialRootFolder && !isSynced && !isPutzAttachments
 
     // CONTRACT: stub convention — always use displayName (not name) with MetadataUtils.
@@ -81,6 +85,7 @@ data class PutioFile(
         const val LOCAL_ROOT_ID = -2L
         const val LAN_ROOT_ID = -3L
         const val PUTIO_LOCAL_ROOT_ID = -4L  // virtual root for the local put.io repository (accessed via LAN)
+        const val DRIVE_ROOT_ID = -5L
     }
 }
 

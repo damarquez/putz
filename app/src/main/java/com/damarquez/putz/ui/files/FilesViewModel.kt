@@ -88,6 +88,7 @@ class FilesViewModel @Inject constructor(
     private val filesRepository: FilesRepository,
     private val localFilesRepository: com.damarquez.putz.data.repository.LocalFilesRepository,
     private val lanFilesRepository: com.damarquez.putz.data.repository.LanFilesRepository,
+    private val driveFilesRepository: com.damarquez.putz.data.repository.DriveFilesRepository,
     private val calibreRepository: CalibreRepository,
     private val settingsRepository: SettingsRepository,
     private val lanDaemonTransport: LanDaemonTransport,
@@ -102,6 +103,7 @@ class FilesViewModel @Inject constructor(
     val lanConnectionId: Long = savedStateHandle[Screen.Files.ARG_LAN_CONNECTION_ID] ?: -1L
     val lanPath: String? = savedStateHandle[Screen.Files.ARG_LAN_PATH]
     val argTab: String? = savedStateHandle[Screen.Files.ARG_TAB]
+    val driveFolderId: String? = savedStateHandle[Screen.Files.ARG_DRIVE_FOLDER_ID]
 
     // True when viewing .putz_hidden or any folder nested inside it (propagated via tab="hidden")
     val isInHiddenScope: Boolean = argTab == "hidden" || folderName == ".putz_hidden"
@@ -512,7 +514,9 @@ class FilesViewModel @Inject constructor(
         val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
         val isLanRoot = parentId == com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID
         val isLanBrowsing = lanConnectionId != -1L
-        !(isLocalRoot || isLocalFolder || isLanRoot || isLanBrowsing)
+        val isDriveRoot = parentId == com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID
+        val isDriveBrowsing = driveFolderId != null
+        !(isLocalRoot || isLocalFolder || isLanRoot || isLanBrowsing || isDriveRoot || isDriveBrowsing)
     }
 
     private var searchJob: Job? = null
@@ -542,7 +546,7 @@ class FilesViewModel @Inject constructor(
         // fine for a small image, unworkable for a multi-GB audiobook. No isPreviewLoading wait
         // either: the player screen shows its own buffering state. isLocal/isLan files are already
         // fast local/already-copied access, so they keep using the path below.
-        if (MetadataUtils.isAudio(file.displayName) && !file.isLocal && !file.isLan) {
+        if (MetadataUtils.isAudio(file.displayName) && !file.isLocal && !file.isLan && !file.isDrive) {
             viewModelScope.launch {
                 if (file.isSynced) {
                     if (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) {
@@ -592,6 +596,18 @@ class FilesViewModel @Inject constructor(
                                 lanFilesRepository.openFileStream(file.lanConnectionId, file.lanPath).use { input ->
                                     targetFile.outputStream().use { output -> input.copyTo(output) }
                                 }
+                            }
+                        }
+                        FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile) to targetFile
+                    }
+                    file.isDrive && file.driveFileId != null -> {
+                        val targetFile = File(File(context.cacheDir, "previews"), file.name)
+                        if (!targetFile.exists()) {
+                            withContext(Dispatchers.IO) { targetFile.parentFile?.mkdirs() }
+                            val ok = driveFilesRepository.downloadToFile(file.driveFileId, targetFile)
+                            if (!ok) {
+                                _snackbarMessage.value = "Preview failed: could not download from Google Drive"
+                                return@launch
                             }
                         }
                         FileProvider.getUriForFile(context, "com.damarquez.putz.fileprovider", targetFile) to targetFile
@@ -685,10 +701,13 @@ class FilesViewModel @Inject constructor(
             val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
             val isLanRoot = parentId == com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID
             val isLanBrowsing = lanConnectionId != -1L
+            val isDriveRoot = parentId == com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID
+            val isDriveBrowsing = driveFolderId != null
 
             if (isLocalRoot) {
                 _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
                 val attachments = localFilesRepository.getAttachments()
+                rawApiFiles = attachments
                 _uiState.value = FilesUiState.Success(files = attachments, parent = null)
                 return@launch
             }
@@ -696,6 +715,7 @@ class FilesViewModel @Inject constructor(
             if (isLocalFolder && localUri != null) {
                 _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
                 localFilesRepository.listLocalFolder(localUri).collect { files ->
+                    rawApiFiles = files
                     _uiState.value = FilesUiState.Success(
                         files = files,
                         parent = null,
@@ -723,6 +743,7 @@ class FilesViewModel @Inject constructor(
                         lanConnectionId = conn.id,
                     )
                 }
+                rawApiFiles = connectionFiles
                 _uiState.value = FilesUiState.Success(files = connectionFiles, parent = null)
                 return@launch
             }
@@ -730,6 +751,7 @@ class FilesViewModel @Inject constructor(
             if (isLanBrowsing) {
                 _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
                 lanFilesRepository.listDirectory(lanConnectionId, lanPath ?: "").collect { files ->
+                    rawApiFiles = files
                     _uiState.value = FilesUiState.Success(
                         files = files,
                         parent = null,
@@ -740,6 +762,24 @@ class FilesViewModel @Inject constructor(
                 val current = _uiState.value
                 if (current is FilesUiState.Success) {
                     _uiState.value = current.copy(isScanning = false)
+                }
+                return@launch
+            }
+
+            if (isDriveRoot || isDriveBrowsing) {
+                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
+                val folderId = if (isDriveRoot) driveFilesRepository.resolveLibraryRootId() else driveFolderId
+                if (folderId == null) {
+                    _uiState.value = FilesUiState.Error("Could not find your Calibre library on Google Drive (metadata.db not found)")
+                    return@launch
+                }
+                driveFilesRepository.listDirectory(folderId).collect { files ->
+                    rawApiFiles = files
+                    _uiState.value = FilesUiState.Success(
+                        files = files,
+                        parent = null,
+                        isRefreshing = false,
+                    )
                 }
                 return@launch
             }
@@ -2211,8 +2251,10 @@ class FilesViewModel @Inject constructor(
             val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
             val isLanRoot = parentId == com.damarquez.putz.data.repository.LanFilesRepository.LAN_ROOT_ID
             val isLanBrowsing = lanConnectionId != -1L
+            val isDriveRoot = parentId == com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID
+            val isDriveBrowsing = driveFolderId != null
 
-            if (isLanRoot || isLanBrowsing) {
+            if (isLanRoot || isLanBrowsing || isDriveRoot || isDriveBrowsing) {
                 val current = _uiState.value
                 if (current is FilesUiState.Success) {
                     val immediateResults = current.files.filter { matcher(it.name) }

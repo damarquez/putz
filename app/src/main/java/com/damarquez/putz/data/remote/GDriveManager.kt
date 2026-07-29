@@ -22,7 +22,7 @@ class GDriveManager @Inject constructor(
 ) {
     private val transport = NetHttpTransport()
     private val jsonFactory = GsonFactory.getDefaultInstance()
-    private val scopes = listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE_METADATA_READONLY)
+    private val scopes = listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE_METADATA_READONLY, DriveScopes.DRIVE_READONLY)
 
     // Keyed by account name so switching Google accounts still gets its own client. Building a
     // Drive service spins up its own credential + HTTP client machinery; pollResponses fetches a
@@ -114,6 +114,39 @@ class GDriveManager @Inject constructor(
         } catch (e: Exception) {
             Log.e("GDriveManager", "Could not resolve Calibre library root", e)
             throw e
+        }
+    }
+
+    // Drive folder browser (read-only) — resolves the Calibre library root without requiring
+    // callers to hold a Drive service handle of their own.
+    suspend fun resolveLibraryRootId(accountName: String): String? = withContext(Dispatchers.IO) {
+        val service = getDriveService(accountName)
+        getLibraryFolderId(service)
+    }
+
+    // Drive folder browser (read-only) — generic paginated child listing for an arbitrary folder,
+    // unlike every other list() call in this file which is hardcoded to a specific filename/folder
+    // convention.
+    suspend fun listChildren(accountName: String, folderId: String): List<com.google.api.services.drive.model.File> = withContext(Dispatchers.IO) {
+        try {
+            val service = getDriveService(accountName)
+            val all = mutableListOf<com.google.api.services.drive.model.File>()
+            var pageToken: String? = null
+            do {
+                val result = service.files().list()
+                    .setQ("'$folderId' in parents and trashed = false")
+                    .setFields("nextPageToken, files(id, name, mimeType, size, modifiedTime)")
+                    .setOrderBy("folder,name")
+                    .setPageSize(1000)
+                    .also { if (pageToken != null) it.pageToken = pageToken }
+                    .execute()
+                all += result.files ?: emptyList()
+                pageToken = result.nextPageToken
+            } while (pageToken != null)
+            all
+        } catch (e: Exception) {
+            Log.e("GDriveManager", "listChildren: FAILED for folderId=$folderId", e)
+            emptyList()
         }
     }
 

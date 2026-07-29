@@ -376,7 +376,7 @@ fun FileItem(
                 }
             }
 
-            if (!isSelectionMode) {
+            if (!isSelectionMode && !file.isDrive) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
