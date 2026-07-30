@@ -27,14 +27,23 @@ class DriveFilesRepository @Inject constructor(
     private val sortOrder = compareByDescending<PutioFile> { it.isFolder }
         .thenBy { it.name.lowercase() }
 
+    // Mirrors FilesRepository's own fileCache — keeps a returning-to-a-folder tab switch instant
+    // (no re-fetch) instead of hitting the Drive API again every time; the screen's own
+    // refresh/sync button (isRefresh = true in FilesViewModel.loadFiles) still bypasses this.
+    private val folderCache = mutableMapOf<String, List<PutioFile>>()
+    private var cachedLibraryRootId: String? = null
+
+    fun getCached(folderId: String): List<PutioFile>? = folderCache[folderId]
+
     private fun driveFileHash(id: String): Long {
         return -(1_000_000L + abs(id.hashCode().toLong()) % 900_000_000L)
     }
 
-    suspend fun resolveLibraryRootId(): String? {
+    suspend fun resolveLibraryRootId(forceRefresh: Boolean = false): String? {
+        if (!forceRefresh) cachedLibraryRootId?.let { return it }
         val accountName = settingsRepository.googleTokenFlow.first()
         if (accountName.isBlank()) return null
-        return gDriveManager.resolveLibraryRootId(accountName)
+        return gDriveManager.resolveLibraryRootId(accountName)?.also { cachedLibraryRootId = it }
     }
 
     fun listDirectory(folderId: String): Flow<List<PutioFile>> = flow {
@@ -51,6 +60,7 @@ class DriveFilesRepository @Inject constructor(
                 driveFileId = child.id,
             )
         }.sortedWith(sortOrder)
+        folderCache[folderId] = files
         emit(files)
     }
 

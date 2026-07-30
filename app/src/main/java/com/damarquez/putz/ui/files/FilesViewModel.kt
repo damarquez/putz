@@ -767,12 +767,20 @@ class FilesViewModel @Inject constructor(
             }
 
             if (isDriveRoot || isDriveBrowsing) {
-                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
-                val folderId = if (isDriveRoot) driveFilesRepository.resolveLibraryRootId() else driveFolderId
+                val folderId = if (isDriveRoot) driveFilesRepository.resolveLibraryRootId(forceRefresh = isRefresh) else driveFolderId
                 if (folderId == null) {
                     _uiState.value = FilesUiState.Error("Could not find your Calibre library on Google Drive (metadata.db not found)")
                     return@launch
                 }
+                if (!isRefresh) {
+                    val cached = driveFilesRepository.getCached(folderId)
+                    if (cached != null) {
+                        rawApiFiles = cached
+                        _uiState.value = FilesUiState.Success(files = cached, parent = null)
+                        return@launch
+                    }
+                }
+                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
                 driveFilesRepository.listDirectory(folderId).collect { files ->
                     rawApiFiles = files
                     _uiState.value = FilesUiState.Success(

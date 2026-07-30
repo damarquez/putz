@@ -19,9 +19,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
@@ -123,6 +120,7 @@ fun AppNavGraph(
     val currentRoute = backStackEntry?.destination?.route
 
     val showBottomNav = currentRoute == Screen.Files.route ||
+                        currentRoute == Screen.Drive.route ||
                         currentRoute == Screen.Transfers.route ||
                         currentRoute == Screen.Search.route ||
                         currentRoute == Screen.CalibreTransfers.route ||
@@ -135,9 +133,9 @@ fun AppNavGraph(
     // Tab selection state. Archive has no tab of its own (reached from either source) and is
     // treated as belonging to Cloud, matching the pre-split default.
     val cloudSelected = currentRoute == Screen.Archive.route ||
-        (currentRoute == Screen.Files.route && currentTabArg != FilesTab.SPECIAL.name && currentTabArg != "DRIVE")
+        (currentRoute == Screen.Files.route && currentTabArg != FilesTab.SPECIAL.name)
     val specialSelected = currentRoute == Screen.Files.route && currentTabArg == FilesTab.SPECIAL.name
-    val driveSelected = currentRoute == Screen.Files.route && currentTabArg == "DRIVE"
+    val driveSelected = currentRoute == Screen.Drive.route
     val transfersSelected = currentRoute == Screen.Transfers.route
     val searchSelected = currentRoute == Screen.Search.route
     val calibreSelected = currentRoute == Screen.CalibreTransfers.route
@@ -146,22 +144,6 @@ fun AppNavGraph(
     // These are always at the top of the back stack — pop one entry to return to Files/Archive.
     val isOnNonFilesTab = specialSelected || driveSelected || transfersSelected || searchSelected || calibreSelected
 
-    // Unlike Files/Archive, switching away from Drive to another tab pops Drive's current entry
-    // off the back stack (see isOnNonFilesTab handling below), so there's no back-stack entry to
-    // reveal when coming back — remember the last folder visited ourselves and jump straight back
-    // to it instead of always resetting to the library root.
-    var lastDriveParentId by rememberSaveable { mutableStateOf(com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID) }
-    var lastDriveFolderName by rememberSaveable { mutableStateOf("Drive") }
-    var lastDriveFolderId by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(backStackEntry) {
-        if (driveSelected) {
-            lastDriveParentId = backStackEntry?.arguments?.getLong(Screen.Files.ARG_PARENT_ID)
-                ?: com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID
-            lastDriveFolderName = backStackEntry?.arguments?.getString(Screen.Files.ARG_FOLDER_NAME) ?: "Drive"
-            lastDriveFolderId = backStackEntry?.arguments?.getString(Screen.Files.ARG_DRIVE_FOLDER_ID)
-        }
-    }
-
     // CONTRACT: back-stack-per-tab invariant — every other tab button assumes it can leave its
     // own tab behind with a single navController.popBackStack() call, which only removes exactly
     // one entry. That's true for Special/Torrents/Calibre (they never push more than one entry),
@@ -169,15 +151,16 @@ fun AppNavGraph(
     // Drive folder instead of leaving Drive entirely — the bug where tapping another tab while deep
     // in Drive seemed to do nothing (or worse, silently drilled back up through Drive). Whenever
     // Drive is the tab being left, collapse its whole subtree in one shot by popping back to its
-    // (always-present, see driveRootRoute below) root entry, inclusive.
-    val driveRootRoute = Screen.Files.createRoute(
+    // root entry, inclusive — with saveState = true so Navigation keeps the popped entries (and
+    // their ViewModels/scroll position/etc.) alive instead of destroying them, so Drive's own
+    // "entering" branch below can revive them via restoreState instead of reloading from scratch.
+    val driveRootRoute = Screen.Drive.createRoute(
         com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID,
         "Drive",
-        tab = "DRIVE",
     )
     fun leaveCurrentNonFilesTab(): Boolean {
         return if (driveSelected) {
-            navController.popBackStack(route = driveRootRoute, inclusive = true)
+            navController.popBackStack(route = driveRootRoute, inclusive = true, saveState = true)
         } else {
             navController.popBackStack()
         }
@@ -235,20 +218,15 @@ fun AppNavGraph(
                                 // is always present in the stack, see driveRootRoute).
                                 navController.popBackStack(route = driveRootRoute, inclusive = false)
                             } else {
-                                // Returning from another tab: leave it, then re-establish the Drive
-                                // root anchor (always pushed first so leaveCurrentNonFilesTab can
-                                // always find it later) before jumping to wherever we left off.
+                                // Returning from another tab: leave it (if Drive itself is what's
+                                // being left, leaveCurrentNonFilesTab saves its state rather than
+                                // destroying it — see above), then revive whatever was saved instead
+                                // of creating a fresh root. restoreState is a no-op (falls through to
+                                // a plain fresh navigate) the first time Drive is ever opened.
                                 if (isOnNonFilesTab) leaveCurrentNonFilesTab()
-                                navController.navigate(driveRootRoute)
-                                if (lastDriveParentId != com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID) {
-                                    navController.navigate(
-                                        Screen.Files.createRoute(
-                                            lastDriveParentId,
-                                            lastDriveFolderName,
-                                            tab = "DRIVE",
-                                            driveFolderId = lastDriveFolderId,
-                                        )
-                                    )
+                                navController.navigate(driveRootRoute) {
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
                             }
                         },
@@ -402,6 +380,46 @@ fun AppNavGraph(
                         navController.navigate(Screen.Viewer.createRoute(kind.name, title, filePath))
                     },
                     onNavigateToTrash = { navController.navigate(Screen.Trash.route) },
+                    onNavigateUp = { navController.navigateUp() },
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                    viewModel = hiltViewModel(),
+                    syncViewModel = syncViewModel,
+                )
+            }
+
+            // Same FilesScreen/FilesViewModel as above, but a distinct destination — see the
+            // comment on Screen.Drive for why Drive can't just be another Screen.Files instance.
+            // Drive is read-only, so archive/trash/highlight navigation are unreachable here
+            // (FilesScreen never calls them for isDrive files) and are wired as no-ops.
+            composable(
+                route = Screen.Drive.route,
+                arguments = listOf(
+                    navArgument(Screen.Drive.ARG_PARENT_ID) {
+                        type = NavType.LongType
+                        defaultValue = com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID
+                    },
+                    navArgument(Screen.Drive.ARG_FOLDER_NAME) {
+                        type = NavType.StringType
+                        defaultValue = "Drive"
+                    },
+                    navArgument(Screen.Drive.ARG_DRIVE_FOLDER_ID) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) {
+                FilesScreen(
+                    onNavigateToFolder = { id, name, _, _, _, _, driveFolderId ->
+                        navController.navigate(Screen.Drive.createRoute(id, name, driveFolderId))
+                    },
+                    onNavigateToFolderHighlighted = { _, _, _ -> },
+                    onNavigateToArchive = { _, _, _, _, _ -> },
+                    onNavigateToPutioArchive = { _, _, _, _, _, _, _, _ -> },
+                    onNavigateToViewer = { kind, title, filePath ->
+                        navController.navigate(Screen.Viewer.createRoute(kind.name, title, filePath))
+                    },
+                    onNavigateToTrash = {},
                     onNavigateUp = { navController.navigateUp() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                     viewModel = hiltViewModel(),

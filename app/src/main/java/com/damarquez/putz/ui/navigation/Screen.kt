@@ -37,6 +37,26 @@ sealed class Screen(val route: String) {
         const val ARG_DRIVE_FOLDER_ID = "driveFolderId"
     }
 
+    // A distinct destination from Files (not just another "tab=DRIVE" arg on Screen.Files) so
+    // Navigation's saveState/restoreState — used to keep Drive's back stack alive across tab
+    // switches instead of reloading it — can tell Drive's saved state apart from Files'/Special's.
+    // Reuses Files' exact arg key names (parentId/folderName/driveFolderId) so FilesViewModel reads
+    // them via the same SavedStateHandle keys without caring which route hosts it.
+    data object Drive : Screen("drive/{parentId}/{folderName}?driveFolderId={driveFolderId}") {
+        fun createRoute(
+            parentId: Long,
+            folderName: String,
+            driveFolderId: String? = null,
+        ): String {
+            var route = "drive/$parentId/${Uri.encode(folderName)}"
+            if (driveFolderId != null) route += "?driveFolderId=${Uri.encode(driveFolderId)}"
+            return route
+        }
+        const val ARG_PARENT_ID = Files.ARG_PARENT_ID
+        const val ARG_FOLDER_NAME = Files.ARG_FOLDER_NAME
+        const val ARG_DRIVE_FOLDER_ID = Files.ARG_DRIVE_FOLDER_ID
+    }
+
     data object Archive : Screen("archive/{archiveName}?localUri={localUri}&lanConnectionId={lanConnectionId}&lanPath={lanPath}&putioFileId={putioFileId}&putioStubFileId={putioStubFileId}&putioDownloadUrl={putioDownloadUrl}&putioFileSize={putioFileSize}&putioParentFolderId={putioParentFolderId}&putioIsSynced={putioIsSynced}&autoJoin={autoJoin}") {
         fun createRoute(
             archiveName: String,
