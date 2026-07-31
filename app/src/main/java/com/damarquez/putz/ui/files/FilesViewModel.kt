@@ -2163,7 +2163,7 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    private fun loadAccountInfo() {
+    fun loadAccountInfo() {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
             val result = filesRepository.getAccountInfo(token)

@@ -81,6 +81,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextDecoration
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -1421,7 +1423,9 @@ fun FilesScreen(
                                     Text(
                                         text = subtitle,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        textDecoration = TextDecoration.Underline,
+                                        modifier = Modifier.clickable { viewModel.loadAccountInfo() },
                                     )
                                 }
                             } else if (itemCount != null) {
