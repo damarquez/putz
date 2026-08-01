@@ -21,6 +21,16 @@ class SearchQueryTest {
     }
 
     @Test
+    fun curlySmartQuotesTreatedAsWholeWordQuotes() {
+        // Gboard and other IMEs auto-punctuate a typed straight quote into a curly "smart quote"
+        // by default; this must behave identically to the straight-quote case above.
+        val m = SearchQuery.compile("“man”")
+        assertFalse(m("Superman"))
+        assertTrue(m("A Man Called Otto"))
+        assertTrue(SearchQuery.isBooleanQuery("“man”"))
+    }
+
+    @Test
     fun notOperator() {
         val m = SearchQuery.compile("not superman")
         assertFalse(m("Superman Returns"))

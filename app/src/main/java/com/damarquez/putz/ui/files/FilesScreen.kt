@@ -178,6 +178,8 @@ fun FilesScreen(
     var fileDetailsStubContent by remember { mutableStateOf<CalibreRepository.StubContent?>(null) }
     var fileDetailsLoading by remember { mutableStateOf(false) }
     var renameValue by remember { mutableStateOf("") }
+    var fileToChangeDisplayName by remember { mutableStateOf<PutioFile?>(null) }
+    var displayNameValue by remember { mutableStateOf("") }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
     val isInHiddenScope = viewModel.isInHiddenScope
 
@@ -1277,6 +1279,38 @@ fun FilesScreen(
         )
     }
 
+    fileToChangeDisplayName?.let { file ->
+        AlertDialog(
+            onDismissRequest = { fileToChangeDisplayName = null },
+            title = { Text("Change display name") },
+            text = {
+                Column {
+                    Text(
+                        "Shown only in Putz — the folder isn't renamed on put.io. Leave blank to reset.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = displayNameValue,
+                        onValueChange = { displayNameValue = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.changeFolderDisplayName(file, displayNameValue.trim())
+                    fileToChangeDisplayName = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToChangeDisplayName = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     fileToDelete?.let { file ->
         AlertDialog(
             onDismissRequest = { fileToDelete = null },
@@ -1492,7 +1526,10 @@ fun FilesScreen(
                                 Icon(Icons.Default.Close, contentDescription = "Clear search")
                             }
                         }
-                        if (viewModel.isCloudSearchContext) {
+                        // At root, "this folder" recursively covers the whole cloud anyway —
+                        // FOLDER and EVERYWHERE scope produce identical results (see search()),
+                        // so the toggle has nothing to offer there.
+                        if (viewModel.isCloudSearchContext && !isRoot) {
                             IconButton(onClick = { viewModel.toggleSearchScope() }) {
                                 Icon(
                                     imageVector = if (searchScope == SearchScope.FOLDER) Icons.Default.Folder else Icons.Default.Public,
@@ -1732,7 +1769,7 @@ fun FilesScreen(
                                             } else if (file.isFolder) {
                                                 onNavigateToFolder(
                                                     file.id,
-                                                    file.name,
+                                                    file.displayName,
                                                     file.localUri,
                                                     file.lanConnectionId ?: -1L,
                                                     file.lanPath,
@@ -1923,6 +1960,10 @@ fun FilesScreen(
                                         onRename = { f ->
                                             renameValue = f.name
                                             fileToRename = f
+                                        },
+                                        onChangeDisplayName = { f ->
+                                            displayNameValue = f.displayName
+                                            fileToChangeDisplayName = f
                                         },
                                         isInHiddenFolder = isInHiddenScope && !file.isFolder,
                                         isSelected = file in selectedFiles,

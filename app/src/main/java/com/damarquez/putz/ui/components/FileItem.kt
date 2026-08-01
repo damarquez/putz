@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.ui.unit.sp
@@ -127,6 +128,7 @@ fun FileItem(
     onCopyJson: (PutioFile) -> Unit,
     onDelete: () -> Unit,
     onRename: ((PutioFile) -> Unit)? = null,
+    onChangeDisplayName: ((PutioFile) -> Unit)? = null,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     // CONTRACT: selection-type invariant — whether this file is allowed to join the selection
@@ -340,6 +342,7 @@ fun FileItem(
                     text = file.displayName,
                     style = MaterialTheme.typography.bodyMedium,
                     color = foregroundColor ?: MaterialTheme.colorScheme.onSurface,
+                    fontStyle = if (file.hasCustomDisplayName) FontStyle.Italic else FontStyle.Normal,
                 )
                 if (!file.isFolder) {
                     Text(
@@ -625,6 +628,11 @@ fun FileItem(
                                 )
                             }
                             val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden
+                            // Real put.io folders only — local/LAN "folders" reuse this same
+                            // isFolder flag but their ids aren't put.io ids, so a display-name
+                            // override keyed by putio_file_id would be meaningless (or colliding)
+                            // for them.
+                            val isRegularPutioFolder = isRegularFolder && !file.isLocal && !file.isLan && !file.isDrive
                             if (isRegularFolder) {
                                 TightMenuItem(
                                     text = { Text("Send folder to Plexamp") },
@@ -643,6 +651,15 @@ fun FileItem(
                                         onMergeFolder(file)
                                     },
                                 )
+                                if (isRegularPutioFolder && onChangeDisplayName != null) {
+                                    TightMenuItem(
+                                        text = { Text("Change display name") },
+                                        onClick = {
+                                            showMenu = false
+                                            onChangeDisplayName(file)
+                                        },
+                                    )
+                                }
                             }
                             val canBrowseArchive = isGenericArchive && (file.isLocal || file.isLan || file.isSynced)
                             if (canBrowseArchive) {
@@ -665,7 +682,9 @@ fun FileItem(
                             onClick = {
                                 showMenu = false
                                 val nameToCopy = if (file.isFolder) {
-                                    file.name
+                                    // The local "change display name" override, if set — see
+                                    // "Copy original name" below for the real put.io name.
+                                    file.displayName
                                 } else {
                                     // displayName already strips both the size-prefix marker
                                     // and the .sk_synced.<id> suffix for synced files.
@@ -676,6 +695,15 @@ fun FileItem(
                                 clipboard.setText(AnnotatedString(nameToCopy))
                             },
                         )
+                        if (file.hasCustomDisplayName) {
+                            TightMenuItem(
+                                text = { Text("Copy original name") },
+                                onClick = {
+                                    showMenu = false
+                                    clipboard.setText(AnnotatedString(file.name))
+                                },
+                            )
+                        }
                         TightMenuItem(
                             text = { Text("Copy ID") },
                             onClick = {

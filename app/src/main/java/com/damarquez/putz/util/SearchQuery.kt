@@ -18,7 +18,7 @@ object SearchQuery {
 
     /** Compiles [query] into a reusable matcher against a file/folder display name. */
     fun compile(query: String): (String) -> Boolean {
-        val trimmed = query.trim()
+        val trimmed = normalizeQuotes(query.trim())
         if (trimmed.isEmpty()) return { true }
         val node = try {
             val tokens = tokenize(trimmed)
@@ -33,7 +33,7 @@ object SearchQuery {
     /** True if [query] uses any boolean syntax (quotes, parens, or AND/OR/NOT keywords) — such
      * queries can't be handed off to a remote text-search endpoint and need local evaluation. */
     fun isBooleanQuery(query: String): Boolean {
-        val trimmed = query.trim()
+        val trimmed = normalizeQuotes(query.trim())
         if (trimmed.contains('"') || trimmed.contains('(') || trimmed.contains(')')) return true
         return tokenize(trimmed).any {
             it.equals("AND", ignoreCase = true) || it.equals("OR", ignoreCase = true) || it.equals("NOT", ignoreCase = true)
@@ -44,6 +44,13 @@ object SearchQuery {
         val needle = query.lowercase()
         return { name -> name.lowercase().contains(needle) }
     }
+
+    // Gboard and other IMEs auto-punctuate a typed straight quote (") into a curly "smart quote"
+    // (U+201C/U+201D) by default, and the TextField here doesn't disable that — so a user typing
+    // "power" would otherwise silently end up with curly quotes the tokenizer below doesn't
+    // recognize, falling back to plain (fuzzy, remote-search) matching with no visible error.
+    private fun normalizeQuotes(query: String): String =
+        query.replace('“', '"').replace('”', '"').replace('„', '"')
 
     private sealed class Node {
         abstract fun evaluate(name: String): Boolean

@@ -1995,13 +1995,15 @@ class FilesViewModel @Inject constructor(
     val mergeChoiceState: StateFlow<MergeChoiceState?> = _mergeChoiceState.asStateFlow()
 
     fun openMergeProcessChoice(folder: PutioFile) {
-        _mergeChoiceState.value = MergeChoiceState.Scanning(folder.name)
+        // displayName (not name): the folder's local "change display name" override, if any,
+        // becomes the default output title and the root chapter label for grouped joins.
+        _mergeChoiceState.value = MergeChoiceState.Scanning(folder.displayName)
         viewModelScope.launch {
             try {
                 val scan = scanMergeFolder(folder)
-                _mergeChoiceState.value = MergeChoiceState.Ready(folder.name, scan)
+                _mergeChoiceState.value = MergeChoiceState.Ready(folder.displayName, scan)
             } catch (e: Exception) {
-                _mergeChoiceState.value = MergeChoiceState.Error(folder.name, e.message ?: "Failed to scan folder")
+                _mergeChoiceState.value = MergeChoiceState.Error(folder.displayName, e.message ?: "Failed to scan folder")
             }
         }
     }
@@ -2214,6 +2216,15 @@ class FilesViewModel @Inject constructor(
                 is NetworkResult.Error -> _snackbarMessage.value = "Rename failed: ${result.message}"
                 NetworkResult.Loading -> Unit
             }
+        }
+    }
+
+    // Local-only display name for a folder — never sent to put.io. Blank clears the override
+    // back to the folder's real put.io name.
+    fun changeFolderDisplayName(file: PutioFile, newDisplayName: String) {
+        viewModelScope.launch {
+            filesRepository.setFolderDisplayName(file.id, newDisplayName.takeIf { it.isNotBlank() })
+            loadFiles(isRefresh = true)
         }
     }
 
@@ -2685,7 +2696,7 @@ class FilesViewModel @Inject constructor(
             }
             val token = settingsRepository.authTokenFlow.first()
             when (val result = filesRepository.getFile(token, parentFolderId)) {
-                is NetworkResult.Success -> _openParentFolderEvent.emit(Triple(parentFolderId, result.data.name, file.id))
+                is NetworkResult.Success -> _openParentFolderEvent.emit(Triple(parentFolderId, result.data.displayName, file.id))
                 else -> _openParentFolderEvent.emit(Triple(parentFolderId, "Folder", file.id))
             }
         }

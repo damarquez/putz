@@ -33,6 +33,11 @@ data class PutioFile(
     // Google Drive integration (read-only)
     val isDrive: Boolean = false,
     val driveFileId: String? = null,
+
+    // Local-only "change display name" override for folders — never sent to put.io.
+    // See FilesRepository, which populates this from FolderDisplayNameDao. CONTRACT: none —
+    // purely a Putz-side cosmetic layer, the daemon and put.io never see this value.
+    val customDisplayName: String? = null,
 ) {
     val isFolder: Boolean get() = fileType == "FOLDER"
     val isSpecialRootFolder: Boolean get() = id == LOCAL_ROOT_ID || id == LAN_ROOT_ID || id == TRASH_ROOT_ID || id == PUTIO_LOCAL_ROOT_ID || id == DRIVE_ROOT_ID
@@ -50,10 +55,16 @@ data class PutioFile(
     val isRegularRemote: Boolean get() = !isLocal && !isLan && !isTrash && !isDrive && !isFolder &&
         !isSpecialRootFolder && !isSynced && !isPutzAttachments
 
+    // A folder's user-chosen display name, when set — never used for files (only folders can
+    // have one; see the "change display name" feature). name/isSynced/isPutzHidden etc. all
+    // keep reading the real put.io `name`, so this never interferes with stub/sentinel detection.
+    val hasCustomDisplayName: Boolean get() = isFolder && !customDisplayName.isNullOrBlank()
+
     // CONTRACT: stub convention — always use displayName (not name) with MetadataUtils.
     // Strips a leading "<size>~~" size-prefix marker (if present), then everything from
     // ".sk_synced" onward.
     val displayName: String get() {
+        if (isFolder) return customDisplayName?.takeIf { it.isNotBlank() } ?: name
         if (!isSynced) return name
         return Regex("^\\d+~~").replaceFirst(name, "").substringBefore(".sk_synced")
     }
