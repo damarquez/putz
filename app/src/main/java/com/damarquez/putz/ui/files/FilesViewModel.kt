@@ -1742,6 +1742,7 @@ class FilesViewModel @Inject constructor(
         addToChain: Boolean = false,
         imageQuality: Int? = null,
         comments: String? = null,
+        convertToPdf: Boolean = false,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1768,7 +1769,7 @@ class FilesViewModel @Inject constructor(
                     title = title, author = author, googleAccount = googleAccount,
                     isUploading = true, localUrisJson = localUrisJson,
                     calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
-                    imageQuality = imageQuality, comments = comments,
+                    imageQuality = imageQuality, comments = comments, convertToPdf = convertToPdf,
                 )
 
                 val resolved = mutableListOf<AudiobookFile>()
@@ -1791,7 +1792,7 @@ class FilesViewModel @Inject constructor(
                         files = files.zip(resolved),
                         title = title, author = author, googleAccount = googleAccount,
                         assembleBook = true, calibreBookUuid = calibreBookUuid, tags = tags, isProtected = isProtected, ignoreCover = ignoreCover,
-                        imageQuality = imageQuality, comments = comments,
+                        imageQuality = imageQuality, comments = comments, convertToPdf = convertToPdf,
                     )
                 } else {
                     calibreRepository.updateMergeAfterUpload(tempId, resolved, googleAccount)
@@ -1823,6 +1824,7 @@ class FilesViewModel @Inject constructor(
                 addToChain = addToChain,
                 imageQuality = imageQuality,
                 comments = comments,
+                convertToPdf = convertToPdf,
             )
             _snackbarMessage.value = when {
                 addToChain -> "Added to chain"
@@ -1847,6 +1849,7 @@ class FilesViewModel @Inject constructor(
         addToChain: Boolean = false,
         imageQuality: Int? = null,
         comments: String? = null,
+        convertToPdf: Boolean = false,
     ) {
         trackTransferPreparation { appScope.launch {
             val googleAccount = settingsRepository.googleTokenFlow.first()
@@ -1902,6 +1905,7 @@ class FilesViewModel @Inject constructor(
                 addToChain = addToChain,
                 imageQuality = imageQuality,
                 comments = comments,
+                convertToPdf = convertToPdf,
             )
             _snackbarMessage.value = when {
                 addToChain -> "Added to chain"

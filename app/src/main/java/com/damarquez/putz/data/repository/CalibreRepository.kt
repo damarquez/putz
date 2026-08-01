@@ -1052,6 +1052,7 @@ class CalibreRepository @Inject constructor(
         addToChain: Boolean = false,
         imageQuality: Int? = null,
         comments: String? = null,
+        convertToPdf: Boolean = false,
     ) {
         val allPairs = files ?: groups?.flatMap { (_, groupFiles) -> groupFiles }
             ?: error("addMergeTransfer requires either files or groups")
@@ -1068,6 +1069,7 @@ class CalibreRepository @Inject constructor(
             groups = groups?.map { (label, groupFiles) -> PackGroup(label, groupFiles.map { (_, f) -> f }) },
             protected = if (isProtected) true else null,
             image_quality = imageQuality,
+            convert_to_pdf = if (convertToPdf) true else null,
         )
         // CONTRACT: CHAIN — see addTransfer's identical comment; placeChain() reads
         // lastRequestPayload verbatim for every staged chain member.

@@ -487,6 +487,7 @@ class ArchiveViewModel @Inject constructor(
         overrideUuid: String? = null,
         overrideTags: String? = null,
         overrideProtected: Boolean? = null,
+        convertToPdf: Boolean = false,
     ) {
         val useDaemonLocal = source is ArchiveSource.Lan ||
             (source is ArchiveSource.Putio && putioIsSynced)
@@ -504,7 +505,7 @@ class ArchiveViewModel @Inject constructor(
             }
 
             if (useDaemonLocal) {
-                sendEntryToCalibreViaDaemon(entry, title, author, assembleBook, assemblyFileId, calibreBookUuid, googleAccount, overrideTitle, overrideAuthor, overrideUuid, overrideTags, overrideProtected)
+                sendEntryToCalibreViaDaemon(entry, title, author, assembleBook, assemblyFileId, calibreBookUuid, googleAccount, overrideTitle, overrideAuthor, overrideUuid, overrideTags, overrideProtected, convertToPdf)
                 return@launch
             }
 
@@ -527,6 +528,7 @@ class ArchiveViewModel @Inject constructor(
                     assembleBook = assembleBook && assemblyFileId == null,
                     calibreBookUuid = calibreBookUuid,
                     isUploading = true,
+                    convertToPdf = convertToPdf,
                 )
 
                 tempFile = archiveRepository.extractEntryToTempFile(resolvedSource, entry, context.cacheDir)
@@ -643,6 +645,7 @@ class ArchiveViewModel @Inject constructor(
                         isTempUpload = true,
                         assembleBook = true,
                         calibreBookUuid = calibreBookUuid,
+                        convertToPdf = convertToPdf,
                     )
                     _snackbarMessage.value = "Book assembled"
                 } else {
@@ -678,6 +681,7 @@ class ArchiveViewModel @Inject constructor(
         overrideUuid: String? = null,
         overrideTags: String? = null,
         overrideProtected: Boolean? = null,
+        convertToPdf: Boolean = false,
     ) {
         try {
             _calibreSendStatus.value = CalibreSendStatus.Working("Sending to Calibre…")
@@ -779,6 +783,7 @@ class ArchiveViewModel @Inject constructor(
                     calibreBookUuid = calibreBookUuid,
                     archiveEntry = entry.path,
                     localPath = localPath,
+                    convertToPdf = convertToPdf,
                 )
                 _snackbarMessage.value = "Transfer requested for $title"
             }
@@ -929,6 +934,7 @@ class ArchiveViewModel @Inject constructor(
         assembleBook: Boolean = false,
         outputFormat: MergeOutputFormat,
         ignoreCover: Boolean = false,
+        convertToPdf: Boolean = false,
     ) {
         val contentType = _activeArchiveMergeContentType.value ?: return
         val effectiveType = outputFormat.itemType
@@ -941,7 +947,7 @@ class ArchiveViewModel @Inject constructor(
             }
 
             if (source is ArchiveSource.Local) {
-                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount, outputFormat, ignoreCover)
+                sendArchiveMergeViaUpload(contentType, files, groups, title, author, calibreBookUuid, tags, isProtected, assembleBook, googleAccount, outputFormat, ignoreCover, convertToPdf)
                 return@launch
             }
 
@@ -972,6 +978,7 @@ class ArchiveViewModel @Inject constructor(
                 tags = tags,
                 isProtected = isProtected,
                 ignoreCover = ignoreCover,
+                convertToPdf = convertToPdf,
             )
             _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
         }
@@ -1076,6 +1083,7 @@ class ArchiveViewModel @Inject constructor(
         googleAccount: String,
         outputFormat: MergeOutputFormat,
         ignoreCover: Boolean = false,
+        convertToPdf: Boolean = false,
     ) {
         val effectiveType = outputFormat.itemType
         val effectiveFileName = outputFormat.outputFileName
@@ -1142,6 +1150,7 @@ class ArchiveViewModel @Inject constructor(
                 tags = tags,
                 isProtected = isProtected,
                 ignoreCover = ignoreCover,
+                convertToPdf = convertToPdf,
             )
             _snackbarMessage.value = if (assembleBook) "Merge queued for assembly" else "Merge transfer requested"
         } finally {

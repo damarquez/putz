@@ -611,8 +611,8 @@ fun ArchiveScreen(
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
                 onDismiss = { selectedArchiveMergeFlatFiles = null; archiveMergeOutputFormat = null },
-                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                    viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format, ignoreCover = ignoreCover)
+                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected, convertToPdf, ignoreCover ->
+                    viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format, ignoreCover = ignoreCover, convertToPdf = convertToPdf)
                     selectedArchiveMergeFlatFiles = null
                     archiveMergeOutputFormat = null
                 },
@@ -639,8 +639,8 @@ fun ArchiveScreen(
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
                 onDismiss = { selectedArchiveMergeGroups = null; archiveMergeOutputFormat = null },
-                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected, _, ignoreCover ->
-                    viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format, ignoreCover = ignoreCover)
+                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected, convertToPdf, ignoreCover ->
+                    viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format, ignoreCover = ignoreCover, convertToPdf = convertToPdf)
                     selectedArchiveMergeGroups = null
                     archiveMergeOutputFormat = null
                 },
@@ -661,8 +661,8 @@ fun ArchiveScreen(
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
             onDismiss = { entryForCalibre = null },
-            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _, _, _ ->
-                viewModel.sendEntryToCalibre(entry, title, author, assembleBook, null, uuid)
+            onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _, convertToPdf, _ ->
+                viewModel.sendEntryToCalibre(entry, title, author, assembleBook, null, uuid, convertToPdf = convertToPdf)
                 entryForCalibre = null
             },
             checkExists = { title, author -> viewModel.checkBookExists(title, author) },
@@ -684,8 +684,8 @@ fun ArchiveScreen(
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
                 onDismiss = { entryForAssembly = null },
-                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _, _, _ ->
-                    viewModel.sendEntryToCalibre(entry, title, author, assembleBook = assembleBook, assemblyFileId = null, calibreBookUuid = uuid)
+                onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _, convertToPdf, _ ->
+                    viewModel.sendEntryToCalibre(entry, title, author, assembleBook = assembleBook, assemblyFileId = null, calibreBookUuid = uuid, convertToPdf = convertToPdf)
                     entryForAssembly = null
                 },
                 checkExists = { title, author -> viewModel.checkBookExists(title, author) },
