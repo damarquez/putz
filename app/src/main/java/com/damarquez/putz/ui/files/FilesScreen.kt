@@ -786,7 +786,7 @@ fun FilesScreen(
         val imageFiles = remember(imagePackTriggerFile, packCandidateFiles) {
             packCandidateFiles.filter { MetadataUtils.isImage(it.displayName) }
         }
-        val defaultFormat = remember(imageFiles) { defaultImageOutputFormat(imageFiles.map { it.displayName }) }
+        val defaultFormat = defaultImageOutputFormat()
         ImagePackSheet(
             imageFiles = imageFiles,
             defaultFormat = defaultFormat,

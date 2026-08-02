@@ -61,9 +61,12 @@ enum class ImageOutputFormat(val itemType: String, val outputFileName: String, v
     CBZ("IMAGE_CBZ_PACK", "Book.cbz", "CBZ"),
 }
 
-fun defaultImageOutputFormat(fileNames: Iterable<String>): ImageOutputFormat =
-    if (fileNames.any { it.endsWith(".gif", ignoreCase = true) }) ImageOutputFormat.CBZ
-    else ImageOutputFormat.PDF
+// Matches MergeContentType.defaultOutputFormat's real behavior for IMAGES (CBZ first in
+// outputFormatOptions(), so its own GIF check there is a no-op) — the single-image "Join
+// images…" trigger used to default to PDF here while the folder "Join folder…" trigger
+// defaulted to CBZ for the exact same input, so the "To PDF" toggle would silently be
+// unavailable (source already PDF) depending only on which trigger was used.
+fun defaultImageOutputFormat(): ImageOutputFormat = ImageOutputFormat.CBZ
 
 /**
  * JPEG re-encode quality for the image-to-PDF pack engines (ImagePdfPackJob/CbrPdfPackJob —
