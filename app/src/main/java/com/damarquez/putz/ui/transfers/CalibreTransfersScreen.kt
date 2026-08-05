@@ -1046,6 +1046,13 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                             transferToBrowse = null
                         }
                     } else null,
+                    onSaveFailedTransfer = if (transfer.status == CalibreTransferStatus.FAILED) {
+                        { title, author, calibreBookUuid, calibreBookId ->
+                            viewModel.updateFailedTransferAndRetry(transfer.putioFileId, title, author, calibreBookUuid, calibreBookId)
+                            transferToBrowse = null
+                        }
+                    } else null,
+                    checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
                 )
             }
         }

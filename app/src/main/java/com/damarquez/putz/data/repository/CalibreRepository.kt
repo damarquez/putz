@@ -3174,6 +3174,15 @@ class CalibreRepository @Inject constructor(
         // If calibreBookId was saved from a previous COMPLETED response but isn't in the stored
         // payload yet (legacy requests), inject it so the daemon can skip string matching.
         // Also inject tags if the stored payload predates that field.
+        //
+        // NOTE: title/author/calibre_book_uuid/calibre_book_id edits made via
+        // updateFailedTransferAndRetry are applied by patching (and re-saving) lastRequestPayload
+        // directly, before this function is ever called — not here. This block only fills in
+        // gaps for *missing* fields, using the entity's value as a fallback default; it must
+        // never overwrite a payload field with a null entity value, since several other request
+        // types (e.g. sendUpdateCommentsRequest) set calibre_book_id directly on the payload at
+        // creation without ever mirroring it onto CalibreTransferEntity.calibreBookId (that field
+        // is otherwise only populated echoing back a COMPLETED ADD_BOOK_BATCH response).
         val finalPayload = run {
             var current = payload
             try {
@@ -3217,6 +3226,52 @@ class CalibreRepository @Inject constructor(
             return NetworkResult.Success(Unit)
         }
         return NetworkResult.Error("Could not upload request to Google Drive")
+    }
+
+    // Manual escape hatch for FAILED ADD_BOOK_BATCH transfers stuck because calibredb's own
+    // fuzzy title/author duplicate matching silently no-ops (calibredb add --automerge=ignore)
+    // while this app's/the daemon's own title+author matching misses the same book — e.g. a
+    // leading article or a hyphen-vs-colon difference in the title. Lets the user manually pin
+    // the correct target book by uuid/id, or edit the title enough that it no longer resembles
+    // an existing one, then resend. Patches lastRequestPayload directly with an unconditional
+    // overwrite (these are exactly the fields the user just edited) rather than relying on
+    // retryTransfer's own patch step, which must stay conservative for its other callers — see
+    // the NOTE above that block.
+    suspend fun updateFailedTransferAndRetry(
+        fileId: Long,
+        title: String,
+        author: String,
+        calibreBookUuid: String?,
+        calibreBookId: Long?,
+        googleAccount: String,
+    ): NetworkResult<Unit> {
+        val transfer = calibreTransferDao.getTransferById(fileId)
+            ?: return NetworkResult.Error("Transfer not found")
+        if (transfer.status != CalibreTransferStatus.FAILED)
+            return NetworkResult.Error("Transfer is not in a failed state")
+
+        val patchedPayload = transfer.lastRequestPayload?.let { stored ->
+            try {
+                val req = json.decodeFromString<CalibreBatchRequest>(stored)
+                json.encodeToString(req.copy(
+                    title = title,
+                    author = author,
+                    calibre_book_uuid = calibreBookUuid,
+                    calibre_book_id = calibreBookId,
+                ))
+            } catch (_: Exception) { stored }
+        }
+
+        calibreTransferDao.updateTransfer(transfer.copy(
+            title = title,
+            author = author,
+            calibreBookUuid = calibreBookUuid,
+            calibreBookId = calibreBookId?.toInt(),
+            lastRequestPayload = patchedPayload ?: transfer.lastRequestPayload,
+            lastUpdatedAt = System.currentTimeMillis(),
+        ))
+
+        return retryTransfer(fileId, googleAccount)
     }
 
     fun observeChainedTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.observeChainedTransfers()

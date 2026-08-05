@@ -439,6 +439,31 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    /** Manual escape hatch for a FAILED transfer stuck on a title/author match the daemon
+     *  can't resolve — see CalibreRepository.updateFailedTransferAndRetry. */
+    fun updateFailedTransferAndRetry(
+        fileId: Long,
+        title: String,
+        author: String,
+        calibreBookUuid: String?,
+        calibreBookId: Long?,
+    ) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isNotBlank()) {
+                _snackbarMessage.value = "Retrying transfer..."
+                val result = calibreRepository.updateFailedTransferAndRetry(
+                    fileId, title, author, calibreBookUuid, calibreBookId, account,
+                )
+                _snackbarMessage.value = when (result) {
+                    is NetworkResult.Success -> "Request resent successfully"
+                    is NetworkResult.Error -> "Retry failed: ${result.message}"
+                    else -> "Could not resend request"
+                }
+            }
+        }
+    }
+
     // CONTRACT: priority requests lane — promotes a not-yet-claimed transfer. Returns false (a
     // no-op) if the daemon already claimed/finished it, so the caller can tell the user it was
     // too late.

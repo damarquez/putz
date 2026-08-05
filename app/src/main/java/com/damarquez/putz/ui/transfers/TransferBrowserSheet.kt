@@ -35,6 +35,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,26 +45,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.damarquez.putz.data.local.CalibreTransferEntity
 import com.damarquez.putz.data.repository.AudiobookFile
 import com.damarquez.putz.data.repository.CalibreBatchItem
+import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.data.repository.PackGroup
 import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.ui.files.CollapsedFileNameText
 import com.damarquez.putz.ui.files.ImageCompressionLevel
 import com.damarquez.putz.ui.files.MergeOutputFormat
 import com.damarquez.putz.ui.files.ReorderArrowButton
+import com.damarquez.putz.ui.files.openCalibreAnywhereSearch
 import com.damarquez.putz.ui.files.compressionApplicableTo
 import com.damarquez.putz.ui.files.formatOptionsForItemType
 import com.damarquez.putz.util.MetadataUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
@@ -151,8 +157,15 @@ internal fun TransferBrowserSheet(
     transfer: CalibreTransferEntity,
     onDismiss: () -> Unit = {},
     onSave: ((title: String, author: String, tags: String?, items: List<CalibreBatchItem>, ignoreCover: Boolean, comments: String?) -> Unit)? = null,
+    // Manual escape hatch for a FAILED transfer stuck on a title/author match the daemon can't
+    // resolve (calibredb's own fuzzy duplicate detection is more permissive than the app's/
+    // daemon's title+author lookup — see CalibreRepository.updateFailedTransferAndRetry). Only
+    // ever passed for FAILED transfers; ASSEMBLED keeps using [onSave] unchanged.
+    onSaveFailedTransfer: ((title: String, author: String, calibreBookUuid: String?, calibreBookId: Long?) -> Unit)? = null,
+    checkExistsByUuid: (suspend (String) -> CalibreBookMatch?)? = null,
 ) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.getDefault()) }
     val originalItems: List<CalibreBatchItem> = remember(transfer.batchData) {
         transfer.batchData?.let {
@@ -161,6 +174,7 @@ internal fun TransferBrowserSheet(
     }
 
     val originalProtected = originalItems.firstOrNull()?.protected == true
+    val isFailedEdit = onSaveFailedTransfer != null
 
     var isEditMode by rememberSaveable { mutableStateOf(false) }
     var editTitle by rememberSaveable(transfer.title) { mutableStateOf(transfer.title) }
@@ -173,6 +187,27 @@ internal fun TransferBrowserSheet(
     var expandedInEdit by remember(transfer.batchData) { mutableStateOf(originalItems.indices.toSet()) }
     var expandedGroupsInEdit by remember(transfer.batchData) { mutableStateOf(defaultExpandedGroupKeys(originalItems)) }
     var collapseNames by rememberSaveable { mutableStateOf(true) }
+
+    // FAILED-edit-only fields: pin the retry to an exact existing book (uuid preferred, then
+    // numeric id — matches the daemon's own precedence, CONTRACTS.md ADD_BOOK_BATCH), or clear
+    // both and rely on the edited title/author alone to dodge calibredb's fuzzy duplicate match.
+    var editCalibreBookUuid by rememberSaveable(transfer.calibreBookUuid) { mutableStateOf(transfer.calibreBookUuid ?: "") }
+    var editCalibreBookId by rememberSaveable(transfer.calibreBookId) { mutableStateOf(transfer.calibreBookId?.toString() ?: "") }
+    var uuidMatch by remember { mutableStateOf<CalibreBookMatch?>(null) }
+    var uuidNotFound by remember { mutableStateOf(false) }
+
+    LaunchedEffect(editCalibreBookUuid, isEditMode) {
+        val uuid = editCalibreBookUuid.trim()
+        if (!isEditMode || !isFailedEdit || checkExistsByUuid == null || uuid.isBlank()) {
+            uuidMatch = null
+            uuidNotFound = false
+            return@LaunchedEffect
+        }
+        delay(400)
+        val match = checkExistsByUuid(uuid)
+        uuidMatch = match
+        uuidNotFound = match == null
+    }
 
     fun buildSaveItems(): List<CalibreBatchItem> = editStates.mapNotNull { state ->
         if (!state.isIncluded) return@mapNotNull null
@@ -236,24 +271,38 @@ internal fun TransferBrowserSheet(
                         editStates = buildEditState(originalItems)
                         expandedInEdit = originalItems.indices.toSet()
                         expandedGroupsInEdit = defaultExpandedGroupKeys(originalItems)
+                        editCalibreBookUuid = transfer.calibreBookUuid ?: ""
+                        editCalibreBookId = transfer.calibreBookId?.toString() ?: ""
                         isEditMode = false
                     }) { Text("Cancel") }
-                    Text("Edit assembly", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (isFailedEdit) "Edit & retry" else "Edit assembly",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
                     val saveItems = buildSaveItems()
                     TextButton(
                         onClick = {
-                            onSave?.invoke(
-                                editTitle.trim(),
-                                editAuthor.trim(),
-                                editTags.trim().takeIf { it.isNotBlank() },
-                                saveItems,
-                                editIgnoreCover,
-                                editComments.trim().takeIf { it.isNotBlank() },
-                            )
+                            if (isFailedEdit) {
+                                onSaveFailedTransfer?.invoke(
+                                    editTitle.trim(),
+                                    editAuthor.trim(),
+                                    editCalibreBookUuid.trim().takeIf { it.isNotBlank() },
+                                    editCalibreBookId.trim().toLongOrNull(),
+                                )
+                            } else {
+                                onSave?.invoke(
+                                    editTitle.trim(),
+                                    editAuthor.trim(),
+                                    editTags.trim().takeIf { it.isNotBlank() },
+                                    saveItems,
+                                    editIgnoreCover,
+                                    editComments.trim().takeIf { it.isNotBlank() },
+                                )
+                            }
                             isEditMode = false
                         },
-                        enabled = editTitle.isNotBlank() && saveItems.isNotEmpty(),
-                    ) { Text("Save") }
+                        enabled = editTitle.isNotBlank() && (isFailedEdit || saveItems.isNotEmpty()),
+                    ) { Text(if (isFailedEdit) "Save & retry" else "Save") }
                 }
                 HorizontalDivider()
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -272,7 +321,51 @@ internal fun TransferBrowserSheet(
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     )
-                    Spacer(Modifier.height(8.dp))
+                    if (isFailedEdit) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Pin this retry to an exact existing book, or leave both blank and " +
+                                "rely on the title/author above alone. UUID is tried first.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        CompactOutlinedTextField(
+                            value = editCalibreBookUuid,
+                            onValueChange = { editCalibreBookUuid = it },
+                            label = "Calibre book UUID",
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        )
+                        when {
+                            editCalibreBookUuid.isBlank() -> {}
+                            uuidMatch != null -> Text(
+                                "Will match: \"${uuidMatch!!.title}\" by ${uuidMatch!!.author}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 2.dp, start = 4.dp),
+                            )
+                            uuidNotFound -> Text(
+                                "UUID not found in the library",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 2.dp, start = 4.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        CompactOutlinedTextField(
+                            value = editCalibreBookId,
+                            onValueChange = { editCalibreBookId = it.filter { c -> c.isDigit() } },
+                            label = "Calibre book ID (numeric, used if UUID is blank)",
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, keyboardType = KeyboardType.Number),
+                        )
+                        TextButton(onClick = {
+                            openCalibreAnywhereSearch(context, editTitle)
+                        }) { Text("Find in CalibreAnywhere") }
+                    }
+                }
+                if (!isFailedEdit) Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     CompactOutlinedTextField(
                         value = editTags,
                         onValueChange = { editTags = it },
@@ -359,11 +452,11 @@ internal fun TransferBrowserSheet(
                             )
                         }
                     }
-                    if (onSave != null) {
+                    if (onSave != null || onSaveFailedTransfer != null) {
                         IconButton(onClick = { isEditMode = true }) {
                             Icon(
                                 Icons.Default.Edit,
-                                contentDescription = "Edit assembly",
+                                contentDescription = if (isFailedEdit) "Edit & retry" else "Edit assembly",
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -439,7 +532,9 @@ internal fun TransferBrowserSheet(
         }
 
         // ── Contents ─────────────────────────────────────────────────────────
-        if (isEditMode) {
+        // FAILED-edit mode has no item picker (files aren't being re-selected, only the match
+        // target) — falls through to the read-only tree in the `else` branch below instead.
+        if (isEditMode && !isFailedEdit) {
             editStates.forEachIndexed { itemIndex, state ->
                 val files = state.item.files
                 val groups = state.orderedGroups
