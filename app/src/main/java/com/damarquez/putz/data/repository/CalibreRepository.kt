@@ -512,32 +512,11 @@ class CalibreRepository @Inject constructor(
             _syncProgress.value = SyncProgress(SyncPhase.PROBING_DAEMON, "Checking daemon status...")
             sendGlobalStatusProbe(googleAccount)
 
-            _syncProgress.value = SyncProgress(SyncPhase.PULLING_RESPONSES, "Checking for daemon responses...")
-            pollResponses(
-                googleAccount,
-                onProgress = { current, total ->
-                    _syncProgress.value = SyncProgress(
-                        SyncPhase.PULLING_RESPONSES, "Processing daemon responses ($current/$total)...", current, total,
-                    )
-                },
-                onCleanupProgress = { current, total ->
-                    _syncProgress.value = SyncProgress(
-                        SyncPhase.PULLING_RESPONSES,
-                        "Cleaning up $total already-processed response(s) ($current/$total)...", current, total,
-                    )
-                },
-                onFetchProgress = { current, total ->
-                    _syncProgress.value = SyncProgress(
-                        SyncPhase.PULLING_RESPONSES,
-                        "Fetching $total new response(s) ($current/$total)...", current, total,
-                    )
-                },
-                onListProgress = { current ->
-                    _syncProgress.value = SyncProgress(
-                        SyncPhase.PULLING_RESPONSES, "Listing daemon responses ($current found so far)...", current,
-                    )
-                },
-            )
+            // pollResponses() reports its own live progress into _syncProgress now (see its body) —
+            // it has to, since pollResponsesMutex can make this call block for the entire duration
+            // of a concurrent GlobalSyncViewModel background poll instead of doing any work itself.
+            // Setting a static message here would just freeze the banner for that whole wait.
+            pollResponses(googleAccount)
 
             _syncProgress.value = SyncProgress(SyncPhase.DOWNLOADING_METADATA, "Downloading Calibre metadata...")
             val dbFile = File(context.filesDir, "metadata.db")
@@ -1499,15 +1478,36 @@ class CalibreRepository @Inject constructor(
         return driveId != null
     }
 
-    suspend fun pollResponses(
-        googleAccount: String,
-        onProgress: ((current: Int, total: Int) -> Unit)? = null,
-        onCleanupProgress: ((current: Int, total: Int) -> Unit)? = null,
-        onFetchProgress: ((current: Int, total: Int) -> Unit)? = null,
-        onListProgress: ((current: Int) -> Unit)? = null,
-    ): Unit = pollResponsesMutex.withLock {
+    // CONTRACT: progress reporting — this reports into _syncProgress itself (rather than taking
+    // caller-supplied callbacks) because pollResponsesMutex makes it single-flight: whichever
+    // caller (GlobalSyncViewModel's background loop, or a manual performFullSync) is inside this
+    // function at any moment is the ONLY one actually doing work — the other is just parked on
+    // the mutex. Progress has to belong to whoever's really running, not to whichever caller
+    // happened to ask for it, or a manual sync blocked behind a big background-loop backlog would
+    // show a static, seemingly-frozen message for the entire wait instead of the real numbers.
+    suspend fun pollResponses(googleAccount: String): Unit = pollResponsesMutex.withLock {
         val myAppId = settingsRepository.getOrCreateAppId()
-        val envelopes = daemonTransport.pollResponses(googleAccount, myAppId, onCleanupProgress, onFetchProgress, onListProgress)
+        _syncProgress.value = SyncProgress(SyncPhase.PULLING_RESPONSES, "Checking for daemon responses...")
+        val envelopes = daemonTransport.pollResponses(
+            googleAccount, myAppId,
+            onCleanupProgress = { current, total ->
+                _syncProgress.value = SyncProgress(
+                    SyncPhase.PULLING_RESPONSES,
+                    "Cleaning up $total already-processed response(s) ($current/$total)...", current, total,
+                )
+            },
+            onFetchProgress = { current, total ->
+                _syncProgress.value = SyncProgress(
+                    SyncPhase.PULLING_RESPONSES,
+                    "Fetching $total new response(s) ($current/$total)...", current, total,
+                )
+            },
+            onListProgress = { current ->
+                _syncProgress.value = SyncProgress(
+                    SyncPhase.PULLING_RESPONSES, "Listing daemon responses ($current found so far)...", current,
+                )
+            },
+        )
         if (envelopes.isNotEmpty()) {
             android.util.Log.d("CalibreRepository", "pollResponses: fetched ${envelopes.size} envelope(s) for app_id=$myAppId")
         }
@@ -1648,8 +1648,15 @@ class CalibreRepository @Inject constructor(
                 // gets deleted, so it's re-fetched and re-fails on every subsequent poll forever.
                 android.util.Log.e("CalibreRepository", "pollResponses: failed to process/acknowledge envelope id=${envelope.id} source=${envelope.source} content=${envelope.content}", e)
             }
-            onProgress?.invoke(index + 1, envelopes.size)
+            _syncProgress.value = SyncProgress(
+                SyncPhase.PULLING_RESPONSES, "Processing daemon responses (${index + 1}/${envelopes.size})...", index + 1, envelopes.size,
+            )
         }
+        // Whoever called us — background loop or a manual full sync — is done with this leg of
+        // work. A manual sync overwrites this immediately with its next phase; a bare background
+        // call needs this so the banner actually goes away instead of showing stale "done" text
+        // until the next poll cycle 10s+ later.
+        _syncProgress.value = null
     }
 
     suspend fun createPlexAssembly(
