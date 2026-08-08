@@ -310,6 +310,20 @@ data class FuseBooksRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: MOVE_FORMAT — moves one format from an existing source book to an existing
+// destination book. Unlike FUSE_BOOKS/JOIN_BOOKS, both books already exist (keyed by UUID,
+// not a Room-local Long id), and the daemon — not this client — decides whether the format
+// lands in the destination's base slot or its "_BKP" alternate; see CONTRACTS.md §36.
+@Serializable
+data class MoveFormatRequest(
+    val action: String = "MOVE_FORMAT",
+    val putio_file_id: Long,
+    val source_book_uuid: String,
+    val dest_book_uuid: String,
+    val format: String,
+    val app_id: String? = null,
+)
+
 // CONTRACT: MANAGE_VIRTUAL_LIBRARY
 @Serializable
 data class ManageVirtualLibraryRequest(
@@ -1604,7 +1618,11 @@ class CalibreRepository @Inject constructor(
                             // JOIN shares FUSION's exclusion here for the same reason: both create a
                             // brand-new book id per attempt, so a naive auto-retry on "not found" would
                             // produce a second duplicate book rather than fixing the original.
-                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && transfer.transferType != "JOIN" && isAutoRecoverable) {
+                            // MOVE_FORMAT is excluded for a different reason: its own daemon-side "not
+                            // found" errors mean the source or destination UUID genuinely doesn't
+                            // resolve to a book (deleted, never existed) — a condition auto-retry can
+                            // never fix, unlike the interrupted-mid-merge case this check exists for.
+                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && transfer.transferType != "JOIN" && transfer.transferType != "MOVE_FORMAT" && isAutoRecoverable) {
                                 if (transfer.retryCount < 3) {
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val delayMs = Random.nextLong(2000, 60000)
@@ -1916,6 +1934,43 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             transferType = if (isJoin) "JOIN" else "FUSION",
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: MOVE_FORMAT
+    suspend fun sendMoveFormatRequest(
+        sourceBookUuid: String,
+        destBookUuid: String,
+        format: String,
+        displayTitle: String,
+        displayAuthor: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, book-level-serialized
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = MoveFormatRequest(
+            putio_file_id = putioFileId,
+            source_book_uuid = sourceBookUuid,
+            dest_book_uuid = destBookUuid,
+            format = format,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_move_format_$putioFileId.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Move $format to \"$displayTitle\"",
+            title = displayTitle,
+            author = displayAuthor,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            transferType = "MOVE_FORMAT",
             lastRequestPayload = jsonStr,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }

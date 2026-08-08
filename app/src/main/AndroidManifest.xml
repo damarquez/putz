@@ -189,6 +189,20 @@
             </intent-filter>
         </activity>
 
+        <!-- CONTRACT: MOVE_FORMAT — putz://move_format?source_uuid=UUID&dest_uuid=UUID&format=EPUB&title=TITLE&author=AUTHOR -->
+        <activity
+            android:name=".ui.moveformat.MoveFormatActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Putz">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="move_format" />
+            </intent-filter>
+        </activity>
+
         <!-- CONTRACT: MANAGE_VIRTUAL_LIBRARY — receives VL management intents from CalibreAnywhere -->
         <activity
             android:name=".ui.virtuallibraries.ManageVirtualLibraryActivity"
