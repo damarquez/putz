@@ -60,6 +60,7 @@ import com.damarquez.putz.data.repository.PendingDeletionActionRepository
 import com.damarquez.putz.data.repository.PendingExtractOrRandomCoverRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
+import com.damarquez.putz.data.repository.PendingReindexBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.data.repository.PendingUnprotectBookRepository
 import kotlinx.coroutines.flow.combine
@@ -75,6 +76,7 @@ fun AppNavGraph(
     pendingExtractOrRandomCoverRepository: PendingExtractOrRandomCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
     pendingConvertFormatRepository: PendingConvertFormatRepository,
+    pendingReindexBookRepository: PendingReindexBookRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
     pendingProtectBookRepository: PendingProtectBookRepository,
@@ -97,6 +99,7 @@ fun AppNavGraph(
                 pendingUnprotectBookRepository.flow,
                 pendingSetPageCountRepository.flow,
                 pendingConvertFormatRepository.flow,
+                pendingReindexBookRepository.flow,
                 pendingDeletionActionRepository.flow,
                 pendingEditMetadataRepository.flow,
             )
@@ -623,6 +626,7 @@ fun AppNavGraph(
                     pendingUnprotectBookRepository = pendingUnprotectBookRepository,
                     pendingSetPageCountRepository = pendingSetPageCountRepository,
                     pendingConvertFormatRepository = pendingConvertFormatRepository,
+                    pendingReindexBookRepository = pendingReindexBookRepository,
                     pendingDeletionActionRepository = pendingDeletionActionRepository,
                     pendingEditMetadataRepository = pendingEditMetadataRepository,
                     syncViewModel = syncViewModel,

@@ -94,6 +94,7 @@ import com.damarquez.putz.data.repository.PendingExtractOrRandomCoverRepository
 import com.damarquez.putz.data.repository.PendingGenerateCoverRepository
 import com.damarquez.putz.data.repository.PendingProtectBook
 import com.damarquez.putz.data.repository.PendingProtectBookRepository
+import com.damarquez.putz.data.repository.PendingReindexBookRepository
 import com.damarquez.putz.data.repository.PendingSetPageCountRepository
 import com.damarquez.putz.data.repository.PendingUnprotectBook
 import com.damarquez.putz.data.repository.PendingUnprotectBookRepository
@@ -116,6 +117,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     pendingExtractOrRandomCoverRepository: PendingExtractOrRandomCoverRepository,
     pendingSetPageCountRepository: PendingSetPageCountRepository,
     pendingConvertFormatRepository: PendingConvertFormatRepository,
+    pendingReindexBookRepository: PendingReindexBookRepository,
     pendingDeletionActionRepository: PendingDeletionActionRepository,
     pendingEditMetadataRepository: com.damarquez.putz.data.repository.PendingEditMetadataRepository,
     pendingProtectBookRepository: PendingProtectBookRepository,
@@ -274,6 +276,15 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             if (pending != null) {
                 pendingConvertFormatRepository.clear()
                 viewModel.convertFormat(pending.uuid, pending.sourceFormat, pending.targetFormat, pending.title, pending.author)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        pendingReindexBookRepository.flow.collect { pending ->
+            if (pending != null) {
+                pendingReindexBookRepository.clear()
+                viewModel.reindexBook(pending.uuid, pending.title, pending.author)
             }
         }
     }

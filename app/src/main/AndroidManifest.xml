@@ -167,6 +167,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="convert_format" />
             </intent-filter>
+
+            <!-- CONTRACT: REINDEX_BOOK — putz://reindex_content?uuid=UUID&title=TITLE&author=AUTHOR -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="reindex_content" />
+            </intent-filter>
         </activity>
 
         <!-- CONTRACT: FUSE_BOOKS / JOIN_BOOKS — receives fuse and join intents from CalibreAnywhere -->

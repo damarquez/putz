@@ -2652,6 +2652,49 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
+    // CONTRACT: REINDEX_BOOK
+    suspend fun sendReindexBookRequest(
+        title: String,
+        author: String,
+        calibreBookUuid: String,
+        googleAccount: String,
+    ) {
+        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = CalibreBatchRequest(
+            action = "REINDEX_BOOK",
+            putio_file_id = putioFileId,
+            title = title,
+            author = author,
+            items = emptyList(),
+            calibre_book_uuid = calibreBookUuid,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        // No isPriority — the book-level lane gets no benefit from the Drive priority
+        // folder (see bug_book_level_priority_promotion_duplicate_dispatch); the real
+        // fast-track is ContentIndexService.force_reindex's in-memory priority list.
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_reindex_$putioFileId.json", jsonStr)
+
+        val transfer = CalibreTransferEntity(
+            putioFileId = putioFileId,
+            fileName = "Reindex $title",
+            title = "Reindex $title",
+            author = author,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = putioFileId.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            batchData = "[]",
+            calibreBookUuid = calibreBookUuid,
+            lastRequestPayload = jsonStr,
+            hasPutioFile = false,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
     // CONTRACT: EXTRACT_OR_RANDOM_COVER
     suspend fun sendExtractOrRandomCoverRequest(
         title: String,

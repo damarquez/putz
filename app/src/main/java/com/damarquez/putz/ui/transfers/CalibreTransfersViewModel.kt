@@ -203,6 +203,20 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
+    // CONTRACT: REINDEX_BOOK
+    fun reindexBook(uuid: String, title: String, author: String) {
+        viewModelScope.launch {
+            val account = settingsRepository.googleTokenFlow.first()
+            if (account.isBlank()) return@launch
+            calibreRepository.sendReindexBookRequest(
+                title = title,
+                author = author,
+                calibreBookUuid = uuid,
+                googleAccount = account,
+            )
+        }
+    }
+
     fun protectBook(uuid: String, title: String, author: String, keepCover: Boolean = false, addToChain: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
