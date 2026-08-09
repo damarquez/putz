@@ -362,25 +362,6 @@ data class SetPageCountRequest(
     val app_id: String? = null,
 )
 
-// CONTRACT: MARK_BOOK_FOR_DELETION
-@Serializable
-data class MarkBookForDeletionRequest(
-    val action: String = "MARK_BOOK_FOR_DELETION",
-    val putio_file_id: Long,
-    val calibre_book_uuid: String,
-    val app_id: String? = null,
-)
-
-// CONTRACT: MARK_FORMATS_FOR_DELETION
-@Serializable
-data class MarkFormatsForDeletionRequest(
-    val action: String = "MARK_FORMATS_FOR_DELETION",
-    val putio_file_id: Long,
-    val calibre_book_uuid: String,
-    val formats: List<String>,
-    val app_id: String? = null,
-)
-
 // CONTRACT: CONFIRM_DELETE_BOOK
 @Serializable
 data class ConfirmDeleteBookRequest(
@@ -400,14 +381,6 @@ data class ConfirmDeleteFormatsRequest(
     val app_id: String? = null,
 )
 
-// CONTRACT: CANCEL_DELETION
-@Serializable
-data class CancelDeletionRequest(
-    val action: String = "CANCEL_DELETION",
-    val putio_file_id: Long,
-    val calibre_book_uuid: String,
-    val app_id: String? = null,
-)
 
 // CONTRACT: REGISTER_TRANSFER_HISTORY
 @Serializable
@@ -1555,15 +1528,11 @@ class CalibreRepository @Inject constructor(
                         val isProcessingUpdate = newStatus == CalibreTransferStatus.PROCESSING && transfer.status == CalibreTransferStatus.PROCESSING
 
                         if (isNewerStatus || isSameStatusFailure || isProcessingUpdate) {
-                            // These action types are self-verifying: the daemon's COMPLETED
-                            // response is the only confirmation needed (no library state change
-                            // to cross-check). Mark requests just confirm feasibility; cancel is
-                            // a client-side acknowledgement; Plex verifies files physically.
-                            val selfVerifyingActions = setOf(
-                                "MARK_BOOK_FOR_DELETION", "MARK_FORMATS_FOR_DELETION", "CANCEL_DELETION"
-                            )
+                            // PLEX/PLEXAMP are self-verifying: the daemon's COMPLETED response
+                            // is the only confirmation needed (they verify files physically, not
+                            // via a Calibre library state cross-check).
                             val libraryVerified = newStatus == CalibreTransferStatus.COMPLETED &&
-                                (transfer.transferType == "PLEX" || transfer.transferType == "PLEXAMP" || response.action in selfVerifyingActions)
+                                (transfer.transferType == "PLEX" || transfer.transferType == "PLEXAMP")
                             val resolvedUuid = if (newStatus == CalibreTransferStatus.COMPLETED) response.calibre_book_uuid ?: transfer.calibreBookUuid else null
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 status = newStatus,
@@ -2097,8 +2066,7 @@ class CalibreRepository @Inject constructor(
     // confirmations), so a missing row there is not the split-table ambiguity and must not
     // trigger a fallback probe.
     private val NO_PRESENCE_CHECK_ACTIONS = setOf(
-        "PRIORITY_PUTIO_SYNC", "MARK_BOOK_FOR_DELETION", "MARK_FORMATS_FOR_DELETION",
-        "CONFIRM_DELETE_BOOK", "CONFIRM_DELETE_FORMATS", "CANCEL_DELETION",
+        "PRIORITY_PUTIO_SYNC", "CONFIRM_DELETE_BOOK", "CONFIRM_DELETE_FORMATS",
     )
 
     // Caps how many verifyCompletedTransfers probes (each a Drive API round trip) run at once —
@@ -2185,15 +2153,9 @@ class CalibreRepository @Inject constructor(
                 action == "EXTRACT_OR_RANDOM_COVER" -> checkCoverVerified(db, transfer.calibreBookUuid)
                 action == "PROTECT_BOOK" -> checkCoverVerified(db, transfer.calibreBookUuid)
                 action == "UPDATE_COMMENTS" -> checkBookUuidExists(db, transfer.calibreBookUuid)
-                // Mark-for-deletion: daemon COMPLETED already confirmed feasibility; the book may
-                // have since been deleted, so don't require it to still exist.
-                action == "MARK_BOOK_FOR_DELETION" -> true
-                action == "MARK_FORMATS_FOR_DELETION" -> true
                 // Confirm-delete: verify the book / formats are gone from the library
                 action == "CONFIRM_DELETE_BOOK" -> !checkBookUuidExists(db, transfer.calibreBookUuid)
                 action == "CONFIRM_DELETE_FORMATS" -> checkFormatsDeleted(db, transfer.calibreBookUuid, transfer.lastRequestPayload)
-                // Cancel-deletion is a client-side acknowledgement; no library state changes
-                action == "CANCEL_DELETION" -> true
                 else -> checkFormatsVerified(db, transfer.calibreBookUuid, transfer.batchData)
             }
             if (verified) {
@@ -2901,74 +2863,6 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
-    // CONTRACT: MARK_BOOK_FOR_DELETION
-    suspend fun sendMarkBookForDeletionRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
-        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = MarkBookForDeletionRequest(
-            putio_file_id = putioFileId,
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_markdel_$putioFileId.json", jsonStr)
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = "Mark book for deletion",
-            title = title ?: "Mark book for deletion",
-            author = author ?: "",
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            batchData = "[]",
-            calibreBookUuid = calibreBookUuid,
-            lastRequestPayload = jsonStr,
-            hasPutioFile = false,
-        )
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
-    }
-
-    // CONTRACT: MARK_FORMATS_FOR_DELETION
-    suspend fun sendMarkFormatsForDeletionRequest(
-        calibreBookUuid: String,
-        formats: List<String>,
-        googleAccount: String,
-        title: String? = null,
-        author: String? = null,
-    ) {
-        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = MarkFormatsForDeletionRequest(
-            putio_file_id = putioFileId,
-            calibre_book_uuid = calibreBookUuid,
-            formats = formats,
-            app_id = appId,
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_markfmt_$putioFileId.json", jsonStr)
-        val label = "Mark formats for deletion (${formats.joinToString(", ")})"
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = label,
-            title = title ?: label,
-            author = author ?: "",
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            batchData = "[]",
-            calibreBookUuid = calibreBookUuid,
-            lastRequestPayload = jsonStr,
-            hasPutioFile = false,
-        )
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
-    }
-
     // CONTRACT: CONFIRM_DELETE_BOOK
     suspend fun sendConfirmDeleteBookRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
         val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
@@ -3037,35 +2931,6 @@ class CalibreRepository @Inject constructor(
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
     }
 
-    // CONTRACT: CANCEL_DELETION
-    suspend fun sendCancelDeletionRequest(calibreBookUuid: String, googleAccount: String, title: String? = null, author: String? = null) {
-        val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
-        val appId = settingsRepository.getOrCreateAppId()
-        val request = CancelDeletionRequest(
-            putio_file_id = putioFileId,
-            calibre_book_uuid = calibreBookUuid,
-            app_id = appId,
-        )
-        val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_canceldel_$putioFileId.json", jsonStr)
-        val transfer = CalibreTransferEntity(
-            putioFileId = putioFileId,
-            fileName = "Cancel deletion",
-            title = title ?: "Cancel deletion",
-            author = author ?: "",
-            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
-            addedAt = System.currentTimeMillis(),
-            lastUpdatedAt = System.currentTimeMillis(),
-            allPutioFileIds = putioFileId.toString(),
-            gdriveRequestId = gDriveId,
-            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
-            batchData = "[]",
-            calibreBookUuid = calibreBookUuid,
-            lastRequestPayload = jsonStr,
-            hasPutioFile = false,
-        )
-        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
-    }
 
     suspend fun sendProbeRequest(fileId: Long, googleAccount: String): Boolean {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return false

@@ -235,26 +235,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
-            uri.scheme == "putz" && uri.host == "mark_book_for_deletion" -> {  // CONTRACT: MARK_BOOK_FOR_DELETION
-                val uuid = uri.getQueryParameter("uuid")
-                if (uuid != null)
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkBook(
-                        uuid,
-                        title = uri.getQueryParameter("title"),
-                        author = uri.getQueryParameter("author"),
-                    ))
-            }
-            uri.scheme == "putz" && uri.host == "mark_formats_for_deletion" -> {  // CONTRACT: MARK_FORMATS_FOR_DELETION
-                val uuid = uri.getQueryParameter("uuid")
-                val formats = uri.getQueryParameter("formats")
-                    ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-                if (uuid != null && formats.isNotEmpty())
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.MarkFormats(
-                        uuid, formats,
-                        title = uri.getQueryParameter("title"),
-                        author = uri.getQueryParameter("author"),
-                    ))
-            }
             uri.scheme == "putz" && uri.host == "confirm_delete_book" -> {  // CONTRACT: CONFIRM_DELETE_BOOK
                 val uuid = uri.getQueryParameter("uuid")
                 if (uuid != null)
@@ -271,15 +251,6 @@ class MainActivity : ComponentActivity() {
                 if (uuid != null && formats.isNotEmpty())
                     pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.ConfirmDeleteFormats(
                         uuid, formats,
-                        title = uri.getQueryParameter("title"),
-                        author = uri.getQueryParameter("author"),
-                    ))
-            }
-            uri.scheme == "putz" && uri.host == "cancel_delete" -> {  // CONTRACT: CANCEL_DELETION
-                val uuid = uri.getQueryParameter("uuid")
-                if (uuid != null)
-                    pendingClipboardAction = PendingClipboardAction.DeletionAction(PendingDeletionAction.Cancel(
-                        uuid,
                         title = uri.getQueryParameter("title"),
                         author = uri.getQueryParameter("author"),
                     ))

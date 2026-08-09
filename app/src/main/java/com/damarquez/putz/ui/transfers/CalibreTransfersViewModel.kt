@@ -273,16 +273,10 @@ class CalibreTransfersViewModel @Inject constructor(
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
             when (action) {
-                is PendingDeletionAction.MarkBook ->
-                    calibreRepository.sendMarkBookForDeletionRequest(action.uuid, account, action.title, action.author)
-                is PendingDeletionAction.MarkFormats ->
-                    calibreRepository.sendMarkFormatsForDeletionRequest(action.uuid, action.formats, account, action.title, action.author)
                 is PendingDeletionAction.ConfirmDeleteBook ->
                     calibreRepository.sendConfirmDeleteBookRequest(action.uuid, account, action.title, action.author)
                 is PendingDeletionAction.ConfirmDeleteFormats ->
                     calibreRepository.sendConfirmDeleteFormatsRequest(action.uuid, action.formats, account, action.title, action.author)
-                is PendingDeletionAction.Cancel ->
-                    calibreRepository.sendCancelDeletionRequest(action.uuid, account, action.title, action.author)
             }
         }
     }

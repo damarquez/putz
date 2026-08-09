@@ -104,22 +104,6 @@
                 <data android:scheme="putz" android:host="edit_metadata" />
             </intent-filter>
 
-            <!-- CONTRACT: MARK_BOOK_FOR_DELETION — putz://mark_book_for_deletion?uuid=UUID -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="putz" android:host="mark_book_for_deletion" />
-            </intent-filter>
-
-            <!-- CONTRACT: MARK_FORMATS_FOR_DELETION — putz://mark_formats_for_deletion?uuid=UUID&formats=EPUB,PDF -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="putz" android:host="mark_formats_for_deletion" />
-            </intent-filter>
-
             <!-- CONTRACT: CONFIRM_DELETE_BOOK — putz://confirm_delete_book?uuid=UUID -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -134,14 +118,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="putz" android:host="confirm_delete_formats" />
-            </intent-filter>
-
-            <!-- CONTRACT: CANCEL_DELETION — putz://cancel_delete?uuid=UUID -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="putz" android:host="cancel_delete" />
             </intent-filter>
 
             <!-- CONTRACT: PROTECT_BOOK — putz://protect_book?uuid=UUID&title=TITLE&author=AUTHOR -->
