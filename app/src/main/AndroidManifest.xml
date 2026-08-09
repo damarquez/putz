@@ -187,6 +187,20 @@
             </intent-filter>
         </activity>
 
+        <!-- CONTRACT: SPLIT_BOOK — putz://split_book, payload rides in the "split_payload" Intent extra -->
+        <activity
+            android:name=".ui.splitbook.SplitBookActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Putz">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="putz" android:host="split_book" />
+            </intent-filter>
+        </activity>
+
         <!-- CONTRACT: MANAGE_VIRTUAL_LIBRARY — receives VL management intents from CalibreAnywhere -->
         <activity
             android:name=".ui.virtuallibraries.ManageVirtualLibraryActivity"

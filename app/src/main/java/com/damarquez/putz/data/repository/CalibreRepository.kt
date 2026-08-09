@@ -324,6 +324,29 @@ data class MoveFormatRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: SPLIT_BOOK — moves a subset of an existing book's formats into a brand-new book
+// with its own metadata, leaving at least one format behind on the source. Only the metadata
+// fields the CalibreAnywhere dialog actually collects (title/authors/comments/tags) — unlike
+// FuseMetadata's fuller field set.
+@Serializable
+data class SplitBookMetadata(
+    val title: String,
+    val authors: String,
+    val comments: String? = null,
+    val tags: List<String>? = null,
+)
+
+@Serializable
+data class SplitBookRequest(
+    val action: String = "SPLIT_BOOK",
+    val putio_file_id: Long,
+    val source_book_uuid: String,
+    val formats: List<String>,
+    val metadata: SplitBookMetadata,
+    val protect: Boolean = false,
+    val app_id: String? = null,
+)
+
 // CONTRACT: MANAGE_VIRTUAL_LIBRARY
 @Serializable
 data class ManageVirtualLibraryRequest(
@@ -1586,12 +1609,14 @@ class CalibreRepository @Inject constructor(
                             } == true
                             // JOIN shares FUSION's exclusion here for the same reason: both create a
                             // brand-new book id per attempt, so a naive auto-retry on "not found" would
-                            // produce a second duplicate book rather than fixing the original.
+                            // produce a second duplicate book rather than fixing the original. SPLIT_BOOK
+                            // shares both reasons at once — it also creates a brand-new book id, and its
+                            // own "not found" errors mean the source UUID genuinely doesn't resolve.
                             // MOVE_FORMAT is excluded for a different reason: its own daemon-side "not
                             // found" errors mean the source or destination UUID genuinely doesn't
                             // resolve to a book (deleted, never existed) — a condition auto-retry can
                             // never fix, unlike the interrupted-mid-merge case this check exists for.
-                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && transfer.transferType != "JOIN" && transfer.transferType != "MOVE_FORMAT" && isAutoRecoverable) {
+                            if (newStatus == CalibreTransferStatus.FAILED && transfer.transferType != "FUSION" && transfer.transferType != "JOIN" && transfer.transferType != "MOVE_FORMAT" && transfer.transferType != "SPLIT_BOOK" && isAutoRecoverable) {
                                 if (transfer.retryCount < 3) {
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val delayMs = Random.nextLong(2000, 60000)
@@ -1940,6 +1965,32 @@ class CalibreRepository @Inject constructor(
             gdriveRequestId = gDriveId,
             errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
             transferType = "MOVE_FORMAT",
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: SPLIT_BOOK
+    suspend fun sendSplitBookRequest(
+        request: SplitBookRequest,
+        displayTitle: String,
+        googleAccount: String,
+    ) {
+        val appId = settingsRepository.getOrCreateAppId()
+        val jsonStr = json.encodeToString(request.copy(app_id = appId))
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_split_book_${request.putio_file_id}.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = request.putio_file_id,
+            fileName = "Splitting \"$displayTitle\"",
+            title = displayTitle,
+            author = request.metadata.authors,
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = request.putio_file_id.toString(),
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            transferType = "SPLIT_BOOK",
             lastRequestPayload = jsonStr,
         )
         withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
