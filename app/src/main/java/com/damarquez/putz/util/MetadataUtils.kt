@@ -2,7 +2,7 @@ package com.damarquez.putz.util
 
 // CONTRACT: stub convention, Putz file state — all isX(fileName) callers must pass file.displayName, not file.name
 object MetadataUtils {
-    private val EBOOK_EXTENSIONS = setOf("epub", "mobi", "pdf", "azw3", "azw", "fb2", "cbz", "cbr", "rar", "zip", "7z", "prc", "rtf", "doc", "docx", "odt", "txt", "htm", "html", "djvu")
+    private val EBOOK_EXTENSIONS = setOf("epub", "mobi", "pdf", "azw3", "azw", "fb2", "cbz", "cbr", "rar", "zip", "7z", "prc", "rtf", "doc", "docx", "odt", "txt", "htm", "html", "djvu", "chm")
     private val ARCHIVE_EXTENSIONS = setOf("rar", "zip", "7z")
     private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a", "flac")
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "heic", "heif")
@@ -11,7 +11,7 @@ object MetadataUtils {
     private val PLEXAMP_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac", "aac", "wav", "ogg", "opus", "wma", "ape", "alac", "aiff", "dsf")
     // CONTRACT: CONVERT_FORMAT / ADD_BOOK_BATCH "to PDF" — mirrors calibreAnywhere's
     // ConversionRules.kt "-> PDF" source formats. Keep the two lists in sync.
-    private val PDF_CONVERTIBLE_EXTENSIONS = setOf("epub", "mobi", "azw3", "cbz", "cbr", "txt", "txtz", "html", "htm", "htmlz", "docx", "rtf", "odt", "zip")
+    private val PDF_CONVERTIBLE_EXTENSIONS = setOf("epub", "mobi", "azw3", "cbz", "cbr", "txt", "txtz", "html", "htm", "htmlz", "docx", "rtf", "odt", "zip", "chm")
     // CONTRACT: TEXT_PDF_PACK — the "text document" subset of PDF_CONVERTIBLE_EXTENSIONS (excludes
     // epub/mobi/azw3/cbz/cbr/zip, which are ebook/comic containers with their own Join family).
     private val JOINABLE_TEXT_EXTENSIONS = setOf("rtf", "txt", "txtz", "html", "htm", "htmlz", "docx", "odt")
