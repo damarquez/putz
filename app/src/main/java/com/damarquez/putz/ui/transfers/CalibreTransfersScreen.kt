@@ -501,18 +501,22 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
             text = {
                 Text(
                     "Encrypt \"${protect.title}\" on disk? This cannot be undone without the protection key." +
-                        if (protect.keepCover) " The existing cover will be kept." else " The cover will be replaced with a generated one.",
+                        when {
+                            protect.keepCover -> " The existing cover will be kept."
+                            protect.extractCover -> " Sidekick will try to extract an embedded cover, falling back to a generated one."
+                            else -> " The cover will be replaced with a generated one."
+                        },
                 )
             },
             confirmButton = {
                 Row {
                     // CONTRACT: CHAIN
                     TextButton(onClick = {
-                        viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover, addToChain = true)
+                        viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover, protect.extractCover, addToChain = true)
                         pendingProtectConfirmation = null
                     }) { Text("Add to chain") }
                     TextButton(onClick = {
-                        viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover)
+                        viewModel.protectBook(protect.uuid, protect.title, protect.author, protect.keepCover, protect.extractCover)
                         pendingProtectConfirmation = null
                     }) { Text("Protect") }
                 }

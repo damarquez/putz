@@ -48,7 +48,7 @@ private sealed class PendingClipboardAction {
     data class BatchTags(val uuids: List<String>) : PendingClipboardAction()
     data class GenerateCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class ExtractOrRandomCover(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
-    data class ProtectBook(val uuid: String, val title: String, val author: String, val keepCover: Boolean = false) : PendingClipboardAction()
+    data class ProtectBook(val uuid: String, val title: String, val author: String, val keepCover: Boolean = false, val extractCover: Boolean = false) : PendingClipboardAction()
     data class UnprotectBook(val uuid: String, val title: String, val author: String) : PendingClipboardAction()
     data class SetPageCount(val uuid: String, val pageCount: Int, val title: String? = null, val author: String? = null) : PendingClipboardAction()
     data class ConvertFormat(val uuid: String, val sourceFormat: String, val targetFormat: String, val title: String, val author: String) : PendingClipboardAction()
@@ -188,7 +188,8 @@ class MainActivity : ComponentActivity() {
                 val title = uri.getQueryParameter("title") ?: ""
                 val author = uri.getQueryParameter("author") ?: ""
                 val keepCover = uri.getQueryParameter("keep_cover")?.toBoolean() ?: false
-                if (uuid != null) pendingClipboardAction = PendingClipboardAction.ProtectBook(uuid, title, author, keepCover)
+                val extractCover = uri.getQueryParameter("extract_cover")?.toBoolean() ?: false
+                if (uuid != null) pendingClipboardAction = PendingClipboardAction.ProtectBook(uuid, title, author, keepCover, extractCover)
             }
             uri.scheme == "putz" && uri.host == "unprotect_book" -> {  // CONTRACT: UNPROTECT_BOOK
                 val uuid = uri.getQueryParameter("uuid")
@@ -285,7 +286,7 @@ class MainActivity : ComponentActivity() {
                 is PendingClipboardAction.BatchTags -> pendingCommentsRepository.setBatchTags(action.uuids)
                 is PendingClipboardAction.GenerateCover -> pendingGenerateCoverRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.ExtractOrRandomCover -> pendingExtractOrRandomCoverRepository.set(action.uuid, action.title, action.author)
-                is PendingClipboardAction.ProtectBook -> pendingProtectBookRepository.set(action.uuid, action.title, action.author, action.keepCover)
+                is PendingClipboardAction.ProtectBook -> pendingProtectBookRepository.set(action.uuid, action.title, action.author, action.keepCover, action.extractCover)
                 is PendingClipboardAction.UnprotectBook -> pendingUnprotectBookRepository.set(action.uuid, action.title, action.author)
                 is PendingClipboardAction.SetPageCount -> pendingSetPageCountRepository.set(action.uuid, action.pageCount, action.title, action.author)
                 is PendingClipboardAction.ConvertFormat -> pendingConvertFormatRepository.set(action.uuid, action.sourceFormat, action.targetFormat, action.title, action.author)

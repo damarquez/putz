@@ -121,6 +121,10 @@ data class CalibreBatchRequest(
     // generating its default obfuscated cover, since a real cover is already staged to
     // follow via REPLACE_COVER (see attachClipboardCoverToAssembly/pollResponses).
     val keep_cover: Boolean? = null,
+    // For PROTECT_BOOK — when true, try to pull an embedded cover out of the book's own
+    // formats before they're encrypted, falling back to a generated one only if none is
+    // found. Mutually exclusive with keep_cover in practice.
+    val extract_cover: Boolean? = null,
     val app_id: String? = null, // Device ID — daemon echoes back so each device only reads its own responses
 )
 
@@ -2770,6 +2774,7 @@ class CalibreRepository @Inject constructor(
         calibreBookUuid: String,
         googleAccount: String,
         keepCover: Boolean = false,
+        extractCover: Boolean = false,
         addToChain: Boolean = false,
     ) {
         val putioFileId = -System.currentTimeMillis()  // negative = fileless, daemon-serialized
@@ -2782,6 +2787,7 @@ class CalibreRepository @Inject constructor(
             items = emptyList(),
             calibre_book_uuid = calibreBookUuid,
             keep_cover = if (keepCover) true else null,
+            extract_cover = if (extractCover) true else null,
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)

@@ -217,7 +217,7 @@ class CalibreTransfersViewModel @Inject constructor(
         }
     }
 
-    fun protectBook(uuid: String, title: String, author: String, keepCover: Boolean = false, addToChain: Boolean = false) {
+    fun protectBook(uuid: String, title: String, author: String, keepCover: Boolean = false, extractCover: Boolean = false, addToChain: Boolean = false) {
         viewModelScope.launch {
             val account = settingsRepository.googleTokenFlow.first()
             if (account.isBlank()) return@launch
@@ -227,6 +227,7 @@ class CalibreTransfersViewModel @Inject constructor(
                 calibreBookUuid = uuid,
                 googleAccount = account,
                 keepCover = keepCover,
+                extractCover = extractCover,
                 addToChain = addToChain,
             )
         }
