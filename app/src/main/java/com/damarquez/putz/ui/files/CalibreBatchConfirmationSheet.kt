@@ -604,10 +604,11 @@ private fun CalibreBatchRow(
                 } else null,
             )
             Spacer(Modifier.height(6.dp))
-            // Highlights an author that repeats the immediately preceding row's author (e.g. a
-            // multi-volume set added in one batch), using the same salmon/dark-foreground pairing
-            // as the primary "Send" action, so a long run of identical authors is easy to spot at
-            // a glance while scrolling.
+            // Calls out a change in author from the immediately preceding row with a reddish
+            // background (using the same salmon/dark-foreground pairing as the primary "Send"
+            // action), while a repeated author (e.g. a multi-volume set added in one batch) gets
+            // a muted gray background instead, so scanning the list draws the eye to where the
+            // author actually changes rather than to runs of identical authors.
             val isRepeatAuthor = previousAuthor != null &&
                 item.author.isNotBlank() &&
                 item.author.trim() == previousAuthor.trim()
@@ -620,12 +621,19 @@ private fun CalibreBatchRow(
                     modifier = Modifier
                         .weight(1f)
                         .then(
-                            if (isRepeatAuthor) {
+                            if (item.author.isBlank()) {
+                                Modifier
+                            } else if (isRepeatAuthor) {
+                                Modifier.background(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = MaterialTheme.shapes.extraSmall,
+                                )
+                            } else {
                                 Modifier.background(
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                     shape = MaterialTheme.shapes.extraSmall,
                                 )
-                            } else Modifier
+                            }
                         ),
                     enabled = !isUuidMatched,
                     dense = true,
