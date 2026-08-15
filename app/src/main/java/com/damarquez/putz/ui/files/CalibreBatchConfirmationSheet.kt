@@ -130,7 +130,7 @@ fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
                 viewModel.dismissCalibreBatchDraft()
             },
             onItemChange = { updated -> viewModel.updateCalibreBatchDraftItem(updated) },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             checkPendingTransfer = { fileId, fileName -> viewModel.findPendingTransfer(fileId, fileName) },
             readStubFileSize = { file -> viewModel.readStubFileSize(file) },
@@ -162,7 +162,7 @@ fun CalibreBatchConfirmationSheet(
     onDismiss: () -> Unit,
     onConfirm: (List<CalibreBatchDraftItem>) -> Unit,
     onItemChange: (CalibreBatchDraftItem) -> Unit,
-    checkExists: suspend (String, String) -> Long?,
+    checkExists: suspend (String, String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity? = { _, _ -> null },
     readStubFileSize: suspend (PutioFile) -> Long? = { null },
@@ -344,7 +344,7 @@ private fun CalibreBatchRow(
     index: Int?,
     sizeBytes: Long,
     previousAuthor: String?,
-    checkExists: suspend (String, String) -> Long?,
+    checkExists: suspend (String, String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
     onChange: (CalibreBatchDraftItem) -> Unit,
@@ -419,7 +419,7 @@ private fun CalibreBatchRow(
     // per character typed" into "one scan per row, once you stop typing it." The cache check below
     // does the same for scrolling: a row that remounts with the exact same title/author/included
     // it was last checked with reuses the cached answer instead of re-scanning the library.
-    LaunchedEffect(rowKey, item.title, item.author, item.included, item.uuid) {
+    LaunchedEffect(rowKey, item.title, item.author, item.included, item.uuid, item.convertToPdf) {
         if (item.uuid.isNotBlank()) return@LaunchedEffect
         if (item.included && item.title.isNotBlank()) {
             val prev = rowMatchCache[rowKey] ?: RowMatchCache()
@@ -427,7 +427,11 @@ private fun CalibreBatchRow(
                 return@LaunchedEffect
             }
             kotlinx.coroutines.delay(400)
-            val result = checkExists(item.title, item.author.ifBlank { "Unknown" })
+            val result = checkExists(
+                item.title,
+                item.author.ifBlank { "Unknown" },
+                formatForFile(item.file.displayName, item.convertToPdf),
+            )
             rowMatchCache[rowKey] = (rowMatchCache[rowKey] ?: RowMatchCache()).copy(
                 matchedBookId = result,
                 checkedTitle = item.title,

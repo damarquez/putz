@@ -68,6 +68,20 @@ import com.damarquez.putz.util.MetadataUtils
 
 data class TransferRef(val uuid: String, val title: String, val author: String)
 
+/** Uppercase format a file lands in the Calibre library as, mirroring the daemon's own
+ *  conversions (PRC → EPUB, HTML/HTM auto-zipped) — see CalibreRepository.expectedFormats. Used
+ *  to scope the "book might already exist" warning to books that already have this exact format,
+ *  since the book existing doesn't stop us adding a format it doesn't have yet. */
+fun formatForFile(fileName: String, convertToPdf: Boolean): String {
+    if (convertToPdf) return "PDF"
+    val ext = fileName.substringAfterLast('.', "").uppercase()
+    return when (ext) {
+        "PRC" -> "EPUB"
+        "HTML", "HTM" -> "ZIP"
+        else -> ext
+    }
+}
+
 /** Opens the sibling CalibreAnywhere app's search screen for [query], falling back to its deep link. */
 fun openCalibreAnywhereSearch(context: Context, query: String) {
     try {
@@ -101,7 +115,7 @@ fun CalibreConfirmationSheet(
     // CONTRACT: CHAIN — same signature as onConfirm: stages a complete request rather than
     // dispatching it. Null hides the button (not offered for this sheet's caller).
     onAddToChain: ((title: String, author: String, archiveMode: String?, assembleBook: Boolean, isAltVersion: Boolean, calibreBookId: Long?, calibreBookUuid: String?, comments: String?, tags: String?, isProtected: Boolean, convertToPdf: Boolean, ignoreCover: Boolean) -> Unit)? = null,
-    checkExists: suspend (String, String) -> Long?,
+    checkExists: suspend (String, String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
     checkPendingTransfer: (suspend () -> CalibreTransferEntity?)? = null,
     isArchive: Boolean = false,
@@ -227,9 +241,9 @@ fun CalibreConfirmationSheet(
         }
     }
 
-    LaunchedEffect(title, author, uuid) {
+    LaunchedEffect(title, author, uuid, convertToPdf) {
         if (uuid.isBlank() && !requiresUuidMatch && title.isNotBlank() && author.isNotBlank()) {
-            matchedBookId = checkExists(title, author)
+            matchedBookId = checkExists(title, author, formatForFile(displayName, convertToPdf))
             matchedBookTitle = null
             matchedBookAuthor = null
         } else if (uuid.isBlank()) {

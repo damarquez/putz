@@ -397,7 +397,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 clipboardImageUri = null
                 prefilledUuid = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isReplaceCover = true,
             initialUuid = prefilledUuid ?: "",
@@ -483,7 +483,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                 prefilledUuid = null
                 pendingCommentsRepository.clear()
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isUpdateComments = true,
             initialUuid = prefilledUuid ?: "",

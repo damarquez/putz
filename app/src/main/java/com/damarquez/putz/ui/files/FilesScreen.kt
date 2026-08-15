@@ -531,7 +531,7 @@ fun FilesScreen(
                     )
                 }
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             checkPendingTransfer = { viewModel.findPendingTransfer(singleFile.syncedFileId, singleFile.displayName) },
             isArchive = MetadataUtils.isArchive(singleFile.displayName),
@@ -564,7 +564,7 @@ fun FilesScreen(
                 }
                 selectedFileForCover = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             isReplaceCover = true,
             transferRefs = completedTransfersWithUuid,
@@ -624,7 +624,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("PACK", fileName, packFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedPackFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, packFiles),
@@ -650,7 +650,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedPdfFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, pdfFiles),
@@ -691,7 +691,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedEpubFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, epubFiles),
@@ -732,7 +732,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedMobiFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, mobiFiles),
@@ -773,7 +773,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedTextFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, textFiles),
@@ -820,7 +820,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = quality, comments = comments, convertToPdf = convertToPdf)
                 selectedImageFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, imageFiles),
@@ -961,7 +961,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality, comments = comments, convertToPdf = convertToPdf)
                 selectedMergeFlatFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, candidates.map { it.file }),
@@ -992,7 +992,7 @@ fun FilesScreen(
                 viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, imageQuality = mergeImageQuality, comments = comments, convertToPdf = convertToPdf)
                 selectedMergeGroups = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, allFiles),
@@ -1035,7 +1035,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedCbrFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, cbrFiles),
@@ -1077,7 +1077,7 @@ fun FilesScreen(
                 viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, addToChain = true, comments = comments)
                 selectedCbrCbzFiles = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             transferRefs = completedTransfersWithUuid,
             sizeSummary = sizeSummaryText(sizeProgress, cbrFiles),

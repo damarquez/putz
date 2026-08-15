@@ -2114,9 +2114,9 @@ class FilesViewModel @Inject constructor(
     // concurrency here mirrors prefetchBatchLocalPaths's chunked(5) fix for the same class of bug.
     private val checkExistsSemaphore = Semaphore(3)
 
-    suspend fun checkBookExists(title: String, author: String): Long? = checkExistsSemaphore.withPermit {
+    suspend fun checkBookExists(title: String, author: String, format: String): Long? = checkExistsSemaphore.withPermit {
         val dbFile = File(context.filesDir, "metadata.db")
-        calibreRepository.checkExists(dbFile, title, author)
+        calibreRepository.checkExists(dbFile, title, author, format)
     }
 
     suspend fun checkBookExistsByUuid(uuid: String): CalibreBookMatch? {

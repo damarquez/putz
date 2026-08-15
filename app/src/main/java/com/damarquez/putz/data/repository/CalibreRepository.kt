@@ -2454,7 +2454,12 @@ class CalibreRepository @Inject constructor(
         return authorTokens(normAuthor).intersect(authorTokens(normDbAuthor)).isNotEmpty()
     }
 
-    suspend fun checkExists(dbFile: File, title: String, author: String): Long? = withContext(Dispatchers.IO) {
+    // [format] is the uppercase extension (e.g. "EPUB") the file would be added as. A title/
+    // author match alone isn't grounds for a duplicate warning — the book existing doesn't stop
+    // us adding a format it doesn't have yet, so a match only counts when that book already has
+    // this format. Pass "" to fall back to the old title/author-only behavior (used when the
+    // format couldn't be determined).
+    suspend fun checkExists(dbFile: File, title: String, author: String, format: String): Long? = withContext(Dispatchers.IO) {
         if (!dbFile.exists()) return@withContext null
         try {
             android.database.sqlite.SQLiteDatabase.openDatabase(
@@ -2468,6 +2473,8 @@ class CalibreRepository @Inject constructor(
                     JOIN books_authors_link ON books.id = books_authors_link.book
                     JOIN authors ON authors.id = books_authors_link.author
                 """.trimIndent()
+
+                val normFormat = format.trim().uppercase()
 
                 db.rawQuery(query, null).use { cursor ->
                     val normTitle = normalize(title)
@@ -2488,7 +2495,9 @@ class CalibreRepository @Inject constructor(
                             // wrongly warning it might already exist. Author matching is
                             // token-based — see authorsMatch().
                             if (normDbTitle == normTitle && authorsMatch(author, dbAuthor)) {
-                                return@withContext id
+                                if (normFormat.isBlank() || bookHasFormat(db, id, normFormat)) {
+                                    return@withContext id
+                                }
                             }
                         } while (cursor.moveToNext())
                     }
@@ -2499,6 +2508,12 @@ class CalibreRepository @Inject constructor(
             e.printStackTrace()
             null
         }
+    }
+
+    private fun bookHasFormat(db: android.database.sqlite.SQLiteDatabase, bookId: Long, format: String): Boolean {
+        return db.rawQuery(
+            "SELECT 1 FROM data WHERE book = ? AND format = ?", arrayOf(bookId.toString(), format)
+        ).use { it.moveToFirst() }
     }
 
     // CONTRACT: CHAIN — shared tail for the "build one entity, decide status, maybe dispatch"

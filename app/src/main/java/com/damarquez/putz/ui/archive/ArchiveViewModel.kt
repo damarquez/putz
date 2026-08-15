@@ -464,9 +464,9 @@ class ArchiveViewModel @Inject constructor(
         }
     }
 
-    suspend fun checkBookExists(title: String, author: String): Long? {
+    suspend fun checkBookExists(title: String, author: String, format: String): Long? {
         val dbFile = java.io.File(context.filesDir, "metadata.db")
-        return calibreRepository.checkExists(dbFile, title, author)
+        return calibreRepository.checkExists(dbFile, title, author, format)
     }
 
     suspend fun checkBookExistsByUuid(uuid: String): CalibreBookMatch? {

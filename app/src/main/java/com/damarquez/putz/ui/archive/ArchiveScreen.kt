@@ -616,7 +616,7 @@ fun ArchiveScreen(
                     selectedArchiveMergeFlatFiles = null
                     archiveMergeOutputFormat = null
                 },
-                checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+                checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
                 sizeSummary = sizeSummaryText(sizeProgress, candidates.map { it.file }),
             )
@@ -644,7 +644,7 @@ fun ArchiveScreen(
                     selectedArchiveMergeGroups = null
                     archiveMergeOutputFormat = null
                 },
-                checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+                checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
                 sizeSummary = sizeSummaryText(sizeProgress, allFiles),
             )
@@ -665,7 +665,7 @@ fun ArchiveScreen(
                 viewModel.sendEntryToCalibre(entry, title, author, assembleBook, null, uuid, convertToPdf = convertToPdf)
                 entryForCalibre = null
             },
-            checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+            checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
             sizeSummary = "Total size: ${formatByteSize(entry.size)}",
         )
@@ -688,7 +688,7 @@ fun ArchiveScreen(
                     viewModel.sendEntryToCalibre(entry, title, author, assembleBook = assembleBook, assemblyFileId = null, calibreBookUuid = uuid, convertToPdf = convertToPdf)
                     entryForAssembly = null
                 },
-                checkExists = { title, author -> viewModel.checkBookExists(title, author) },
+                checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
                 checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
                 sizeSummary = "Total size: ${formatByteSize(entry.size)}",
             )
