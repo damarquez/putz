@@ -277,6 +277,17 @@ data class PrioritySyncRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: ARCHIVE_TO_FOLDER
+@Serializable
+data class ArchiveToFolderRequest(
+    val action: String = "ARCHIVE_TO_FOLDER",
+    val putio_file_id: Long,
+    val parent_id: Long,
+    val local_path: String,
+    val file_name: String,
+    val app_id: String? = null,
+)
+
 // CONTRACT: FUSE_BOOKS
 @Serializable
 data class FuseFormatEntry(
@@ -797,6 +808,22 @@ class CalibreRepository @Inject constructor(
         val request = PrioritySyncRequest(putio_file_id = file.id, app_id = appId)
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_priority_${file.id}.json", jsonStr)
+        return gDriveId != null
+    }
+
+    // CONTRACT: ARCHIVE_TO_FOLDER
+    suspend fun sendArchiveToFolderRequest(file: com.damarquez.putz.data.model.PutioFile, googleAccount: String): Boolean {
+        val localPath = readStubLocalPath(file) ?: return false
+        val appId = settingsRepository.getOrCreateAppId()
+        val request = ArchiveToFolderRequest(
+            putio_file_id = file.id,
+            parent_id = file.parentId,
+            local_path = localPath,
+            file_name = file.displayName,
+            app_id = appId,
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_archive_to_folder_${file.id}.json", jsonStr)
         return gDriveId != null
     }
 

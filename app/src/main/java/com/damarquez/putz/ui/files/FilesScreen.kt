@@ -190,6 +190,7 @@ fun FilesScreen(
     // Shared by row-tap (autoJoin=false, just browse) and the "Join archive…" menu action
     // (autoJoin=true, browse and immediately pop the merge choice dialog for the root).
     fun openArchive(file: PutioFile, autoJoin: Boolean) {
+        if (file.isDeflating) return // CONTRACT: ARCHIVE_TO_FOLDER — stub mid-replacement
         if ((file.isLocal || file.isLan) && MetadataUtils.isArchive(file.displayName)) {
             onNavigateToArchive(file.localUri, file.lanConnectionId ?: -1L, file.lanPath, file.displayName, autoJoin)
         } else if (!file.isLocal && !file.isLan && file.isSynced && MetadataUtils.isArchive(file.displayName)) {
@@ -1778,6 +1779,10 @@ fun FilesScreen(
                                                 )
                                             } else if (file.isDrive) {
                                                 viewModel.previewFile(file)
+                                            } else if (file.isDeflating) {
+                                                // CONTRACT: ARCHIVE_TO_FOLDER — the underlying
+                                                // stub is mid-replacement; nothing to open until
+                                                // the daemon finishes (see PutioFile.isDeflating).
                                             } else if (MetadataUtils.isArchive(file.displayName)) {
                                                 openArchive(file, autoJoin = false)
                                             } else if (!file.isLocal && !file.isLan && file.isSynced) {
@@ -1952,6 +1957,7 @@ fun FilesScreen(
                                         },
                                         onMergeFolder = { folder -> viewModel.openMergeProcessChoice(folder) },
                                         onMergeArchive = { archive -> openArchive(archive, autoJoin = true) },
+                                        onArchiveToFolder = { archive -> viewModel.requestArchiveToFolder(archive) },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },

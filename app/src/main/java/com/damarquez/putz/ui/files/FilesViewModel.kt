@@ -1034,6 +1034,22 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    // CONTRACT: ARCHIVE_TO_FOLDER
+    fun requestArchiveToFolder(file: PutioFile) {
+        viewModelScope.launch {
+            val googleAccount = settingsRepository.googleTokenFlow.first()
+            if (googleAccount.isBlank()) {
+                _snackbarMessage.value = "Link your Google account in Settings first"
+                return@launch
+            }
+            val success = calibreRepository.sendArchiveToFolderRequest(file, googleAccount)
+            _snackbarMessage.value = if (success)
+                "Deflating \"${file.displayName}\" into a folder…"
+            else
+                "Failed to send Archive to Folder request"
+        }
+    }
+
     fun copyStubJson(file: PutioFile) {
         viewModelScope.launch {
             val rawJson = calibreRepository.readStubRawJson(file)

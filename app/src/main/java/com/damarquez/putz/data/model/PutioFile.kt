@@ -48,6 +48,31 @@ data class PutioFile(
     // CONTRACT: stub convention, Putz file state
     val isSynced: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder && ".sk_synced" in name
 
+    // CONTRACT: ARCHIVE_TO_FOLDER — a synced archive currently being deflated into a real
+    // folder tree by the daemon. Deliberately still isSynced=true (name contains ".sk_synced")
+    // so it isn't mistaken for a regular unsynced remote file, but every interactive action
+    // (browsing, Join archive, Send to Calibre, download, Archive to Folder itself) must be
+    // additionally gated on !isDeflating — the underlying stub is mid-replacement.
+    val isDeflating: Boolean get() = isSynced && ".sk_synced.deflating." in name
+
+    // CONTRACT: ARCHIVE_TO_FOLDER — "extracting" or "building", embedded in the deflating
+    // marker's name. Null if malformed/absent.
+    val deflatePhase: String? get() {
+        if (!isDeflating) return null
+        return Regex("\\.sk_synced\\.deflating\\.(extracting|building)\\.\\d+-\\d+\\.\\d+$")
+            .find(name)?.groupValues?.get(1)
+    }
+
+    // CONTRACT: ARCHIVE_TO_FOLDER — (done, total) progress counts embedded in the deflating
+    // marker's name, for the file-row progress badge. Null if malformed/absent.
+    val deflateProgress: Pair<Long, Long>? get() {
+        if (!isDeflating) return null
+        val m = Regex("\\.sk_synced\\.deflating\\.(?:extracting|building)\\.(\\d+)-(\\d+)\\.\\d+$").find(name) ?: return null
+        val done = m.groupValues[1].toLongOrNull() ?: return null
+        val total = m.groupValues[2].toLongOrNull() ?: return null
+        return done to total
+    }
+
     // CONTRACT: Putz file state — a plain remote put.io file that hasn't been synced/downloaded
     // at all yet (no local stub, no local copy, no LAN copy). Shown dimmed in the file list and,
     // per the file-selection invariant, can never be selected alongside a non-"regular remote"

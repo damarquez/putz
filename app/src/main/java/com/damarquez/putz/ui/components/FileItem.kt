@@ -54,6 +54,7 @@ import com.damarquez.putz.ui.theme.LocalAppStyling
 import com.damarquez.putz.util.MetadataUtils
 
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Warning
@@ -121,6 +122,7 @@ fun FileItem(
     onSendToPlexamp: (PutioFile) -> Unit,
     onMergeFolder: (PutioFile) -> Unit,
     onMergeArchive: (PutioFile) -> Unit,
+    onArchiveToFolder: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
     onRequestPrioritySync: (PutioFile) -> Unit,
     onDownload: (PutioFile) -> Unit,
@@ -272,6 +274,18 @@ fun FileItem(
                                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
                                 .padding(2.dp)
                         )
+                        // CONTRACT: ARCHIVE_TO_FOLDER — checked before the plain isSynced branch
+                        // below, since isDeflating implies isSynced too.
+                        file.isDeflating -> Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = "Deflating into a folder",
+                            tint = Color(0xFFFF6D00),
+                            modifier = Modifier
+                                .size(20.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(3.dp))
+                                .padding(2.dp)
+                        )
                         file.isSynced -> Icon(
                             imageVector = Icons.Default.CloudDone,
                             contentDescription = "Synced locally",
@@ -347,7 +361,15 @@ fun FileItem(
                 if (!file.isFolder) {
                     Text(
                         text = buildString {
-                            if (file.isSynced) {
+                            if (file.isDeflating) {
+                                // CONTRACT: ARCHIVE_TO_FOLDER
+                                append(when (file.deflatePhase) {
+                                    "extracting" -> "Extracting…"
+                                    "building" -> "Deflating…"
+                                    else -> "Deflating…"
+                                })
+                                file.deflateProgress?.let { (done, total) -> append("  $done/$total") }
+                            } else if (file.isSynced) {
                                 if (file.effectiveSize > 0) append(formatFileSize(file.effectiveSize))
                                 val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                                 val formatted = file.createdAt?.let { raw ->
@@ -482,7 +504,7 @@ fun FileItem(
                             )
                             HorizontalDivider()
                         }
-                        if (!isRegularRemote) {
+                        if (!isRegularRemote && !file.isDeflating) {
                             if (isEbook) {
                                 TightMenuItem(
                                     text = { Text("Send to Calibre") },
@@ -673,7 +695,21 @@ fun FileItem(
                                     },
                                 )
                             }
-                            if (isEbook || isImage || isMultiTrackAudio || isPdf || isJoinableText || isComicArchive || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder || canBrowseArchive) {
+                            // CONTRACT: ARCHIVE_TO_FOLDER — synced only: the whole point is
+                            // deflating an archive already downloaded to the LAN mirror, not
+                            // one that still lives only on put.io or locally/over LAN.
+                            val canDeflateArchive = isGenericArchive && file.isSynced
+                            if (canDeflateArchive) {
+                                TightMenuItem(
+                                    // CONTRACT: ARCHIVE_TO_FOLDER
+                                    text = { Text("Archive to Folder…") },
+                                    onClick = {
+                                        showMenu = false
+                                        onArchiveToFolder(file)
+                                    },
+                                )
+                            }
+                            if (isEbook || isImage || isMultiTrackAudio || isPdf || isJoinableText || isComicArchive || (isVideo && file.isSynced) || (isSubtitle && file.isSynced) || (isAudio && file.isSynced) || isRegularFolder || canBrowseArchive || canDeflateArchive) {
                                 HorizontalDivider()
                             }
                         }
