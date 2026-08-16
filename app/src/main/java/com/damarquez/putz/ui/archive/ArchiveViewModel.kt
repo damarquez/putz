@@ -196,24 +196,36 @@ class ArchiveViewModel @Inject constructor(
     private fun load() {
         viewModelScope.launch {
             _uiState.value = ArchiveUiState.Loading
-            if (source is ArchiveSource.Mirror) {
-                val localPath = calibreRepository.readStubLocalPathById(putioStubFileId)
-                resolvedSource = (source as ArchiveSource.Mirror).copy(localPath = localPath)
+            // Listing a large synced RAR/CBR over the LAN mirror can take minutes (thousands of
+            // small Range-request round trips — RAR has no central directory, so 7-Zip walks
+            // every entry header sequentially). Without a foreground service, locking the screen
+            // or switching apps lets Android throttle/kill the background network mid-stream,
+            // which corrupts the in-flight 7-Zip parse and surfaces as "archive file can't be
+            // opened with any of the registered codecs" — a truncated-stream symptom, not a real
+            // codec error. TransferPrepareService keeps the process alive for the duration.
+            com.damarquez.putz.sync.TransferPrepareService.start(context)
+            try {
+                if (source is ArchiveSource.Mirror) {
+                    val localPath = calibreRepository.readStubLocalPathById(putioStubFileId)
+                    resolvedSource = (source as ArchiveSource.Mirror).copy(localPath = localPath)
+                }
+                runCatching { archiveRepository.listEntries(resolvedSource) }
+                    .onSuccess { entries ->
+                        val restoredDir = savedStateHandle.get<String>(KEY_CURRENT_DIR) ?: ""
+                        val restoredStack = savedStateHandle.get<ArrayList<String>>(KEY_DIR_STACK) ?: arrayListOf()
+                        _uiState.value = ArchiveUiState.Success(
+                            allEntries = entries,
+                            currentDir = restoredDir,
+                            dirStack = restoredStack,
+                            visibleEntries = directChildren(restoredDir, entries),
+                        )
+                    }
+                    .onFailure { e ->
+                        _uiState.value = ArchiveUiState.Error(e.message ?: "Failed to open archive")
+                    }
+            } finally {
+                com.damarquez.putz.sync.TransferPrepareService.stop(context)
             }
-            runCatching { archiveRepository.listEntries(resolvedSource) }
-                .onSuccess { entries ->
-                    val restoredDir = savedStateHandle.get<String>(KEY_CURRENT_DIR) ?: ""
-                    val restoredStack = savedStateHandle.get<ArrayList<String>>(KEY_DIR_STACK) ?: arrayListOf()
-                    _uiState.value = ArchiveUiState.Success(
-                        allEntries = entries,
-                        currentDir = restoredDir,
-                        dirStack = restoredStack,
-                        visibleEntries = directChildren(restoredDir, entries),
-                    )
-                }
-                .onFailure { e ->
-                    _uiState.value = ArchiveUiState.Error(e.message ?: "Failed to open archive")
-                }
         }
     }
 

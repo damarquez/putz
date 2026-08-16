@@ -60,7 +60,7 @@ class TransferPrepareService : Service() {
 
         progressJob = serviceScope.launch {
             calibreRepository.prepareProgress.sample(500L).collectLatest { progress ->
-                val text = if (progress != null) "Resolving file ${progress.first}/${progress.second}" else "Sending to Calibre..."
+                val text = if (progress != null) "Resolving file ${progress.first}/${progress.second}" else "Working..."
                 getNotificationManager().notify(NOTIFICATION_ID, buildNotification(text))
             }
         }
@@ -89,7 +89,7 @@ class TransferPrepareService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Putz is sending a file to Calibre")
+            .setContentTitle("Putz is working")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setOngoing(true)
