@@ -107,6 +107,7 @@ fun FileItem(
     onLongClick: () -> Unit,
     onPreview: (PutioFile) -> Unit,
     onReplaceCover: (PutioFile) -> Unit,
+    onSetAsAssemblyCover: (PutioFile) -> Unit,
     onSendAsImagePack: (PutioFile) -> Unit,
     onSendToCalibre: (PutioFile) -> Unit,
     onSendAsAudiobookPack: (PutioFile) -> Unit,
@@ -522,6 +523,17 @@ fun FileItem(
                                     onClick = {
                                         showMenu = false
                                         onReplaceCover(file)
+                                    },
+                                )
+                                TightMenuItem(
+                                    // Stages this file as a pending (not-yet-dispatched)
+                                    // assembly's future cover — see
+                                    // CalibreRepository.attachExistingFileCoverToAssembly.
+                                    text = { Text("Set as cover for pending request…") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onSetAsAssemblyCover(file)
                                     },
                                 )
                                 TightMenuItem(

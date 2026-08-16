@@ -94,18 +94,29 @@ data class CalibreTransferEntity(
      *  since it's harmless dead weight after that point. */
     val chainPosition: Int? = null,
 
-    /** Put.io file id of a clipboard image already uploaded to `.putz_attachments`, staged as
-     *  this not-yet-dispatched (ASSEMBLED/CHAINED) request's future cover. Null once consumed —
-     *  see [pendingCoverDownloadUrl] and CalibreRepository.pollResponses' COMPLETED handling,
-     *  which fires REPLACE_COVER automatically once this book's real calibre_book_uuid is known. */
+    /** Put.io file id of an image staged as this not-yet-dispatched (ASSEMBLED/CHAINED)
+     *  request's future cover — either a clipboard image already uploaded to
+     *  `.putz_attachments`, or an existing Putz file picked via "Set as cover for pending
+     *  request" (see CalibreRepository.attachExistingFileCoverToAssembly). Null once consumed —
+     *  see [pendingCoverDownloadUrl]/[pendingCoverUseLocal] and CalibreRepository.pollResponses'
+     *  COMPLETED handling, which fires REPLACE_COVER automatically once this book's real
+     *  calibre_book_uuid is known. */
     val pendingCoverPutioFileId: Long? = null,
 
     /** Download URL for [pendingCoverPutioFileId], stashed so REPLACE_COVER can be sent without
-     *  re-uploading once this transfer completes. */
+     *  re-uploading once this transfer completes. Null when [pendingCoverUseLocal] is set —
+     *  a synced stub resolves via [pendingCoverLocalPath] instead. */
     val pendingCoverDownloadUrl: String? = null,
 
     /** Display filename for [pendingCoverPutioFileId]. */
     val pendingCoverFileName: String? = null,
+
+    /** True when [pendingCoverPutioFileId] is an already-synced Calibre stub — REPLACE_COVER
+     *  resolves it via [pendingCoverLocalPath] (daemon's local mirror) instead of downloading. */
+    val pendingCoverUseLocal: Boolean = false,
+
+    /** Local path for [pendingCoverPutioFileId] when [pendingCoverUseLocal] is true. */
+    val pendingCoverLocalPath: String? = null,
 
     /** When true and this transfer's item(s) are [CalibreBatchItem.protected], the daemon skips
      *  generating its default obfuscated cover on ADD_BOOK_BATCH — the added book's cover behaves

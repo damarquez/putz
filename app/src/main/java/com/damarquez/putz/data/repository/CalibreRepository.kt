@@ -1601,6 +1601,8 @@ class CalibreRepository @Inject constructor(
                                 pendingCoverPutioFileId = if (newStatus == CalibreTransferStatus.COMPLETED) null else transfer.pendingCoverPutioFileId,
                                 pendingCoverDownloadUrl = if (newStatus == CalibreTransferStatus.COMPLETED) null else transfer.pendingCoverDownloadUrl,
                                 pendingCoverFileName = if (newStatus == CalibreTransferStatus.COMPLETED) null else transfer.pendingCoverFileName,
+                                pendingCoverUseLocal = if (newStatus == CalibreTransferStatus.COMPLETED) false else transfer.pendingCoverUseLocal,
+                                pendingCoverLocalPath = if (newStatus == CalibreTransferStatus.COMPLETED) null else transfer.pendingCoverLocalPath,
                             ))
 
                             if (newStatus == CalibreTransferStatus.COMPLETED && transfer.isTempUpload && transfer.hasPutioFile) {
@@ -1610,11 +1612,15 @@ class CalibreRepository @Inject constructor(
                                 }
                             }
 
-                            // A cover was staged from the clipboard while this was still an
-                            // unsent ASSEMBLED/CHAINED request (attachClipboardCoverToAssembly) —
-                            // now that the book's real calibre_book_uuid is known, apply it via
-                            // the same REPLACE_COVER path calibreAnywhere's clipboard-cover flow uses.
-                            if (newStatus == CalibreTransferStatus.COMPLETED && resolvedUuid != null && transfer.pendingCoverDownloadUrl != null && transfer.pendingCoverPutioFileId != null) {
+                            // A cover was staged — from the clipboard (attachClipboardCoverToAssembly)
+                            // or from an existing Putz file (attachExistingFileCoverToAssembly) —
+                            // while this was still an unsent ASSEMBLED/CHAINED request. Now that the
+                            // book's real calibre_book_uuid is known, apply it via the same
+                            // REPLACE_COVER path calibreAnywhere's clipboard-cover flow uses.
+                            // pendingCoverUseLocal covers use_local staged covers, which carry no
+                            // download URL — only one of the two source fields need be present.
+                            if (newStatus == CalibreTransferStatus.COMPLETED && resolvedUuid != null && transfer.pendingCoverPutioFileId != null &&
+                                (transfer.pendingCoverDownloadUrl != null || transfer.pendingCoverUseLocal)) {
                                 sendReplaceCoverRequest(
                                     putioFileId = transfer.pendingCoverPutioFileId,
                                     fileName = transfer.pendingCoverFileName ?: "cover.jpg",
@@ -1624,6 +1630,8 @@ class CalibreRepository @Inject constructor(
                                     googleAccount = googleAccount,
                                     downloadUrl = transfer.pendingCoverDownloadUrl,
                                     calibreBookUuid = resolvedUuid,
+                                    useLocal = transfer.pendingCoverUseLocal,
+                                    localPath = transfer.pendingCoverLocalPath,
                                     isPriority = transfer.priority,
                                 )
                             }
@@ -2666,6 +2674,35 @@ class CalibreRepository @Inject constructor(
             pendingCoverPutioFileId = uploaded.id,
             pendingCoverDownloadUrl = downloadUrl,
             pendingCoverFileName = fileName,
+            pendingCoverUseLocal = false,
+            pendingCoverLocalPath = null,
+            lastUpdatedAt = System.currentTimeMillis(),
+        ))
+        return true
+    }
+
+    /** Stages a file already sitting in Putz's file list (a synced Calibre stub, or a plain
+     *  put.io upload — never re-uploaded, unlike [attachClipboardCoverToAssembly]) as this
+     *  not-yet-dispatched (ASSEMBLED/CHAINED) request's future cover. Consumed the same way:
+     *  once this assembly completes and its real calibre_book_uuid is known, pollResponses'
+     *  COMPLETED handling fires REPLACE_COVER automatically, so the cover always lands *after*
+     *  any cover the daemon generates during the add itself (random for protected books,
+     *  extracted otherwise). */
+    suspend fun attachExistingFileCoverToAssembly(
+        transferId: Long,
+        putioFileId: Long,
+        fileName: String,
+        downloadUrl: String?,
+        useLocal: Boolean,
+        localPath: String?,
+    ): Boolean {
+        val transfer = calibreTransferDao.getTransferById(transferId) ?: return false
+        calibreTransferDao.updateTransfer(transfer.copy(
+            pendingCoverPutioFileId = putioFileId,
+            pendingCoverDownloadUrl = downloadUrl,
+            pendingCoverFileName = fileName,
+            pendingCoverUseLocal = useLocal,
+            pendingCoverLocalPath = localPath,
             lastUpdatedAt = System.currentTimeMillis(),
         ))
         return true

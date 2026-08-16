@@ -292,6 +292,9 @@ fun FilesScreen(
     // Single-file Calibre send — ViewModel-backed; see FilesViewModel.calibreSingleDraft for why.
     val calibreSingleDraft by viewModel.calibreSingleDraft.collectAsState()
     var selectedFileForCover by remember { mutableStateOf<PutioFile?>(null) }
+    // "Set as cover for pending request" flow — targets a not-yet-dispatched assembly
+    // (unlike selectedFileForCover, which replaces the cover of an already-completed book).
+    var assemblyCoverSourceFile by remember { mutableStateOf<PutioFile?>(null) }
     // Audiobook pack flow
     var audiobookPackTriggerFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedPackFiles by remember { mutableStateOf<List<PutioFile>?>(null) }
@@ -411,6 +414,45 @@ fun FilesScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { pendingDestination = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // "Set as cover for pending request" destination picker — targets an existing pending
+    // assembly directly (a cover can't go to "a new request", unlike appending a format).
+    if (assemblyCoverSourceFile != null) {
+        val coverFile = assemblyCoverSourceFile!!
+        AlertDialog(
+            onDismissRequest = { assemblyCoverSourceFile = null },
+            title = { Text("Set as cover for...") },
+            text = {
+                Column {
+                    if (pendingAssemblies.isEmpty()) {
+                        Text(
+                            "No pending requests to attach a cover to.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        pendingAssemblies.forEach { assembly ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(assembly.title, style = MaterialTheme.typography.bodyLarge)
+                                        Text(assembly.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setAssemblyCoverFromExistingFile(assembly.putioFileId, coverFile)
+                                    assemblyCoverSourceFile = null
+                                },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { assemblyCoverSourceFile = null }) { Text("Cancel") }
             },
         )
     }
@@ -1926,6 +1968,7 @@ fun FilesScreen(
                                         },
                                         onPreview = { viewModel.previewFile(it) },
                                         onReplaceCover = { selectedFileForCover = it },
+                                        onSetAsAssemblyCover = { assemblyCoverSourceFile = it },
                                         onSendAsImagePack = { imagePackTriggerFile = it },
                                         onSendToCalibre = { pendingDestination = PendingDestination.Single(it) },
                                         onSendAsAudiobookPack = { audiobookPackTriggerFile = it },

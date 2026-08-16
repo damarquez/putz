@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileOpen
@@ -262,6 +263,11 @@ fun CalibreBatchConfirmationSheet(
                                 items.subList(index, items.size).forEach { onItemChange(it.copy(included = false)) }
                             },
                             onReverseSelection = { items.forEach { onItemChange(it.copy(included = !it.included)) } },
+                            // Applies this row's tag text to every row's tag field (including
+                            // blanking them all when this row's tags is empty) — the point is to
+                            // tag the whole batch identically in one action instead of retyping
+                            // per row.
+                            onApplyTagsToAll = { tags -> items.forEach { onItemChange(it.copy(tags = tags)) } },
                         )
                         HorizontalDivider()
                     }
@@ -353,6 +359,7 @@ private fun CalibreBatchRow(
     onUnselectAll: () -> Unit,
     onUnselectFromHere: () -> Unit,
     onReverseSelection: () -> Unit,
+    onApplyTagsToAll: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -724,6 +731,18 @@ private fun CalibreBatchRow(
                     placeholder = "Programming, Python, Reference",
                     dense = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    trailingIcon = {
+                        CompactIconButton(
+                            onClick = { onApplyTagsToAll(item.tags) },
+                            contentDescription = if (item.tags.isBlank()) {
+                                "Clear tags on all rows"
+                            } else {
+                                "Apply this tag to all rows"
+                            },
+                            icon = Icons.Default.DoneAll,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
                 )
 
                 Spacer(Modifier.height(6.dp))

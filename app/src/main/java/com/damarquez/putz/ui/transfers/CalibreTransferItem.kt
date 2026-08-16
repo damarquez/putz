@@ -232,7 +232,7 @@ fun CalibreTransferItem(
                         Spacer(Modifier.width(4.dp))
                         Icon(
                             imageVector = Icons.Default.Image,
-                            contentDescription = "Cover staged from clipboard",
+                            contentDescription = "Cover staged, will be set once this book is added",
                             tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.size(12.dp),
                         )

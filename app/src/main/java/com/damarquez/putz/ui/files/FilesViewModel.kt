@@ -2185,6 +2185,47 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    /** "Set as cover for pending request" — stages [file] (already on put.io, no upload
+     *  involved) as [assemblyFileId]'s future cover, applied via REPLACE_COVER once that
+     *  assembly completes and its real calibre_book_uuid is known (see
+     *  CalibreRepository.attachExistingFileCoverToAssembly / pollResponses). Resolves the file
+     *  source the same way [replaceCover] does for an already-completed book. */
+    fun setAssemblyCoverFromExistingFile(assemblyFileId: Long, file: PutioFile) {
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+
+            val downloadUrl: String?
+            val useLocal: Boolean
+            val localPath: String?
+
+            if (file.isSynced) {
+                downloadUrl = null
+                useLocal = true
+                localPath = calibreRepository.readStubLocalPath(file)
+            } else {
+                downloadUrl = try {
+                    filesRepository.getDownloadUrl(token, file.syncedFileId)
+                } catch (e: Exception) {
+                    _snackbarMessage.value = "Failed to get download URL: ${e.message}"
+                    return@launch
+                }
+                useLocal = false
+                localPath = null
+            }
+
+            val ok = calibreRepository.attachExistingFileCoverToAssembly(
+                transferId = assemblyFileId,
+                putioFileId = file.syncedFileId,
+                fileName = file.displayName,
+                downloadUrl = downloadUrl,
+                useLocal = useLocal,
+                localPath = localPath,
+            )
+            _snackbarMessage.value = if (ok) "Cover attached — will be set once this book is added"
+                else "Failed to attach cover"
+        }
+    }
+
     fun loadAccountInfo() {
         viewModelScope.launch {
             val token = settingsRepository.authTokenFlow.first()
