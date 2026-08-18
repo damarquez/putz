@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileOpen
@@ -221,6 +220,93 @@ fun CalibreBatchConfirmationSheet(
 
                 Spacer(Modifier.height(8.dp))
 
+                // Starts retracted — this is a bulk-edit tool, not something reached for on
+                // every batch, so it shouldn't compete with title/author for screen space until
+                // the user deliberately opens it. One section, not one per field, so there's a
+                // single place to apply changes to every entry.
+                var applyToAllExpanded by remember { mutableStateOf(false) }
+                var replaceTitleFrom by remember { mutableStateOf("") }
+                var replaceTitleTo by remember { mutableStateOf("") }
+                var replaceAuthorFrom by remember { mutableStateOf("") }
+                var replaceAuthorTo by remember { mutableStateOf("") }
+                var applyTagsText by remember { mutableStateOf("") }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { applyToAllExpanded = !applyToAllExpanded },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = if (applyToAllExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (applyToAllExpanded) "Hide apply-to-all tools" else "Show apply-to-all tools",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Apply to all",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (applyToAllExpanded) {
+                        Spacer(Modifier.height(6.dp))
+                        ReplaceInAllRow(
+                            label = "Replace in title",
+                            from = replaceTitleFrom,
+                            onFromChange = { replaceTitleFrom = it },
+                            to = replaceTitleTo,
+                            onToChange = { replaceTitleTo = it },
+                            onApply = {
+                                // Literal substring match, not trimmed — "(free )" with an extra
+                                // internal space deliberately does NOT match "(free)". Leaving
+                                // "to" empty (the default) reproduces the old strip-only behavior.
+                                items.forEach { item ->
+                                    if (item.title.contains(replaceTitleFrom)) {
+                                        onItemChange(item.copy(title = item.title.replace(replaceTitleFrom, replaceTitleTo)))
+                                    }
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        ReplaceInAllRow(
+                            label = "Replace in author",
+                            from = replaceAuthorFrom,
+                            onFromChange = { replaceAuthorFrom = it },
+                            to = replaceAuthorTo,
+                            onToChange = { replaceAuthorTo = it },
+                            onApply = {
+                                items.forEach { item ->
+                                    if (item.author.contains(replaceAuthorFrom)) {
+                                        onItemChange(item.copy(author = item.author.replace(replaceAuthorFrom, replaceAuthorTo)))
+                                    }
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CompactOutlinedTextField(
+                                value = applyTagsText,
+                                onValueChange = { applyTagsText = it },
+                                label = "Tags for every book",
+                                modifier = Modifier.weight(1f),
+                                placeholder = "Programming, Python, Reference",
+                                dense = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                // Blank text is a valid apply — clears every row's tags.
+                                onClick = { items.forEach { onItemChange(it.copy(tags = applyTagsText)) } },
+                            ) {
+                                Text("Apply")
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 val batchListState = rememberLazyListState(initialScrollIndex, initialScrollOffset)
                 LaunchedEffect(batchListState) {
                     snapshotFlow { batchListState.firstVisibleItemIndex to batchListState.firstVisibleItemScrollOffset }
@@ -263,11 +349,6 @@ fun CalibreBatchConfirmationSheet(
                                 items.subList(index, items.size).forEach { onItemChange(it.copy(included = false)) }
                             },
                             onReverseSelection = { items.forEach { onItemChange(it.copy(included = !it.included)) } },
-                            // Applies this row's tag text to every row's tag field (including
-                            // blanking them all when this row's tags is empty) — the point is to
-                            // tag the whole batch identically in one action instead of retyping
-                            // per row.
-                            onApplyTagsToAll = { tags -> items.forEach { onItemChange(it.copy(tags = tags)) } },
                         )
                         HorizontalDivider()
                     }
@@ -316,6 +397,53 @@ fun CalibreBatchConfirmationSheet(
     }
 }
 
+/** One row of the "Apply to all" header section: a "from"/"to" pair plus an Apply button that
+ *  literally substring-replaces [from] with [to] across every item's title/author. Leaving [to]
+ *  empty reproduces plain stripping (the field's original single-field behavior). */
+@Composable
+private fun ReplaceInAllRow(
+    label: String,
+    from: String,
+    onFromChange: (String) -> Unit,
+    to: String,
+    onToChange: (String) -> Unit,
+    onApply: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CompactOutlinedTextField(
+                value = from,
+                onValueChange = onFromChange,
+                label = "From",
+                modifier = Modifier.weight(1f),
+                placeholder = "e.g. (free)",
+                dense = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            )
+            Spacer(Modifier.width(6.dp))
+            CompactOutlinedTextField(
+                value = to,
+                onValueChange = onToChange,
+                label = "To",
+                modifier = Modifier.weight(1f),
+                placeholder = "(blank = remove)",
+                dense = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = onApply, enabled = from.isNotEmpty()) {
+                Text("Apply")
+            }
+        }
+    }
+}
+
 /** A smaller-footprint IconButton for the batch row's dense layout — trades the default 48dp
  *  touch target down to 32dp so several action icons can sit on one compact row. */
 @Composable
@@ -359,7 +487,6 @@ private fun CalibreBatchRow(
     onUnselectAll: () -> Unit,
     onUnselectFromHere: () -> Unit,
     onReverseSelection: () -> Unit,
-    onApplyTagsToAll: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -731,18 +858,6 @@ private fun CalibreBatchRow(
                     placeholder = "Programming, Python, Reference",
                     dense = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    trailingIcon = {
-                        CompactIconButton(
-                            onClick = { onApplyTagsToAll(item.tags) },
-                            contentDescription = if (item.tags.isBlank()) {
-                                "Clear tags on all rows"
-                            } else {
-                                "Apply this tag to all rows"
-                            },
-                            icon = Icons.Default.DoneAll,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
                 )
 
                 Spacer(Modifier.height(6.dp))
