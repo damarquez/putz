@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.PersonSearch
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -213,6 +214,48 @@ fun CalibreBatchConfirmationSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    // Bulk versions of the per-row title/author tools below — same transforms,
+                    // applied to every entry at once. Skips rows locked by a UUID match (isUuidMatched
+                    // in rowMatchCache), mirroring the per-row buttons' `enabled = !isUuidMatched`,
+                    // since the daemon never writes title/author back for a UUID-targeted match.
+                    CompactIconButton(
+                        onClick = {
+                            items.forEachIndexed { index, item ->
+                                val locked = rowMatchCache["$index-${item.file.id}"]?.isUuidMatched == true
+                                if (!locked) {
+                                    onItemChange(item.copy(title = item.file.displayName.substringBeforeLast('.')))
+                                }
+                            }
+                        },
+                        contentDescription = "Load filenames as titles for all entries",
+                        icon = Icons.Default.FileOpen,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                    )
+                    CompactIconButton(
+                        onClick = {
+                            items.forEachIndexed { index, item ->
+                                val locked = rowMatchCache["$index-${item.file.id}"]?.isUuidMatched == true
+                                if (!locked) {
+                                    onItemChange(item.copy(title = item.author, author = item.title))
+                                }
+                            }
+                        },
+                        contentDescription = "Swap title and author for all entries",
+                        icon = Icons.Default.SwapVert,
+                    )
+                    CompactIconButton(
+                        onClick = {
+                            items.forEachIndexed { index, item ->
+                                val locked = rowMatchCache["$index-${item.file.id}"]?.isUuidMatched == true
+                                if (!locked) {
+                                    val (title, author) = MetadataUtils.extractMetadata(item.title)
+                                    onItemChange(item.copy(title = title, author = author))
+                                }
+                            }
+                        },
+                        contentDescription = "Re-derive title/author from each entry's title for all entries",
+                        icon = Icons.Default.Refresh,
+                    )
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Cancel")
                     }

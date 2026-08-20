@@ -38,6 +38,28 @@ object MetadataUtils {
         }
     }
 
+    /** Cleans one side of a dash-split filename (either the title or author half — see
+     * extractMetadata): strips junk parens, inserts a " - " after a closing bracket tag when
+     * one isn't already there and real content follows it (e.g. "[Series NN] Title" ->
+     * "[Series NN] - Title", but "[Series NN]" alone stays "[Series NN]"), removes the brackets
+     * themselves, collapses whitespace, and trims stray leading/trailing dashes a split can leave
+     * behind. */
+    private fun cleanParsedPart(raw: String): String {
+        val junkStripped = stripJunkParens(raw)
+        val withSeparators = Regex("""]\s*""").replace(junkStripped) { match ->
+            val rest = junkStripped.substring(match.range.last + 1)
+            if (rest.isBlank() || rest.trimStart().startsWith("-")) match.value else "] - "
+        }
+        return withSeparators
+            .replace("[", "")
+            .replace("]", "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .replace(Regex("^-+\\s*"), "")
+            .replace(Regex("\\s*-+$"), "")
+            .trim()
+    }
+
     /** Strips `.sk_synced[.id]` / `.sk_sync` suffixes from a raw file name for display. */
     fun stripStubExtension(fileName: String): String =
         if (".sk_synced" in fileName) fileName.substringBefore(".sk_synced")
@@ -197,20 +219,14 @@ object MetadataUtils {
             .replace(Regex("[‐-―−]"), "-")
             .replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000]"), " ")
 
-        // Pattern: Author - Title (Title may itself contain " - " separated parts,
-        // e.g. a "[Series NN]" tag between the author and the real title)
+        // Pattern: Author - Title (either side may itself contain " - " separated parts or a
+        // "[Series NN]" tag — title and author are frequently flipped between release naming
+        // conventions, so both sides get the same junk-paren/bracket/dash cleanup rather than
+        // only the half currently guessed to be the title).
         val dashParts = nameWithoutExt.split(" - ")
         if (dashParts.size >= 2) {
             val rawTitle = dashParts.drop(1).joinToString(" - ") { it.trim() }
-            val cleanedTitle = stripJunkParens(rawTitle)
-                .replace("[", "")
-                .replace("]", "")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-                .replace(Regex("^-+\\s*"), "")
-                .replace(Regex("\\s*-+$"), "")
-                .trim()
-            return Pair(cleanedTitle, dashParts[0].trim())
+            return Pair(cleanParsedPart(rawTitle), cleanParsedPart(dashParts[0]))
         }
         
         // Pattern: Title (Author)
