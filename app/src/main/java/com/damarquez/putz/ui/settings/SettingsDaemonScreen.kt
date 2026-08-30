@@ -89,6 +89,7 @@ fun SettingsDaemonScreen(
                     label = { Text("API Key") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
+                    supportingText = { Text("Must exactly match \"api_key\" in the daemon's config on the NAS (sidekick.config.nas.json) — a mismatch here is the usual cause of \"preview failed: HTTP 401\".") },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 )
                 Row(

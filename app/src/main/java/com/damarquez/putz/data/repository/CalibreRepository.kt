@@ -811,9 +811,16 @@ class CalibreRepository @Inject constructor(
         return gDriveId != null
     }
 
-    // CONTRACT: ARCHIVE_TO_FOLDER
-    suspend fun sendArchiveToFolderRequest(file: com.damarquez.putz.data.model.PutioFile, googleAccount: String): Boolean {
-        val localPath = readStubLocalPath(file) ?: return false
+    // CONTRACT: ARCHIVE_TO_FOLDER — routed through dispatchOrStage (like every other action) so
+    // it shows up in the transfer list and its PROCESSING/COMPLETED/FAILED responses (already
+    // sent correctly by the daemon) have a local row to attach to instead of being discarded as
+    // orphaned in pollResponses.
+    suspend fun sendArchiveToFolderRequest(
+        file: com.damarquez.putz.data.model.PutioFile,
+        googleAccount: String,
+        addToChain: Boolean = false,
+    ) {
+        val localPath = readStubLocalPath(file) ?: return
         val appId = settingsRepository.getOrCreateAppId()
         val request = ArchiveToFolderRequest(
             putio_file_id = file.id,
@@ -823,8 +830,22 @@ class CalibreRepository @Inject constructor(
             app_id = appId,
         )
         val jsonStr = json.encodeToString(request)
-        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_archive_to_folder_${file.id}.json", jsonStr)
-        return gDriveId != null
+        dispatchOrStage(googleAccount, "req_archive_to_folder_${file.id}.json", jsonStr, addToChain) { status, gDriveId, errorMessage, chainPosition ->
+            CalibreTransferEntity(
+                putioFileId = file.id,
+                fileName = file.displayName,
+                title = "Archive to Folder: ${file.displayName}",
+                author = "",
+                status = status,
+                addedAt = System.currentTimeMillis(),
+                lastUpdatedAt = System.currentTimeMillis(),
+                allPutioFileIds = file.id.toString(),
+                gdriveRequestId = gDriveId,
+                errorMessage = errorMessage,
+                lastRequestPayload = jsonStr,
+                chainPosition = chainPosition,
+            )
+        }
     }
 
     suspend fun sendGlobalStatusProbe(googleAccount: String): Boolean {

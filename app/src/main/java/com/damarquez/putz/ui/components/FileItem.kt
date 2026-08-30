@@ -126,6 +126,7 @@ fun FileItem(
     onArchiveToFolder: (PutioFile) -> Unit,
     hasPendingPlexAssemblies: Boolean = false,
     onRequestPrioritySync: (PutioFile) -> Unit,
+    isLanAvailable: Boolean = true,
     onDownload: (PutioFile) -> Unit,
     onCopyLink: (PutioFile) -> Unit,
     onCopyJson: (PutioFile) -> Unit,
@@ -497,7 +498,8 @@ fun FileItem(
                         }
                         if (isRegularRemote && !file.isLan && !file.isFolder) {
                             TightMenuItem(
-                                text = { Text("Priority sync") },
+                                text = { Text(if (isLanAvailable) "Priority sync" else "Priority sync (LAN required)") },
+                                enabled = isLanAvailable,
                                 onClick = {
                                     showMenu = false
                                     onRequestPrioritySync(file)

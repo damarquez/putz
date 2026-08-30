@@ -395,6 +395,23 @@ class FilesViewModel @Inject constructor(
     private val _allSyncedFolderIds = MutableStateFlow<Set<Long>>(emptySet())
     val allSyncedFolderIds: StateFlow<Set<Long>> = _allSyncedFolderIds.asStateFlow()
 
+    // CONTRACT: PRIORITY_PUTIO_SYNC — a request submitted while LAN is unreachable falls through
+    // to the Drive poll path, where the daemon's _dispatch_or_queue has no pre-parsed content at
+    // claim time to recognize it as PRIORITY_PUTIO_SYNC (see putz_manager.py's CONTRACT comment
+    // on that function) — it silently degrades to an ordinary low-priority request with no
+    // feedback to the user. Rather than let that happen invisibly, this state lets the UI grey
+    // out "Priority sync" whenever LAN isn't currently reachable; requestPrioritySync() below
+    // re-checks fresh at click time regardless, since this cached value can go stale between
+    // refreshes.
+    private val _lanAvailable = MutableStateFlow(true)
+    val lanAvailable: StateFlow<Boolean> = _lanAvailable.asStateFlow()
+
+    private fun refreshLanAvailability() {
+        viewModelScope.launch {
+            _lanAvailable.value = settingsRepository.lanEnabledFlow.first() && lanDaemonTransport.isReachable()
+        }
+    }
+
     private val _previewIntent = MutableSharedFlow<Intent>()
     val previewIntent: SharedFlow<Intent> = _previewIntent.asSharedFlow()
 
@@ -524,6 +541,7 @@ class FilesViewModel @Inject constructor(
     init {
         clearPreviewsCache()
         loadFiles()
+        refreshLanAvailability()
         if (parentId == 0L) loadAccountInfo()
     }
 
@@ -696,6 +714,7 @@ class FilesViewModel @Inject constructor(
             search(_searchQuery.value)
             return
         }
+        if (isRefresh) refreshLanAvailability()
         viewModelScope.launch {
             val isLocalRoot = parentId == com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_ROOT_ID
             val isLocalFolder = localUri != null || parentId <= com.damarquez.putz.data.repository.LocalFilesRepository.LOCAL_FOLDER_PREFIX_ID - 1000
@@ -1003,9 +1022,18 @@ class FilesViewModel @Inject constructor(
         }
     }
 
-    // CONTRACT: PRIORITY_PUTIO_SYNC
+    // CONTRACT: PRIORITY_PUTIO_SYNC — requires LAN; a request that falls through to Drive never
+    // reaches the daemon's priority lane (see the CONTRACT comment on _lanAvailable above), so
+    // this re-checks reachability fresh (the cached _lanAvailable can be stale) rather than send
+    // a request that would silently do nothing.
     fun requestPrioritySync(file: PutioFile) {
         viewModelScope.launch {
+            if (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) {
+                _lanAvailable.value = false
+                _snackbarMessage.value = "Priority sync needs a LAN connection to the daemon — not reachable right now"
+                return@launch
+            }
+            _lanAvailable.value = true
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1023,6 +1051,12 @@ class FilesViewModel @Inject constructor(
     // an all-"regular remote" selection; see FilesScreen.kt's selectionIsRemoteOnly).
     fun requestPrioritySync(files: List<PutioFile>) {
         viewModelScope.launch {
+            if (!settingsRepository.lanEnabledFlow.first() || !lanDaemonTransport.isReachable()) {
+                _lanAvailable.value = false
+                _snackbarMessage.value = "Priority sync needs a LAN connection to the daemon — not reachable right now"
+                return@launch
+            }
+            _lanAvailable.value = true
             val googleAccount = settingsRepository.googleTokenFlow.first()
             if (googleAccount.isBlank()) {
                 _snackbarMessage.value = "Link your Google account in Settings first"
@@ -1042,11 +1076,8 @@ class FilesViewModel @Inject constructor(
                 _snackbarMessage.value = "Link your Google account in Settings first"
                 return@launch
             }
-            val success = calibreRepository.sendArchiveToFolderRequest(file, googleAccount)
-            _snackbarMessage.value = if (success)
-                "Deflating \"${file.displayName}\" into a folder…"
-            else
-                "Failed to send Archive to Folder request"
+            calibreRepository.sendArchiveToFolderRequest(file, googleAccount)
+            _snackbarMessage.value = "Deflating \"${file.displayName}\" into a folder…"
         }
     }
 

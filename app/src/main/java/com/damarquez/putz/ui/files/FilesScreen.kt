@@ -126,6 +126,7 @@ fun FilesScreen(
     val libraryHasUpdates by syncViewModel.libraryHasUpdates.collectAsState()
 
     val uiState by viewModel.uiState.collectAsState()
+    val lanAvailable by viewModel.lanAvailable.collectAsState()
     val allSyncedFolderIds by viewModel.allSyncedFolderIds.collectAsState()
     val accountInfo by viewModel.accountInfo.collectAsState()
     val googleAccount by viewModel.googleAccount.collectAsState()
@@ -1547,9 +1548,19 @@ fun FilesScreen(
                         }
                         if (selectionIsRemoteOnly) {
                             // CONTRACT: PRIORITY_PUTIO_SYNC — the only bulk operation available
-                            // for a selection of undownloaded remote files.
-                            IconButton(onClick = { viewModel.requestPrioritySync(selectedFiles.toList()) }) {
-                                Icon(Icons.Default.Sync, contentDescription = "Priority sync selected")
+                            // for a selection of undownloaded remote files. Greyed out (and
+                            // labeled via contentDescription) when LAN isn't reachable — a
+                            // request that falls through to Drive never reaches the daemon's
+                            // priority lane, so it's better to tell the user up front than send
+                            // something that silently does nothing.
+                            IconButton(
+                                onClick = { viewModel.requestPrioritySync(selectedFiles.toList()) },
+                                enabled = lanAvailable,
+                            ) {
+                                Icon(
+                                    Icons.Default.Sync,
+                                    contentDescription = if (lanAvailable) "Priority sync selected" else "Priority sync selected (LAN required)",
+                                )
                             }
                         } else {
                             val hasFolderSelected = selectedFiles.any { it.isFolder }
@@ -2002,6 +2013,7 @@ fun FilesScreen(
                                         onMergeArchive = { archive -> openArchive(archive, autoJoin = true) },
                                         onArchiveToFolder = { archive -> viewModel.requestArchiveToFolder(archive) },
                                         hasPendingPlexAssemblies = pendingPlexAssemblies.isNotEmpty(),                                        onRequestPrioritySync = { viewModel.requestPrioritySync(it) },
+                                        isLanAvailable = lanAvailable,
                                         onDownload = { viewModel.downloadFile(it) },
                                         onCopyLink = { viewModel.copyDownloadLink(it) },
                                         onCopyJson = { viewModel.copyStubJson(it) },
