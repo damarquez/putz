@@ -164,7 +164,6 @@ fun PagedHtmlViewer(
                         // Page navigation clears WebView's find state; let the engine re-apply
                         // the active query (and land on the right occurrence) on the new page.
                         override fun onPageFinished(view: WebView, url: String) {
-                            searchEngine.onPageLoaded()
                             canGoBackInWebView = view.canGoBack()
                             // A tapped in-book link navigates the WebView directly, bypassing
                             // currentIndex. If the visited URL matches a known page, resync so
@@ -174,6 +173,11 @@ fun PagedHtmlViewer(
                                 visitedPath.endsWith(page.encodedRelativePathIn(destDir))
                             }
                             if (matchedIndex >= 0) currentIndex = matchedIndex
+                            // Tell the search engine which page actually finished loading —
+                            // never assume from Compose's currentIndex, which changes
+                            // synchronously ahead of the WebView's own async navigation (see
+                            // PagedHtmlSearchEngine's loadedPageIndex CONTRACT comment).
+                            searchEngine.onPageLoaded(if (matchedIndex >= 0) matchedIndex else currentIndex)
                         }
                     }
                 }.also {

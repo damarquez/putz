@@ -66,6 +66,36 @@ class PagedHtmlSearchEngine(
     private var attachedWebView: WebView? = null
     private var searchJob: Job? = null
 
+    // CONTRACT: cross-page navigation race — goTo() used to compare its target page against
+    // currentPageIndex() (the Compose index, updated synchronously by navigateToPage()) to
+    // decide whether the WebView already shows that page. But the WebView only actually catches
+    // up once its async loadUrl() completes and onPageLoaded() fires — so a second next()/
+    // previous() pressed before that completes saw currentPageIndex() already pointing at the
+    // still-loading page, believed it was safe to highlight immediately, and raced with the
+    // earlier navigation's own pending highlight once it finally landed — whichever finished
+    // last won, silently landing on the wrong occurrence. Tracking the page the WebView has
+    // actually finished loading here (updated only from onPageLoaded(), which is told the real
+    // loaded index rather than trusting Compose state) makes goTo() always defer to a pending
+    // load instead of racing it.
+    private var loadedPageIndex = -1
+
+    // CONTRACT: same-page stepping — re-issuing findAllAsync(query) on every next()/previous()
+    // step (with the same, unchanged query string) does NOT reset WebView's internal "current
+    // match" cursor back to the first match — Chromium keeps whatever match was last active. So
+    // the old code's "repeat(occurrenceIndex) { findNext(true) }, counted from a fresh
+    // findAllAsync" landed on the wrong match for every step after the first on any page with
+    // more than one occurrence: it kept stepping forward from wherever it already was rather
+    // than from occurrence 0, so it silently overshot past the rest of that page's matches and
+    // only ever visibly landed on a later page — while the global counter still incremented by
+    // one, as if it had stopped on the skipped occurrence. findAllAsync only needs to run once
+    // per (page, query) — after that, a single relative findNext() correctly moves the
+    // highlight by exactly one real match. findStatePageIndex/findStateOccurrenceIndex track
+    // whether we already have a counted, positioned find session for the page currently loaded,
+    // so highlightOccurrenceOnCurrentPage() can step relatively instead of re-counting from
+    // scratch each time.
+    private var findStatePageIndex = -1
+    private var findStateOccurrenceIndex = -1
+
     private val matchStateInternal = mutableStateOf<SearchMatch?>(null)
     override val matchState: State<SearchMatch?> = matchStateInternal
 
@@ -77,13 +107,20 @@ class PagedHtmlSearchEngine(
                 pendingStepsOnceCounted?.let { steps ->
                     pendingStepsOnceCounted = null
                     repeat(steps) { webView.findNext(true) }
+                    findStateOccurrenceIndex = steps
                 }
             }
         }
     }
 
-    /** Call from the WebViewClient once a (re)loaded page has finished rendering. */
-    fun onPageLoaded() {
+    /** Call from the WebViewClient once a (re)loaded page has finished rendering, passing the
+     *  index of the page that actually finished loading (not assumed from Compose state). */
+    fun onPageLoaded(loadedIndex: Int) {
+        loadedPageIndex = loadedIndex
+        // Navigation (even a reload of the same page index) clears WebView's find state, so any
+        // find session counted before this load is no longer valid.
+        findStatePageIndex = -1
+        findStateOccurrenceIndex = -1
         val occurrence = pendingOccurrenceOnLoad
         pendingOccurrenceOnLoad = null
         when {
@@ -137,6 +174,8 @@ class PagedHtmlSearchEngine(
         activeGlobalIndex = -1
         pendingOccurrenceOnLoad = null
         pendingStepsOnceCounted = null
+        findStatePageIndex = -1
+        findStateOccurrenceIndex = -1
         matchStateInternal.value = null
         attachedWebView?.clearMatches()
     }
@@ -150,7 +189,8 @@ class PagedHtmlSearchEngine(
             remaining -= pageMatchCounts[pageIndex]
             pageIndex++
         }
-        if (currentPageIndex() == pageIndex) {
+        if (pageIndex == loadedPageIndex) {
+            pendingOccurrenceOnLoad = null
             highlightOccurrenceOnCurrentPage(remaining)
         } else {
             pendingOccurrenceOnLoad = remaining
@@ -160,7 +200,21 @@ class PagedHtmlSearchEngine(
 
     private fun highlightOccurrenceOnCurrentPage(occurrenceIndex: Int) {
         val webView = attachedWebView ?: return
+        if (findStatePageIndex == loadedPageIndex && findStateOccurrenceIndex >= 0) {
+            // Already have a counted, positioned find session for this page/query — step
+            // relatively from wherever it currently sits instead of re-counting from scratch
+            // (see the CONTRACT comment on findStatePageIndex above for why an absolute
+            // findAllAsync-then-repeat approach silently overshoots on repeated same-page steps).
+            val delta = occurrenceIndex - findStateOccurrenceIndex
+            if (delta != 0) {
+                val forward = delta > 0
+                repeat(kotlin.math.abs(delta)) { webView.findNext(forward) }
+            }
+            findStateOccurrenceIndex = occurrenceIndex
+            return
+        }
         pendingStepsOnceCounted = occurrenceIndex
+        findStatePageIndex = loadedPageIndex
         webView.findAllAsync(query)
     }
 
