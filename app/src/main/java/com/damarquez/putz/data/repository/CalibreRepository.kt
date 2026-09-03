@@ -20,8 +20,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -621,6 +623,88 @@ class CalibreRepository @Inject constructor(
         return isNowIdle
     }
 
+    // Backing queue for "send to Calibre" batches from CalibreBatchConfirmationSheet — a list of
+    // suspend closures, one per item, plus the shared total/completed counters that back
+    // prepareProgress while a batch is dispatching. Lives here (not in FilesViewModel) for the
+    // same "survives navigating away from the Files screen" reason as pendingTransferPreparations
+    // above: confirming a second batch — from the same or a fresh FilesViewModel instance — while
+    // the first is still dispatching needs to find this SAME in-flight run to append to, rather
+    // than disabling Send until it finishes or racing a second drain loop against it (see
+    // FilesViewModel.sendBatchToCalibre).
+    //
+    // All access goes through the synchronized helpers below. Plain JVM synchronization is enough
+    // since none of them ever suspend while holding the lock.
+    private val batchSendLock = Any()
+    private val batchSendQueue = ArrayDeque<suspend () -> Unit>()
+    private var batchSendTotal = 0
+    private var batchSendCompleted = 0
+    private var batchSendRunning = false
+
+    /** Adds [work] (one closure per item) to the batch-send queue and bumps the shared total by
+     *  [count]. Returns true when the caller is the one that should actually run
+     *  [drainBatchSendQueue] — i.e. no batch dispatch loop was already in flight — or false when
+     *  an already-running loop will simply pick these up on an upcoming chunk. */
+    fun enqueueBatchSend(count: Int, work: List<suspend () -> Unit>): Boolean = synchronized(batchSendLock) {
+        batchSendQueue.addAll(work)
+        batchSendTotal += count
+        updatePrepareProgress(batchSendCompleted to batchSendTotal)
+        if (!batchSendRunning) {
+            batchSendRunning = true
+            true
+        } else {
+            false
+        }
+    }
+
+    private fun pollBatchSendChunk(max: Int): List<suspend () -> Unit> = synchronized(batchSendLock) {
+        List(minOf(max, batchSendQueue.size)) { batchSendQueue.removeFirst() }
+    }
+
+    private fun markBatchSendItemDone(): Pair<Int, Int> = synchronized(batchSendLock) {
+        batchSendCompleted += 1
+        batchSendCompleted to batchSendTotal
+    }
+
+    /** Called whenever a poll comes back empty. Synchronized against [enqueueBatchSend] so an
+     *  append landing in the narrow window right around here is never stranded: either it lands
+     *  first and this sees the (now non-empty) queue and keeps the loop going, or this lands
+     *  first, flips [batchSendRunning] back off, and the append becomes the next call's starter. */
+    private fun tryFinishBatchSend(): Boolean = synchronized(batchSendLock) {
+        if (batchSendQueue.isEmpty()) {
+            batchSendRunning = false
+            batchSendTotal = 0
+            batchSendCompleted = 0
+            true
+        } else {
+            false
+        }
+    }
+
+    /** Drains [batchSendQueue] in chunks of 5 concurrent items (mirroring the old fixed-list
+     *  chunking in FilesViewModel.sendBatchToCalibre), running until the queue is truly empty —
+     *  which may be well after the caller's own items finished, if another confirm appended more
+     *  in the meantime. Call only from the caller [enqueueBatchSend] told to start the loop. */
+    suspend fun drainBatchSendQueue() {
+        try {
+            while (true) {
+                val chunk = pollBatchSendChunk(5)
+                if (chunk.isEmpty()) {
+                    if (tryFinishBatchSend()) break else continue
+                }
+                coroutineScope {
+                    chunk.map { work ->
+                        async {
+                            work()
+                            updatePrepareProgress(markBatchSendItemDone())
+                        }
+                    }.awaitAll()
+                }
+            }
+        } finally {
+            updatePrepareProgress(null)
+        }
+    }
+
     fun markAssemblyAppendPending(transferId: Long) {
         _pendingAssemblyAppends.value = _pendingAssemblyAppends.value + transferId
     }
@@ -650,7 +734,24 @@ class CalibreRepository @Inject constructor(
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
-    fun getTransfers(): Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
+    // getAllTransfers() is an unbounded `SELECT * FROM calibre_transfers ORDER BY addedAt DESC` —
+    // every column of every row, no LIMIT (see the OOM-crash comment on that query in
+    // CalibreTransferDao). getTransfers() used to return that Flow directly, so every one of its
+    // ~6 independent call sites (FilesViewModel's pendingAssemblies/pendingPlexAssemblies/
+    // completedTransfersWithUuid/transferredPutioFileIds, CalibreTransfersViewModel.transfers,
+    // ArchiveViewModel.pendingAssemblies) held its OWN separate collector — Room's
+    // InvalidationTracker re-runs the query once per active collector on every single write to
+    // the table, not once total. Measured live: a single calibreTransferDao.insertTransfer() call
+    // during a batch send was taking ~1-2s to return, and with 5 concurrent inserts per dispatch
+    // chunk serializing behind SQLite's one-writer-at-a-time constraint, that alone accounted for
+    // most of a batch's per-chunk latency — unrelated to Drive/LAN network calls entirely.
+    // Sharing one upstream collection (replay = 1, so a late subscriber still gets the current
+    // list immediately) cuts that back down to one query execution per write, regardless of how
+    // many downstream consumers exist.
+    private val transfersFlow: Flow<List<CalibreTransferEntity>> = calibreTransferDao.getAllTransfers()
+        .shareIn(appScope, SharingStarted.WhileSubscribed(5000), replay = 1)
+
+    fun getTransfers(): Flow<List<CalibreTransferEntity>> = transfersFlow
 
     /** Finds a still-in-flight transfer (not COMPLETED/FAILED) that already covers this file,
      *  whether as a single-file transfer or as one file within a batch/assembly. Used to warn

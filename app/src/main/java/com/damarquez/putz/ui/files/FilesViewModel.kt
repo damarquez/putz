@@ -1251,48 +1251,54 @@ class FilesViewModel @Inject constructor(
      *  Most items' local_path is usually already known by the time this runs —
      *  prefetchBatchLocalPaths started resolving them in the background as soon as the
      *  confirmation sheet opened, while the user was still reviewing titles/authors/tags — so this
-     *  mainly just has to catch up on whichever items hadn't finished resolving yet. */
+     *  mainly just has to catch up on whichever items hadn't finished resolving yet.
+     *
+     *  Confirming a batch while a previous one is still dispatching no longer disables Send —
+     *  this appends [items] to the SAME in-flight run (via CalibreRepository's batch queue)
+     *  instead of blocking until it finishes, so e.g. "Sending to Calibre (100/250)" simply
+     *  becomes "Sending to Calibre (100/280)" once 30 more are confirmed. Only the confirm that
+     *  finds no run already in flight actually starts the drain loop (enqueueBatchSend's return
+     *  value); every other confirm just adds its closures and lets that loop pick them up. */
     fun sendBatchToCalibre(items: List<CalibreBatchDraftItem>) {
-        trackTransferPreparation { appScope.launch {
-            _snackbarMessage.value = "Sending ${items.size} book${if (items.size == 1) "" else "s"}..."
-            calibreRepository.setTransferPreparationLabel("Sending to Calibre…")
+        _snackbarMessage.value = "Sending ${items.size} book${if (items.size == 1) "" else "s"}..."
+        calibreRepository.setTransferPreparationLabel("Sending to Calibre…")
 
-            try {
-                val baseAddedAt = System.currentTimeMillis()
-                val completed = java.util.concurrent.atomic.AtomicInteger(0)
-                items.withIndex().toList().chunked(5).forEach { chunk ->
-                    coroutineScope {
-                        chunk.map { (index, item) ->
-                            async {
-                                // Isolated per item — an uncaught exception here would otherwise
-                                // cancel every sibling in this chunk via coroutineScope+awaitAll
-                                // (same failure mode fixed in prefetchBatchLocalPaths). A single
-                                // book failing to send should not take down the rest of the batch.
-                                try {
-                                    sendToCalibreSuspend(
-                                        item.file,
-                                        item.title.trim(),
-                                        item.author.trim().ifBlank { "Unknown" },
-                                        isAltVersion = item.isAltVersion,
-                                        calibreBookUuid = item.uuid.trim().ifBlank { null },
-                                        isProtected = item.isProtected,
-                                        convertToPdf = item.convertToPdf,
-                                        tags = item.tags.trim().ifBlank { null },
-                                        preresolvedLocalPath = item.localPath,
-                                        addedAt = baseAddedAt + index,
-                                    )
-                                } catch (e: Exception) {
-                                    _snackbarMessage.value = "Failed to send '${item.title}': ${e.message}"
-                                }
-                                calibreRepository.updatePrepareProgress(completed.incrementAndGet() to items.size)
-                            }
-                        }.awaitAll()
-                    }
+        val baseAddedAt = System.currentTimeMillis()
+        val work = items.mapIndexed { index, item ->
+            suspend {
+                // Isolated per item — an uncaught exception here would otherwise cancel every
+                // sibling in the same chunk via coroutineScope+awaitAll (same failure mode fixed
+                // in prefetchBatchLocalPaths). A single book failing to send should not take down
+                // the rest of the batch.
+                try {
+                    sendToCalibreSuspend(
+                        item.file,
+                        item.title.trim(),
+                        item.author.trim().ifBlank { "Unknown" },
+                        isAltVersion = item.isAltVersion,
+                        calibreBookUuid = item.uuid.trim().ifBlank { null },
+                        isProtected = item.isProtected,
+                        convertToPdf = item.convertToPdf,
+                        tags = item.tags.trim().ifBlank { null },
+                        preresolvedLocalPath = item.localPath,
+                        addedAt = baseAddedAt + index,
+                    )
+                } catch (e: Exception) {
+                    _snackbarMessage.value = "Failed to send '${item.title}': ${e.message}"
                 }
-            } finally {
-                calibreRepository.setTransferPreparationLabel("Preparing files for Calibre…")
             }
-        } }
+        }
+
+        val shouldStart = calibreRepository.enqueueBatchSend(items.size, work)
+        if (shouldStart) {
+            trackTransferPreparation { appScope.launch {
+                try {
+                    calibreRepository.drainBatchSendQueue()
+                } finally {
+                    calibreRepository.setTransferPreparationLabel("Preparing files for Calibre…")
+                }
+            } }
+        }
     }
 
     fun sendToCalibre(file: PutioFile, title: String, author: String, archiveMode: String? = null, assembleBook: Boolean = false, isAltVersion: Boolean = false, calibreBookUuid: String? = null, isProtected: Boolean = false, convertToPdf: Boolean = false, tags: String? = null, preresolvedLocalPath: String? = null, ignoreCover: Boolean = false, addToChain: Boolean = false, comments: String? = null) {

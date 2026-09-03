@@ -150,29 +150,57 @@ class GDriveManager @Inject constructor(
         }
     }
 
+    // Resolved library-root / .calibre_integration / requests / requests-priority folder IDs,
+    // keyed by account. These folders never move once created, but uploadRequest() used to
+    // re-resolve the whole chain via files().list() on EVERY item — SmartDaemonTransport always
+    // waits on this Drive upload as the durable mirror for a submitted request (see CONTRACTS.md
+    // "Book-level LAN-redirect": the daemon's priority-promotion needs a real Drive file id even
+    // for LAN-delivered requests), so a large batch send fired 5-7 Drive API round trips per item
+    // just to rediscover folders that hadn't changed since the previous item a moment earlier.
+    // Caching this turns that into ~1 round trip after the first item warms the cache.
+    private data class RequestFolderIds(
+        val libraryFolderId: String,
+        val integrationFolderId: String,
+        val requestsFolderId: String,
+        val priorityFolderId: String? = null,
+    )
+    private val requestFolderCache = java.util.concurrent.ConcurrentHashMap<String, RequestFolderIds>()
+
+    private suspend fun resolveRequestFolders(service: Drive, accountName: String, needsPriority: Boolean): RequestFolderIds? {
+        val cached = requestFolderCache[accountName]
+        if (cached != null && (!needsPriority || cached.priorityFolderId != null)) return cached
+
+        val libFolderId = cached?.libraryFolderId ?: getLibraryFolderId(service) ?: return null
+        val integrationFolderId = cached?.integrationFolderId
+            ?: (findFolder(service, ".calibre_integration", libFolderId) ?: createFolder(service, ".calibre_integration", libFolderId))
+        val requestsFolderId = cached?.requestsFolderId
+            ?: (findFolder(service, "requests", integrationFolderId) ?: createFolder(service, "requests", integrationFolderId))
+        val priorityFolderId = when {
+            cached?.priorityFolderId != null -> cached.priorityFolderId
+            needsPriority -> findFolder(service, "priority", requestsFolderId) ?: createFolder(service, "priority", requestsFolderId)
+            else -> null
+        }
+
+        val resolved = RequestFolderIds(libFolderId, integrationFolderId, requestsFolderId, priorityFolderId)
+        requestFolderCache[accountName] = resolved
+        return resolved
+    }
+
     // CONTRACT: IPC transport
     // CONTRACT: priority requests lane — isPriority routes into requests/priority/ instead of
     // requests/ itself; see CONTRACTS.md §17. The daemon drains that subfolder completely before
     // ever looking at requests/, so anything placed there is dispatched ahead of everything else.
-    suspend fun uploadRequest(accountName: String, fileName: String, content: String, isPriority: Boolean = false): String? = withContext(Dispatchers.IO) {
+    suspend fun uploadRequest(accountName: String, fileName: String, content: String, isPriority: Boolean = false, retryOnStaleFolders: Boolean = true): String? = withContext(Dispatchers.IO) {
         try {
             Log.d("GDriveManager", "Uploading request $fileName for $accountName (priority=$isPriority)")
             val service = getDriveService(accountName)
 
-            val libFolderId = getLibraryFolderId(service) ?: run {
+            val folders = resolveRequestFolders(service, accountName, isPriority) ?: run {
                 Log.e("GDriveManager", "Could not find Calibre library root (metadata.db missing)")
                 return@withContext null
             }
-
-            val rootFolderId = findFolder(service, ".calibre_integration", libFolderId)
-                ?: createFolder(service, ".calibre_integration", libFolderId)
-
-            val requestsFolderId = findFolder(service, "requests", rootFolderId) ?: createFolder(service, "requests", rootFolderId)
-            val destinationFolderId = if (isPriority) {
-                findFolder(service, "priority", requestsFolderId) ?: createFolder(service, "priority", requestsFolderId)
-            } else {
-                requestsFolderId
-            }
+            val requestsFolderId = folders.requestsFolderId
+            val destinationFolderId = if (isPriority) requireNotNull(folders.priorityFolderId) else requestsFolderId
 
             // Drive allows multiple files with the same name in one folder — files().create()
             // never replaces an existing one. Without this, every retry for the same book piles
@@ -211,6 +239,16 @@ class GDriveManager @Inject constructor(
             Log.d("GDriveManager", "Upload successful, ID: ${uploaded.id}")
             uploaded.id
         } catch (e: Exception) {
+            // A cached folder ID can go stale if the destination folder was moved/trashed outside
+            // Putz (Drive itself doesn't reject writes into a trashed folder consistently across
+            // API versions, so this shows up as an opaque failure rather than a clean 404). Drop
+            // the cache and retry exactly once with freshly-resolved folder IDs before giving up —
+            // cheap since this only runs on the already-slow error path, never on success.
+            if (retryOnStaleFolders) {
+                Log.w("GDriveManager", "Upload failed, invalidating cached folder IDs for '$accountName' and retrying once", e)
+                requestFolderCache.remove(accountName)
+                return@withContext uploadRequest(accountName, fileName, content, isPriority, retryOnStaleFolders = false)
+            }
             Log.e("GDriveManager", "Upload failed", e)
             null
         }

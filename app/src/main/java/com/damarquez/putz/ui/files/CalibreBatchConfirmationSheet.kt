@@ -152,12 +152,12 @@ fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
 @Composable
 fun CalibreBatchConfirmationSheet(
     items: List<CalibreBatchDraftItem>,
-    // Whether some other in-flight "prepare for Calibre" operation is still running — a previous
+    // Whether some other in-flight "prepare for Calibre" operation is running — a previous
     // batch's dispatch loop, a single-file send, an archive assembly — anything sharing
-    // FilesViewModel.isPreparingTransfer's app-wide counter. Send stays disabled and shows that
-    // operation's progress until it clears, since sendBatchToCalibre for this new batch would
-    // otherwise run concurrently alongside it, and the user has no way to see how much of the
-    // earlier one is left.
+    // FilesViewModel.isPreparingTransfer's app-wide counter. Send stays enabled either way:
+    // confirming while a batch is already dispatching appends this batch to that same run
+    // (FilesViewModel.sendBatchToCalibre / CalibreRepository.enqueueBatchSend) rather than
+    // waiting for it to finish, so this is only used to change the button's label.
     isPreviousBatchSending: Boolean = false,
     previousBatchProgress: Pair<Int, Int>? = null,
     onDismiss: () -> Unit,
@@ -179,7 +179,7 @@ fun CalibreBatchConfirmationSheet(
     // see startCalibreBatchDraft). Deselecting a row here only affects this draft; "Mirror
     // selection" pushes those deselections back so the underlying file list stays in sync too.
     val deselectedFiles = items.filterNot { it.included }.map { it.file }
-    val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() } && !isPreviousBatchSending
+    val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() }
     // Resolved once for the whole list (not per row) so synced stubs' real sizes are fetched a
     // single time and shared, rather than re-fetched by every row's own effect.
     val sizeProgress = rememberSizeProgress(items.map { it.file }, readStubFileSize)
@@ -409,8 +409,8 @@ fun CalibreBatchConfirmationSheet(
                         ) {
                             Text(
                                 if (isPreviousBatchSending) {
-                                    val (done, total) = previousBatchProgress ?: (0 to 0)
-                                    if (total > 0) "Still sending previous batch ($done/$total)…" else "Still sending previous batch…"
+                                    val (done, _) = previousBatchProgress ?: (0 to 0)
+                                    "Add ${includedItems.size} to batch already sending ($done sent so far)"
                                 } else {
                                     "Send (${includedItems.size})"
                                 }
