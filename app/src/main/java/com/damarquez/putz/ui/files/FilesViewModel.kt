@@ -2425,9 +2425,10 @@ class FilesViewModel @Inject constructor(
             val trashedIds = fetchTrashedIds(token)
 
             // put.io's /files/search endpoint neither reliably scopes to a parent_id subtree
-            // nor understands AND/OR/NOT/quote syntax, so both "search in folder" and any
-            // boolean query are evaluated locally via a client-side recursive walk (same BFS
-            // shape as scanMergeFolder) instead of being sent to the remote endpoint.
+            // nor understands AND/OR/NOT/quote/wildcard syntax, so "search in folder", any
+            // boolean query, and any glob (*/?) are evaluated locally via a client-side
+            // recursive walk (same BFS shape as scanMergeFolder) instead of being sent to the
+            // remote endpoint. See SearchQuery.isBooleanQuery's own doc.
             val needsClientSideWalk = (_searchScope.value == SearchScope.FOLDER && parentId != 0L) ||
                 SearchQuery.isBooleanQuery(query)
 

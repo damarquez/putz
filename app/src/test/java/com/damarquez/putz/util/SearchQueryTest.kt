@@ -75,4 +75,44 @@ class SearchQueryTest {
         assertTrue(m("something foo AND else"))
         assertFalse(m("foo only"))
     }
+
+    @Test
+    fun wildcardStarMatchesWholeName() {
+        val m = SearchQuery.compile("2025*.epub")
+        assertTrue(m("2025 Annual Report.epub"))
+        assertTrue(m("2025.epub"))
+        assertFalse(m("My 2025 Book.epub")) // doesn't START with 2025
+        assertFalse(m("2025 Annual Report.pdf")) // doesn't end with .epub
+        assertTrue(SearchQuery.isBooleanQuery("2025*.epub"))
+    }
+
+    @Test
+    fun wildcardLiteralDotIsNotAnyCharacter() {
+        val m = SearchQuery.compile("test.*")
+        assertTrue(m("test.epub"))
+        assertTrue(m("test."))
+        assertFalse(m("testXepub")) // the dot in the pattern must match a literal dot
+    }
+
+    @Test
+    fun wildcardQuestionMarkMatchesExactlyOneCharacter() {
+        val m = SearchQuery.compile("book?.epub")
+        assertTrue(m("book1.epub"))
+        assertFalse(m("book.epub"))     // needs exactly one character there
+        assertFalse(m("book12.epub"))   // too many characters
+    }
+
+    @Test
+    fun wildcardCombinesWithBooleanOperators() {
+        val m = SearchQuery.compile("2025*.epub OR 2026*.epub")
+        assertTrue(m("2025 Report.epub"))
+        assertTrue(m("2026 Report.epub"))
+        assertFalse(m("2027 Report.epub"))
+    }
+
+    @Test
+    fun wildcardOverridesQuotingAndIsCaseInsensitive() {
+        val m = SearchQuery.compile("\"2025*.EPUB\"")
+        assertTrue(m("2025 report.epub"))
+    }
 }

@@ -10,6 +10,14 @@ package com.damarquez.putz.util
  * "double quotes" to require a whole-word match instead (`"man"` needs a word boundary on both
  * sides, so it won't match inside `superman`).
  *
+ * A term containing `*` (any run of characters, including none) or `?` (exactly one character)
+ * is matched as a shell-style glob against the WHOLE name instead — `2025*.epub` matches a name
+ * that starts with "2025" and ends with ".epub" with anything in between, not merely one that
+ * contains "2025" and ".epub" as substrings somewhere. Every other character in a wildcard term
+ * (including `.`) is matched literally, same as a real filename glob — `test.*` requires a
+ * literal dot, it doesn't mean "any character here". This overrides quoting for that term: `*`/
+ * `?` presence alone decides wildcard vs. substring/whole-word, regardless of quotes.
+ *
  * Malformed input (unbalanced parens, a trailing operator, etc.) falls back to a plain
  * case-insensitive substring match on the raw query text, so a query still being typed never
  * throws or silently shows nothing.
@@ -30,11 +38,14 @@ object SearchQuery {
         return node?.let { n -> { name: String -> n.evaluate(name) } } ?: fallback(trimmed)
     }
 
-    /** True if [query] uses any boolean syntax (quotes, parens, or AND/OR/NOT keywords) — such
-     * queries can't be handed off to a remote text-search endpoint and need local evaluation. */
+    /** True if [query] uses any boolean syntax (quotes, parens, AND/OR/NOT keywords) or a glob
+     * wildcard (`*`/`?`) — such queries can't be handed off to a remote text-search endpoint
+     * (which has no notion of this app's boolean grammar or glob matching) and need local
+     * evaluation instead. */
     fun isBooleanQuery(query: String): Boolean {
         val trimmed = normalizeQuotes(query.trim())
         if (trimmed.contains('"') || trimmed.contains('(') || trimmed.contains(')')) return true
+        if (trimmed.contains('*') || trimmed.contains('?')) return true
         return tokenize(trimmed).any {
             it.equals("AND", ignoreCase = true) || it.equals("OR", ignoreCase = true) || it.equals("NOT", ignoreCase = true)
         }
@@ -81,6 +92,30 @@ object SearchQuery {
                 fromIndex = idx + 1
             }
         }
+    }
+
+    // Full-name glob match (case-insensitive) — see the class doc's wildcard section. `*` -> any
+    // run of characters (including empty), `?` -> exactly one character, everything else matched
+    // literally (Regex.escape'd per character, so a literal `.`, `[`, `(`, etc. in a filename
+    // never gets misread as regex syntax). Regex.matches() already anchors to the whole input,
+    // so no explicit ^/$ is needed.
+    private class WildcardTermNode(pattern: String) : Node() {
+        private val regex = globToRegex(pattern)
+        override fun evaluate(name: String): Boolean = regex.matches(name)
+    }
+
+    private fun hasWildcard(term: String): Boolean = term.any { it == '*' || it == '?' }
+
+    private fun globToRegex(pattern: String): Regex {
+        val sb = StringBuilder()
+        for (c in pattern) {
+            when (c) {
+                '*' -> sb.append(".*")
+                '?' -> sb.append(".")
+                else -> sb.append(Regex.escape(c.toString()))
+            }
+        }
+        return Regex(sb.toString(), RegexOption.IGNORE_CASE)
     }
 
     private class AndNode(val left: Node, val right: Node) : Node() {
@@ -196,6 +231,9 @@ object SearchQuery {
         val quoted = token.length >= 2 && token.startsWith("\"") && token.endsWith("\"")
         val value = if (quoted) token.substring(1, token.length - 1) else token
         if (value.isEmpty()) return null to start
+        // Wildcard presence wins over quoting — see the class doc's wildcard section for why a
+        // glob term always matches the whole name regardless of whether it was quoted.
+        if (hasWildcard(value)) return WildcardTermNode(value) to start + 1
         return TermNode(value, wholeWord = quoted) to start + 1
     }
 
