@@ -17,9 +17,12 @@ import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -101,6 +104,99 @@ class CalibreTransfersViewModel @Inject constructor(
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
+    // Mirrors FilesViewModel.openParentFolderEvent/openParentFolder — same (folderId, folderName,
+    // highlightId) shape so CalibreTransfersScreen can hand it to the same
+    // onNavigateToFolderHighlighted callback the Files screen already uses.
+    private val _openParentFolderEvent = MutableSharedFlow<Triple<Long, String, Long>>()
+    val openParentFolderEvent: SharedFlow<Triple<Long, String, Long>> = _openParentFolderEvent.asSharedFlow()
+
+    private val lenientJson = Json { ignoreUnknownKeys = true }
+
+    // CONTRACT: stub convention — see CalibreTransferEntity.parentFolderId. For a use_local
+    // source, transfer.putioFileId is PutioFile.syncedFileId (the file's original id, preserved
+    // across re-syncs), NOT a live put.io file id — a getFile lookup on it 404s essentially
+    // always, not just after the daemon's auto-stub-cleanup deletes the synced stub post-COMPLETED
+    // (confirmed live in daemon logs: cleanup fires within ~1s of every successful add here).
+    // parentFolderId was captured from the real PutioFile at creation time instead, so this only
+    // falls back to the tiers below for legacy rows added before that field existed.
+    fun openParentFolder(transfer: CalibreTransferEntity) {
+        if (!transfer.hasPutioFile) return
+        viewModelScope.launch {
+            val token = settingsRepository.authTokenFlow.first()
+            val storedParentId = transfer.parentFolderId
+            if (storedParentId != null) {
+                emitParentFolder(token, storedParentId, transfer.putioFileId)
+                return@launch
+            }
+
+            // CONTRACT: stub convention — local_path (stored verbatim in batchData at creation
+            // time) is resolved by the daemon relative to putio_repo_root, i.e. it mirrors
+            // put.io's own folder tree 1:1 from the account root down (files don't move once
+            // synced — user-confirmed 2026-09-06). So for a legacy row with no parentFolderId,
+            // its folder segments can be walked down from put.io's root — one listFiles per
+            // level, matching each segment against the REAL folder name (not any Putz-side
+            // "change display name" cosmetic override) — as a best-effort reconstruction that
+            // needs no live lookup of the (often-unresolvable) stored putioFileId at all.
+            val segments = localPathFolderSegments(transfer)
+            if (segments != null) {
+                val resolvedId = resolveFolderByPath(token, segments)
+                if (resolvedId != null) {
+                    emitParentFolder(token, resolvedId, transfer.putioFileId)
+                    return@launch
+                }
+                // Path walk failed (a folder along it was renamed/moved/deleted) — fall through
+                // to the live lookup below as a last resort.
+            }
+
+            when (val fileResult = filesRepository.getFile(token, transfer.putioFileId)) {
+                is NetworkResult.Success -> emitParentFolder(token, fileResult.data.parentId, transfer.putioFileId)
+                else -> _snackbarMessage.value = "File no longer exists on put.io"
+            }
+        }
+    }
+
+    private suspend fun emitParentFolder(token: String, parentFolderId: Long, highlightId: Long) {
+        if (parentFolderId <= 0L) {
+            _openParentFolderEvent.emit(Triple(0L, "Your Files", highlightId))
+            return
+        }
+        when (val folderResult = filesRepository.getFile(token, parentFolderId)) {
+            is NetworkResult.Success ->
+                _openParentFolderEvent.emit(Triple(parentFolderId, folderResult.data.displayName, highlightId))
+            else ->
+                _openParentFolderEvent.emit(Triple(parentFolderId, "Folder", highlightId))
+        }
+    }
+
+    // Returns the anchor item's local_path, minus its filename, split into folder-name segments
+    // — or null if unavailable/unparseable (batchData missing, no local_path on the item, etc.).
+    private fun localPathFolderSegments(transfer: CalibreTransferEntity): List<String>? {
+        val items = transfer.batchData?.let {
+            runCatching { lenientJson.decodeFromString<List<CalibreBatchItem>>(it) }.getOrNull()
+        } ?: return null
+        val localPath = (items.firstOrNull { it.putio_file_id == transfer.putioFileId } ?: items.firstOrNull())
+            ?.local_path ?: return null
+        val folderPath = localPath.substringBeforeLast('/', missingDelimiterValue = "")
+        if (folderPath.isEmpty()) return emptyList() // file lives at the mirror root
+        return folderPath.split('/').filter { it.isNotBlank() }
+    }
+
+    // Walks down from put.io's root, matching each segment against a real (non-decorated)
+    // folder name at that level. Returns null the moment a segment can't be found, or on any
+    // listFiles failure along the way.
+    private suspend fun resolveFolderByPath(token: String, segments: List<String>): Long? {
+        var currentId = 0L
+        for (segment in segments) {
+            val children = when (val result = filesRepository.listFiles(token, currentId)) {
+                is NetworkResult.Success -> result.data.first
+                else -> return null
+            }
+            val match = children.firstOrNull { it.isFolder && it.name.equals(segment, ignoreCase = true) } ?: return null
+            currentId = match.id
+        }
+        return currentId
+    }
 
     init {
         startPolling()

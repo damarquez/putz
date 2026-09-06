@@ -110,6 +110,7 @@ import com.damarquez.putz.ui.components.SyncProgressBanner
 fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     onNavigateUp: () -> Unit,
     onOpenChain: () -> Unit,
+    onNavigateToFolderHighlighted: (folderId: Long, folderName: String, highlightId: Long) -> Unit,
     viewModel: CalibreTransfersViewModel,
     pendingCoverRepository: PendingCoverRepository,
     pendingCommentsRepository: PendingCommentsRepository,
@@ -138,6 +139,11 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     LaunchedEffect(isSearchActive) {
         if (isSearchActive) runCatching { searchFocusRequester.requestFocus() }
         else viewModel.setSearchQuery("")
+    }
+    LaunchedEffect(Unit) {
+        viewModel.openParentFolderEvent.collect { (folderId, folderName, highlightId) ->
+            onNavigateToFolderHighlighted(folderId, folderName, highlightId)
+        }
     }
     val completedTransferRefs = remember(transfers) {
         transfers
@@ -952,6 +958,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 },
                                 onRemoveFromChain = { viewModel.removeFromChain(transfer.putioFileId) },
                                 onOpenChain = onOpenChain,
+                                onOpenParentFolder = { viewModel.openParentFolder(transfer) },
                                 onSetCoverFromClipboard = {
                                     val clip = context.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
                                     val imgUri = clip?.getItemAt(0)?.uri
@@ -1040,6 +1047,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 },
                                 onTap = { transferToBrowse = transfer },
                                 onOpenChain = onOpenChain,
+                                onOpenParentFolder = { viewModel.openParentFolder(transfer) },
                             )
                         }
                         item {

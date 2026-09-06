@@ -13,7 +13,7 @@ import androidx.room.RoomDatabase
         PendingResponseDeletionEntity::class,
         FolderDisplayNameEntity::class,
     ],
-    version = 33,
+    version = 34,
     exportSchema = false,
 )
 abstract class PutzDatabase : RoomDatabase() {

@@ -517,7 +517,11 @@ internal fun TransferBrowserSheet(
                     InfoRow("Error", transfer.errorMessage, valueColor = MaterialTheme.colorScheme.error)
                 }
                 if (!transfer.warnings.isNullOrBlank()) {
-                    InfoRow("Warnings", transfer.warnings)
+                    val displayWarnings = transfer.warnings.split("\n")
+                        .joinToString("\n") { displayWarning(it, transfer.title, transfer.author) }
+                    // Not InfoRow: warnings can run long, and InfoRow's value Text is
+                    // single-line-ellipsized — this needs to wrap fully instead of truncating.
+                    WrappingInfoRow("Warnings", displayWarnings)
                 }
 
                 Spacer(Modifier.height(2.dp))
@@ -1115,6 +1119,32 @@ private fun InfoRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** Like InfoRow, but stacks label above value and lets the value wrap across as many lines as
+ *  it needs — for values (e.g. warnings) too long to fit InfoRow's single-line layout. */
+@Composable
+private fun WrappingInfoRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium,
+            color = valueColor,
+        )
     }
 }
 

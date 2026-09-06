@@ -988,6 +988,10 @@ class CalibreRepository @Inject constructor(
         addedAt: Long? = null,
         priority: Boolean = false,
         addToChain: Boolean = false,
+        // CONTRACT: stub convention — see CalibreTransferEntity.parentFolderId. Caller passes the
+        // source PutioFile's live parentId (still in hand at creation time), since putioFileId
+        // itself (PutioFile.syncedFileId for use_local sources) can't be used to look this up later.
+        parentFolderId: Long? = null,
     ) {
         val initialItem = CalibreBatchItem(
             type = when {
@@ -1049,6 +1053,7 @@ class CalibreRepository @Inject constructor(
             chainPosition = chainPosition,
             lastRequestPayload = if (addToChain) jsonStr else null,
             ignoreCover = ignoreCover,
+            parentFolderId = parentFolderId,
         )
         calibreTransferDao.insertTransfer(transfer)
 
@@ -1252,6 +1257,10 @@ class CalibreRepository @Inject constructor(
             chainPosition = chainPosition,
             lastRequestPayload = if (addToChain) jsonStr else null,
             ignoreCover = ignoreCover,
+            // CONTRACT: stub convention — see CalibreTransferEntity.parentFolderId. The primary
+            // file's parentId (still live at creation time, unlike primaryFileId which may be
+            // PutioFile.syncedFileId for a use_local source).
+            parentFolderId = allPairs.first().first.parentId,
         )
         calibreTransferDao.insertTransfer(transfer)
 

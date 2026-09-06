@@ -1360,6 +1360,7 @@ class FilesViewModel @Inject constructor(
                         tags = tags,
                         comments = comments,
                         addedAt = addedAt,
+                        parentFolderId = file.parentId,
                     )
                     _snackbarMessage.value = "Book assembled"
                     val localPath = calibreRepository.readStubLocalPath(file)
@@ -1417,6 +1418,7 @@ class FilesViewModel @Inject constructor(
                         tags = tags,
                         comments = comments,
                         addedAt = addedAt,
+                        parentFolderId = file.parentId,
                     )
                     calibreRepository.markPackUploadFailed(file.syncedFileId, reason)
                     _snackbarMessage.value = reason
@@ -1442,6 +1444,7 @@ class FilesViewModel @Inject constructor(
                     comments = comments,
                     addedAt = addedAt,
                     addToChain = addToChain,
+                    parentFolderId = file.parentId,
                 )
                 _snackbarMessage.value = if (addToChain) "Added to chain" else "Transfer requested for $title"
                 return
@@ -1599,6 +1602,7 @@ class FilesViewModel @Inject constructor(
                     comments = comments,
                     addedAt = addedAt,
                     addToChain = addToChain,
+                    parentFolderId = file.parentId,
                 )
                 _snackbarMessage.value = when {
                     addToChain -> "Added to chain"

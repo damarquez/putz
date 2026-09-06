@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PlayArrow
@@ -64,6 +65,26 @@ internal fun formatLabelFor(item: CalibreBatchItem): String = when (item.type) {
         ?.uppercase() ?: item.type
 }
 
+// Matches putz_manager.py's send_response warning text: f'Matched existing book: "{matched_title}"
+// by {matched_author}' — see CONTRACT comment on match_info in putz_manager.py's ADD_BOOK_BATCH
+// handler. Shared with TransferBrowserSheet.kt so the card and the detail sheet agree on labeling.
+private val matchedExistingBookWarningRegex = Regex("^Matched existing book: \"(.*)\" by (.*)$")
+
+/** Shortens the daemon's "Matched existing book: ..." warning to "Exact match" when the matched
+ *  title/author the daemon reported are identical (trimmed, case-insensitive) to what this
+ *  transfer actually requested — a fuzzy match (different title/author) keeps the full message. */
+internal fun displayWarning(warning: String, requestTitle: String, requestAuthor: String): String {
+    val match = matchedExistingBookWarningRegex.matchEntire(warning) ?: return warning
+    val (matchedTitle, matchedAuthor) = match.destructured
+    return if (matchedTitle.trim().equals(requestTitle.trim(), ignoreCase = true) &&
+        matchedAuthor.trim().equals(requestAuthor.trim(), ignoreCase = true)
+    ) {
+        "Exact match"
+    } else {
+        warning
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CalibreTransferItem(
@@ -83,6 +104,7 @@ fun CalibreTransferItem(
     onRemoveFromChain: (() -> Unit)? = null,
     onOpenChain: (() -> Unit)? = null,
     onSetCoverFromClipboard: (() -> Unit)? = null,
+    onOpenParentFolder: (() -> Unit)? = null,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     var showContextMenu by remember { mutableStateOf(false) }
@@ -305,7 +327,9 @@ fun CalibreTransferItem(
                     transfer.warnings.split("\n").forEach { warning ->
                         Row(
                             verticalAlignment = Alignment.Top,
-                            modifier = Modifier.padding(top = 4.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Warning,
@@ -315,9 +339,10 @@ fun CalibreTransferItem(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                text = warning,
+                                text = displayWarning(warning, transfer.title, transfer.author),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = androidx.compose.ui.graphics.Color(0xFFE65100),
+                                modifier = Modifier.weight(1f),
                             )
                         }
                     }
@@ -372,6 +397,21 @@ fun CalibreTransferItem(
                 onClick = {
                     showContextMenu = false
                     onCopyAuthor?.invoke(transfer.author)
+                },
+            )
+        }
+        if (transfer.hasPutioFile && onOpenParentFolder != null) {
+            // Looks up the source put.io file's parent folder live (see
+            // CalibreTransfersViewModel.openParentFolder) — fails gracefully if the file was
+            // already deleted from put.io (e.g. after "clear completed + also delete from put.io").
+            DropdownMenuItem(
+                text = { Text("Open parent folder") },
+                leadingIcon = {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null)
+                },
+                onClick = {
+                    showContextMenu = false
+                    onOpenParentFolder()
                 },
             )
         }

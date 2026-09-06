@@ -124,6 +124,19 @@ data class CalibreTransferEntity(
      *  "Send to Calibre" / "Edit assembly" dialogs' "Ignore random cover" toggle; has no effect
      *  when the item isn't protected. See CalibreBatchRequest.keep_cover. */
     val ignoreCover: Boolean = false,
+
+    /** put.io parent folder ID of the source file at the moment this transfer was created —
+     *  captured from the PutioFile already in hand then, NOT re-derived from putioFileId later.
+     *  CONTRACT: stub convention — for a use_local (synced-stub) source, putioFileId is
+     *  PutioFile.syncedFileId (the file's original id, preserved across re-syncs for tracking),
+     *  which is NOT a live put.io file id and was often never independently resolvable via the
+     *  API — so "Open parent folder" (CalibreTransfersViewModel.openParentFolder) can't derive
+     *  the parent by looking up putioFileId; it must be captured here instead. Also covers the
+     *  common case where the daemon's auto-stub-cleanup deletes the source file within ~1s of a
+     *  successful add — see CalibreTransfersViewModel.openParentFolder's CONTRACT note. Null for
+     *  rows created before this field existed, or where the source PutioFile wasn't available at
+     *  creation time (falls back to a live putioFileId lookup there, best-effort only). */
+    val parentFolderId: Long? = null,
     ) {
 
     fun parsedFileIds(): List<Long> = 

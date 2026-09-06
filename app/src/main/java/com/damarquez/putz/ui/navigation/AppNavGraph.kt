@@ -617,6 +617,11 @@ fun AppNavGraph(
                 CalibreTransfersScreen(
                     onNavigateUp = { navController.navigateUp() },
                     onOpenChain = { navController.navigate(Screen.Chain.route) },
+                    onNavigateToFolderHighlighted = { folderId, folderName, highlightId ->
+                        navController.navigate(
+                            Screen.Files.createRoute(folderId, folderName, highlightId = highlightId)
+                        )
+                    },
                     viewModel = hiltViewModel(),
                     pendingCoverRepository = pendingCoverRepository,
                     pendingCommentsRepository = pendingCommentsRepository,
