@@ -599,9 +599,10 @@ class CalibreTransfersViewModel @Inject constructor(
     }
 
     // CONTRACT: batch clear runs in TransferDeleteService (see deleteOrDetach above for why).
-    fun clearGreenTransfers(alsoDeleteFromPutio: Boolean) {
+    fun clearGreenTransfers(alsoDeleteFromPutio: Boolean, includeWarnings: Boolean = false) {
         val green = transfers.value.filter {
-            it.status == CalibreTransferStatus.COMPLETED && it.libraryVerified
+            it.status == CalibreTransferStatus.COMPLETED && it.libraryVerified &&
+                (includeWarnings || it.warnings.isNullOrBlank())
         }
         if (green.isEmpty()) return
         com.damarquez.putz.sync.TransferDeleteService.start(

@@ -166,8 +166,13 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     var alsoDeleteFromPutio by remember { mutableStateOf(false) }
     var showClearGreenDialog by remember { mutableStateOf(false) }
     var clearGreenAlsoDelete by remember { mutableStateOf(false) }
+    var clearGreenIncludeWarnings by remember { mutableStateOf(false) }
     val greenTransfers = remember(transfers) {
         transfers.filter { it.status == CalibreTransferStatus.COMPLETED && it.libraryVerified }
+    }
+    val greenTransfersToClear = remember(greenTransfers, clearGreenIncludeWarnings) {
+        if (clearGreenIncludeWarnings) greenTransfers
+        else greenTransfers.filter { it.warnings.isNullOrBlank() }
     }
     
     var clipboardImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -610,23 +615,44 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     }
 
     if (showClearGreenDialog) {
+        val skippedWarningCount = greenTransfers.size - greenTransfersToClear.size
         AlertDialog(
             onDismissRequest = { showClearGreenDialog = false },
-            title = { Text("Clear ${greenTransfers.size} verified transfer${if (greenTransfers.size == 1) "" else "s"}?") },
+            title = { Text("Clear ${greenTransfersToClear.size} verified transfer${if (greenTransfersToClear.size == 1) "" else "s"}?") },
             text = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = clearGreenAlsoDelete,
-                        onCheckedChange = { clearGreenAlsoDelete = it },
-                    )
-                    Text("Also delete files from put.io")
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = clearGreenAlsoDelete,
+                            onCheckedChange = { clearGreenAlsoDelete = it },
+                        )
+                        Text("Also delete files from put.io")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = clearGreenIncludeWarnings,
+                            onCheckedChange = { clearGreenIncludeWarnings = it },
+                        )
+                        Text("Also clear transfers with warnings")
+                    }
+                    if (skippedWarningCount > 0) {
+                        Text(
+                            text = "$skippedWarningCount transfer${if (skippedWarningCount == 1) "" else "s"} with warnings will be skipped",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(start = 40.dp, top = 2.dp),
+                        )
+                    }
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    viewModel.clearGreenTransfers(clearGreenAlsoDelete)
-                    showClearGreenDialog = false
-                }) {
+                Button(
+                    onClick = {
+                        viewModel.clearGreenTransfers(clearGreenAlsoDelete, clearGreenIncludeWarnings)
+                        showClearGreenDialog = false
+                    },
+                    enabled = greenTransfersToClear.isNotEmpty(),
+                ) {
                     Text("Clear")
                 }
             },
@@ -773,6 +799,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                         if (greenTransfers.isNotEmpty()) {
                             IconButton(onClick = {
                                 clearGreenAlsoDelete = false
+                                clearGreenIncludeWarnings = false
                                 showClearGreenDialog = true
                             }) {
                                 Icon(Icons.Default.DeleteSweep, contentDescription = "Clear verified transfers")
