@@ -23,6 +23,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.BookmarkRemove
+import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
@@ -137,6 +141,7 @@ fun FilesScreen(
     val isSearchMode by viewModel.isSearchMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchScope by viewModel.searchScope.collectAsState()
+    val folderSetIds by viewModel.folderSetIds.collectAsState()
     val currentTab by viewModel.currentTab.collectAsState()
     val nameSort by viewModel.nameSort.collectAsState()
     val dateSort by viewModel.dateSort.collectAsState()
@@ -182,6 +187,7 @@ fun FilesScreen(
     var fileToChangeDisplayName by remember { mutableStateOf<PutioFile?>(null) }
     var displayNameValue by remember { mutableStateOf("") }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var showClearFolderSetConfirm by remember { mutableStateOf(false) }
     val isInHiddenScope = viewModel.isInHiddenScope
 
     val listState = rememberLazyListState()
@@ -1445,6 +1451,26 @@ fun FilesScreen(
         )
     }
 
+    if (showClearFolderSetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearFolderSetConfirm = false },
+            title = { Text("Clear folder set?") },
+            text = { Text("This removes all ${folderSetIds.size} folder(s) from the folder set. The folders themselves are untouched on put.io.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearFolderSet()
+                        showClearFolderSetConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearFolderSetConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -1462,6 +1488,8 @@ fun FilesScreen(
                                 Text(
                                     if (!viewModel.isCloudSearchContext || searchScope == SearchScope.EVERYWHERE)
                                         "Search everywhere"
+                                    else if (searchScope == SearchScope.FOLDER_SET)
+                                        "Search in folder set"
                                     else
                                         "Search in $folderName"
                                 )
@@ -1546,6 +1574,14 @@ fun FilesScreen(
                                 contentDescription = if (isAllSelected) "Deselect all" else "Select all",
                             )
                         }
+                        if (selectedFiles.any { it.isRegularPutioFolder }) {
+                            IconButton(onClick = { viewModel.addSelectedToFolderSet(selectedFiles.toList()) }) {
+                                Icon(Icons.Default.BookmarkAdd, contentDescription = "Add selected to folder set")
+                            }
+                            IconButton(onClick = { viewModel.removeSelectedFromFolderSet(selectedFiles.toList()) }) {
+                                Icon(Icons.Default.BookmarkRemove, contentDescription = "Remove selected from folder set")
+                            }
+                        }
                         if (selectionIsRemoteOnly) {
                             // CONTRACT: PRIORITY_PUTIO_SYNC — the only bulk operation available
                             // for a selection of undownloaded remote files. Greyed out (and
@@ -1582,18 +1618,31 @@ fun FilesScreen(
                         }
                         // At root, "this folder" recursively covers the whole cloud anyway —
                         // FOLDER and EVERYWHERE scope produce identical results (see search()),
-                        // so the toggle has nothing to offer there.
-                        if (viewModel.isCloudSearchContext && !isRoot) {
+                        // so the toggle has nothing to offer there unless a non-empty folder set
+                        // also makes the third FOLDER_SET scope available.
+                        if (viewModel.isCloudSearchContext && (!isRoot || folderSetIds.isNotEmpty())) {
                             IconButton(onClick = { viewModel.toggleSearchScope() }) {
                                 Icon(
-                                    imageVector = if (searchScope == SearchScope.FOLDER) Icons.Default.Folder else Icons.Default.Public,
-                                    contentDescription = if (searchScope == SearchScope.FOLDER)
-                                        "Searching in $folderName — tap to search everywhere"
-                                    else
-                                        "Searching everywhere — tap to search in $folderName",
+                                    imageVector = when (searchScope) {
+                                        SearchScope.FOLDER -> Icons.Default.Folder
+                                        SearchScope.EVERYWHERE -> Icons.Default.Public
+                                        SearchScope.FOLDER_SET -> Icons.Default.Bookmark
+                                    },
+                                    contentDescription = when (searchScope) {
+                                        SearchScope.FOLDER -> "Searching in $folderName — tap to search everywhere"
+                                        SearchScope.EVERYWHERE -> if (folderSetIds.isNotEmpty())
+                                            "Searching everywhere — tap to search folder set"
+                                        else
+                                            "Searching everywhere — tap to search in $folderName"
+                                        SearchScope.FOLDER_SET -> "Searching folder set — tap to search in $folderName"
+                                    },
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
+                        }
+                    } else if (viewModel.parentId == PutioFile.FOLDER_SET_ROOT_ID && folderSetIds.isNotEmpty()) {
+                        IconButton(onClick = { showClearFolderSetConfirm = true }) {
+                            Icon(Icons.Default.ClearAll, contentDescription = "Clear folder set")
                         }
                     }
                 },
@@ -2025,6 +2074,10 @@ fun FilesScreen(
                                         onChangeDisplayName = { f ->
                                             displayNameValue = f.displayName
                                             fileToChangeDisplayName = f
+                                        },
+                                        isInFolderSet = file.id in folderSetIds,
+                                        onToggleFolderSet = { f ->
+                                            if (f.id in folderSetIds) viewModel.removeFromFolderSet(f) else viewModel.addToFolderSet(f)
                                         },
                                         isInHiddenFolder = isInHiddenScope && !file.isFolder,
                                         isSelected = file in selectedFiles,

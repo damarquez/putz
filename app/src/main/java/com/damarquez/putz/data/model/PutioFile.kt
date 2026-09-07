@@ -30,6 +30,12 @@ data class PutioFile(
     // Trash virtual folder
     val isTrash: Boolean = false,
 
+    // Folder Set virtual root — a curated, user-managed collection of put.io folders. See
+    // FolderSetRepository; this flag only marks the synthetic root row itself (id ==
+    // FOLDER_SET_ROOT_ID), not the member folders shown inside it (those are plain PutioFiles
+    // re-fetched live from put.io).
+    val isFolderSet: Boolean = false,
+
     // Google Drive integration (read-only)
     val isDrive: Boolean = false,
     val driveFileId: String? = null,
@@ -40,10 +46,19 @@ data class PutioFile(
     val customDisplayName: String? = null,
 ) {
     val isFolder: Boolean get() = fileType == "FOLDER"
-    val isSpecialRootFolder: Boolean get() = id == LOCAL_ROOT_ID || id == LAN_ROOT_ID || id == TRASH_ROOT_ID || id == PUTIO_LOCAL_ROOT_ID || id == DRIVE_ROOT_ID
+    val isSpecialRootFolder: Boolean get() = id == LOCAL_ROOT_ID || id == LAN_ROOT_ID || id == TRASH_ROOT_ID || id == PUTIO_LOCAL_ROOT_ID || id == DRIVE_ROOT_ID || id == FOLDER_SET_ROOT_ID
     val isPutzAttachments: Boolean get() = name == ".putz_attachments"
     val isPutzHistory: Boolean get() = name == ".putz_history"
     val isPutzHidden: Boolean get() = name == ".putz_hidden"
+
+    // A "real" put.io folder eligible for folder-related actions (Plexamp, Join folder, change
+    // display name, Folder Set) — excludes every virtual root and the reserved dotfolders.
+    val isRegularFolder: Boolean get() = isFolder && !isTrash && !isSpecialRootFolder && !isPutzAttachments && !isPutzHistory && !isPutzHidden
+
+    // isRegularFolder narrowed to folders with a genuine put.io id — Local/LAN/Drive "folders"
+    // reuse the same isFolder flag but aren't addressable via put.io's API (e.g. Folder Set
+    // membership, which is keyed by put.io file id, is meaningless for them).
+    val isRegularPutioFolder: Boolean get() = isRegularFolder && !isLocal && !isLan && !isDrive
 
     // CONTRACT: stub convention, Putz file state
     val isSynced: Boolean get() = !isLocal && !isLan && !isTrash && !isFolder && ".sk_synced" in name
@@ -122,6 +137,7 @@ data class PutioFile(
         const val LAN_ROOT_ID = -3L
         const val PUTIO_LOCAL_ROOT_ID = -4L  // virtual root for the local put.io repository (accessed via LAN)
         const val DRIVE_ROOT_ID = -5L
+        const val FOLDER_SET_ROOT_ID = -6L
     }
 }
 

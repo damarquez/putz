@@ -133,6 +133,8 @@ fun FileItem(
     onDelete: () -> Unit,
     onRename: ((PutioFile) -> Unit)? = null,
     onChangeDisplayName: ((PutioFile) -> Unit)? = null,
+    isInFolderSet: Boolean = false,
+    onToggleFolderSet: ((PutioFile) -> Unit)? = null,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     // CONTRACT: selection-type invariant — whether this file is allowed to join the selection
@@ -663,12 +665,8 @@ fun FileItem(
                                     },
                                 )
                             }
-                            val isRegularFolder = file.isFolder && !file.isTrash && !file.isSpecialRootFolder && !file.isPutzAttachments && !file.isPutzHistory && !file.isPutzHidden
-                            // Real put.io folders only — local/LAN "folders" reuse this same
-                            // isFolder flag but their ids aren't put.io ids, so a display-name
-                            // override keyed by putio_file_id would be meaningless (or colliding)
-                            // for them.
-                            val isRegularPutioFolder = isRegularFolder && !file.isLocal && !file.isLan && !file.isDrive
+                            val isRegularFolder = file.isRegularFolder
+                            val isRegularPutioFolder = file.isRegularPutioFolder
                             if (isRegularFolder) {
                                 TightMenuItem(
                                     text = { Text("Send folder to Plexamp") },
@@ -693,6 +691,15 @@ fun FileItem(
                                         onClick = {
                                             showMenu = false
                                             onChangeDisplayName(file)
+                                        },
+                                    )
+                                }
+                                if (isRegularPutioFolder && onToggleFolderSet != null) {
+                                    TightMenuItem(
+                                        text = { Text(if (isInFolderSet) "Remove from Folder Set" else "Add to Folder Set") },
+                                        onClick = {
+                                            showMenu = false
+                                            onToggleFolderSet(file)
                                         },
                                     )
                                 }

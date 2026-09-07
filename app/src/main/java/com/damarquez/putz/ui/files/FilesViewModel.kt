@@ -78,7 +78,7 @@ enum class SortOrder {
 }
 
 enum class SearchScope {
-    FOLDER, EVERYWHERE
+    FOLDER, EVERYWHERE, FOLDER_SET
 }
 
 @HiltViewModel
@@ -93,6 +93,7 @@ class FilesViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val lanDaemonTransport: LanDaemonTransport,
     private val trashRepository: com.damarquez.putz.data.repository.TrashRepository,
+    private val folderSetRepository: com.damarquez.putz.data.repository.FolderSetRepository,
     @com.damarquez.putz.di.ApplicationScope private val appScope: kotlinx.coroutines.CoroutineScope,
 ) : ViewModel() {
 
@@ -395,6 +396,78 @@ class FilesViewModel @Inject constructor(
     private val _allSyncedFolderIds = MutableStateFlow<Set<Long>>(emptySet())
     val allSyncedFolderIds: StateFlow<Set<Long>> = _allSyncedFolderIds.asStateFlow()
 
+    val folderSetIds: StateFlow<Set<Long>> = folderSetRepository.observeIds()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    fun addToFolderSet(file: PutioFile) {
+        viewModelScope.launch {
+            folderSetRepository.add(file.id)
+            _snackbarMessage.value = "Added \"${file.displayName}\" to folder set"
+        }
+    }
+
+    fun removeFromFolderSet(file: PutioFile) {
+        viewModelScope.launch {
+            folderSetRepository.remove(file.id)
+            _snackbarMessage.value = "Removed \"${file.displayName}\" from folder set"
+            if (parentId == PutioFile.FOLDER_SET_ROOT_ID) {
+                rawApiFiles = rawApiFiles.filterNot { it.id == file.id }
+                val current = _uiState.value as? FilesUiState.Success
+                if (current != null) {
+                    _uiState.value = current.copy(files = current.files.filterNot { it.id == file.id })
+                }
+            }
+        }
+    }
+
+    fun clearFolderSet() {
+        viewModelScope.launch {
+            folderSetRepository.clear()
+            _snackbarMessage.value = "Folder set cleared"
+            if (parentId == PutioFile.FOLDER_SET_ROOT_ID) {
+                rawApiFiles = emptyList()
+                val current = _uiState.value as? FilesUiState.Success
+                if (current != null) {
+                    _uiState.value = current.copy(files = emptyList())
+                }
+            }
+        }
+    }
+
+    // Bulk variants for the multi-select toolbar — non-folder and non-regular-put.io-folder
+    // items in the selection (files, Local/LAN/Drive "folders", virtual roots) are silently
+    // ignored rather than erroring, since a mixed selection is otherwise perfectly normal.
+    // Insert/delete are already idempotent (see FolderSetDao/FolderSetRepository), so already-
+    // member folders in an "add" selection, and already-absent folders in a "remove" selection,
+    // are simply no-ops rather than duplicating or erroring.
+    fun addSelectedToFolderSet(files: Collection<PutioFile>) {
+        val ids = files.filter { it.isRegularPutioFolder }.map { it.id }
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            folderSetRepository.addAll(ids)
+            _snackbarMessage.value = "Added ${ids.size} folder(s) to folder set"
+            setSelectedFiles(emptySet())
+        }
+    }
+
+    fun removeSelectedFromFolderSet(files: Collection<PutioFile>) {
+        val ids = files.filter { it.isRegularPutioFolder }.map { it.id }
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            folderSetRepository.removeAll(ids)
+            _snackbarMessage.value = "Removed ${ids.size} folder(s) from folder set"
+            setSelectedFiles(emptySet())
+            if (parentId == PutioFile.FOLDER_SET_ROOT_ID) {
+                val idSet = ids.toSet()
+                rawApiFiles = rawApiFiles.filterNot { it.id in idSet }
+                val current = _uiState.value as? FilesUiState.Success
+                if (current != null) {
+                    _uiState.value = current.copy(files = current.files.filterNot { it.id in idSet })
+                }
+            }
+        }
+    }
+
     // CONTRACT: PRIORITY_PUTIO_SYNC — a request submitted while LAN is unreachable falls through
     // to the Drive poll path, where the daemon's _dispatch_or_queue has no pre-parsed content at
     // claim time to recognize it as PRIORITY_PUTIO_SYNC (see putz_manager.py's CONTRACT comment
@@ -533,7 +606,8 @@ class FilesViewModel @Inject constructor(
         val isLanBrowsing = lanConnectionId != -1L
         val isDriveRoot = parentId == com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID
         val isDriveBrowsing = driveFolderId != null
-        !(isLocalRoot || isLocalFolder || isLanRoot || isLanBrowsing || isDriveRoot || isDriveBrowsing)
+        val isFolderSetRoot = parentId == PutioFile.FOLDER_SET_ROOT_ID
+        !(isLocalRoot || isLocalFolder || isLanRoot || isLanBrowsing || isDriveRoot || isDriveBrowsing || isFolderSetRoot)
     }
 
     private var searchJob: Job? = null
@@ -749,6 +823,32 @@ class FilesViewModel @Inject constructor(
                 return@launch
             }
 
+            if (parentId == PutioFile.FOLDER_SET_ROOT_ID) {
+                _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
+                val ids = folderSetRepository.getIdsSnapshot()
+                val token = settingsRepository.authTokenFlow.first()
+                val resolved = mutableListOf<PutioFile>()
+                var missingCount = 0
+                ids.chunked(5).forEach { chunk ->
+                    coroutineScope {
+                        chunk.map { id ->
+                            async {
+                                when (val result = filesRepository.getFile(token, id)) {
+                                    is NetworkResult.Success -> resolved.add(result.data)
+                                    else -> missingCount++
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                }
+                rawApiFiles = resolved
+                _uiState.value = FilesUiState.Success(files = sortFiles(resolved), parent = null)
+                if (missingCount > 0) {
+                    _snackbarMessage.value = "$missingCount folder(s) in your folder set could not be loaded"
+                }
+                return@launch
+            }
+
             if (isLanRoot) {
                 _uiState.value = if (isRefresh) (uiState.value as? FilesUiState.Success)?.copy(isRefreshing = true) ?: FilesUiState.Loading else FilesUiState.Loading
                 val connections = lanFilesRepository.getConnectionsSync()
@@ -919,6 +1019,12 @@ class FilesViewModel @Inject constructor(
                 fileType = "FOLDER",
                 isTrash = true,
             )
+            val folderSetRoot = PutioFile(
+                id = PutioFile.FOLDER_SET_ROOT_ID,
+                name = "Folder Set",
+                fileType = "FOLDER",
+                isFolderSet = true,
+            )
             val putioLocalConnId = putioLocalLanConnectionId.value
             val putioLocalPath = putioLocalLanPath.value
             val putioLocalRoot = if (putioLocalConnId != null) {
@@ -934,7 +1040,7 @@ class FilesViewModel @Inject constructor(
 
             when (_currentTab.value) {
                 FilesTab.CLOUD -> {
-                    listOfNotNull(putioLocalRoot, trashRoot) + apiFiles.filter { it.name != ".putz_attachments" }
+                    listOfNotNull(putioLocalRoot, trashRoot, folderSetRoot) + apiFiles.filter { it.name != ".putz_attachments" }
                 }
                 FilesTab.SPECIAL -> {
                     listOfNotNull(localRoot, lanRoot) + apiFiles.filter { it.name == ".putz_attachments" }
@@ -2347,7 +2453,12 @@ class FilesViewModel @Inject constructor(
     }
 
     fun toggleSearchScope() {
-        _searchScope.value = if (_searchScope.value == SearchScope.FOLDER) SearchScope.EVERYWHERE else SearchScope.FOLDER
+        val hasFolderSet = folderSetIds.value.isNotEmpty()
+        _searchScope.value = when (_searchScope.value) {
+            SearchScope.FOLDER -> SearchScope.EVERYWHERE
+            SearchScope.EVERYWHERE -> if (hasFolderSet) SearchScope.FOLDER_SET else SearchScope.FOLDER
+            SearchScope.FOLDER_SET -> SearchScope.FOLDER
+        }
         if (_searchQuery.value.isNotBlank()) search(_searchQuery.value)
     }
 
@@ -2374,8 +2485,9 @@ class FilesViewModel @Inject constructor(
             val isLanBrowsing = lanConnectionId != -1L
             val isDriveRoot = parentId == com.damarquez.putz.data.repository.DriveFilesRepository.DRIVE_ROOT_ID
             val isDriveBrowsing = driveFolderId != null
+            val isFolderSetRoot = parentId == PutioFile.FOLDER_SET_ROOT_ID
 
-            if (isLanRoot || isLanBrowsing || isDriveRoot || isDriveBrowsing) {
+            if (isLanRoot || isLanBrowsing || isDriveRoot || isDriveBrowsing || isFolderSetRoot) {
                 val current = _uiState.value
                 if (current is FilesUiState.Success) {
                     val immediateResults = current.files.filter { matcher(it.name) }
@@ -2434,13 +2546,17 @@ class FilesViewModel @Inject constructor(
             // recursive walk (same BFS shape as scanMergeFolder) instead of being sent to the
             // remote endpoint. See SearchQuery.isBooleanQuery's own doc.
             val needsClientSideWalk = (_searchScope.value == SearchScope.FOLDER && parentId != 0L) ||
+                _searchScope.value == SearchScope.FOLDER_SET ||
                 SearchQuery.isBooleanQuery(query)
 
             if (needsClientSideWalk) {
-                val rootId = if (_searchScope.value == SearchScope.FOLDER) parentId else 0L
                 val collected = mutableListOf<PutioFile>()
                 val queue = ArrayDeque<Long>()
-                queue.add(rootId)
+                if (_searchScope.value == SearchScope.FOLDER_SET) {
+                    queue.addAll(folderSetRepository.getIdsSnapshot())
+                } else {
+                    queue.add(if (_searchScope.value == SearchScope.FOLDER) parentId else 0L)
+                }
                 while (queue.isNotEmpty()) {
                     val currentFolderId = queue.removeFirst()
                     val children = filesRepository.listFiles(token, currentFolderId).dataOrNull()?.first ?: emptyList()
