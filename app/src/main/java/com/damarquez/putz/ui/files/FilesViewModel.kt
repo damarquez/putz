@@ -617,6 +617,21 @@ class FilesViewModel @Inject constructor(
         loadFiles()
         refreshLanAvailability()
         if (parentId == 0L) loadAccountInfo()
+
+        // The scope-toggle button (search everywhere/folder/folder set) is hidden at root
+        // whenever the folder set is empty, so a scope stuck on FOLDER_SET with no members
+        // would otherwise be a dead end — nothing left to tap to escape it. Clearing the set
+        // (or removing its last member) while it's the active scope must fall back on its own.
+        viewModelScope.launch {
+            folderSetIds.collect { ids ->
+                if (ids.isEmpty() && _searchScope.value == SearchScope.FOLDER_SET) {
+                    _searchScope.value = SearchScope.FOLDER
+                    if (_isSearchMode.value && _searchQuery.value.isNotBlank()) {
+                        search(_searchQuery.value)
+                    }
+                }
+            }
+        }
     }
 
     private fun clearPreviewsCache() {
@@ -2449,7 +2464,9 @@ class FilesViewModel @Inject constructor(
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
-        search(query)
+        // Search now only runs on explicit submit (Enter/IME search action) — see the search
+        // TextField's keyboardActions — except clearing the field, which clears results right away.
+        if (query.isBlank()) search(query)
     }
 
     fun toggleSearchScope() {
@@ -2473,8 +2490,6 @@ class FilesViewModel @Inject constructor(
         }
 
         searchJob = viewModelScope.launch {
-            delay(300) // Debounce
-
             // Supports AND/OR/NOT, parentheses, and "quoted" whole-word terms (see SearchQuery);
             // malformed input safely falls back to a plain substring match on the raw text.
             val matcher = SearchQuery.compile(query)

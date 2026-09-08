@@ -81,8 +81,12 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -147,6 +151,7 @@ fun FilesScreen(
     val dateSort by viewModel.dateSort.collectAsState()
     val sizeSort by viewModel.sizeSort.collectAsState()
     val itemCount = (uiState as? FilesUiState.Success)?.files?.size
+    val focusManager = LocalFocusManager.current
 
     // Candidate pool for the join/pack pickers (PDF/EPUB/CBR/etc.): the current folder's listing
     // normally, but the search results themselves while searching, so search acts as a "virtual
@@ -1498,6 +1503,11 @@ fun FilesScreen(
                                 .fillMaxWidth()
                                 .focusRequester(searchFocusRequester),
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                focusManager.clearFocus()
+                                viewModel.search(searchQuery)
+                            }),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,
