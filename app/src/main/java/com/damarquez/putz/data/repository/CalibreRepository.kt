@@ -2611,17 +2611,40 @@ class CalibreRepository @Inject constructor(
             .filter { it.isNotBlank() }
             .toSet()
 
-    // Match if either author string is missing/"unknown", one normalized string contains
-    // the other, or the two author-token sets overlap at all (handles Calibre's own author
-    // normalization, e.g. "Shadow and Claw" stored as "Claw, Shadow and", as well as
-    // differently formatted multi-author strings, e.g. "A, B (ed)" vs "A & B (ed)").
+    // CONTRACT: "Unknown"/missing author never counts as a match (2026-09-09, user-reported —
+    // see _is_plausible_author_match's matching CONTRACT comment in putz_manager.py for the
+    // real-world failure this fixes: "Slash" by "Unknown" already in the library wrongly
+    // matched an unrelated "Slash" by "Harley Wylde" because a missing/"Unknown" author used
+    // to be treated as an automatic match here — and on the daemon, which is what actually
+    // discarded the new book's format). Two books sharing a (near-)title where either side's
+    // author is missing/"Unknown" must be treated as different, non-matching books — this
+    // function stays a client-side "might already exist" PREDICTION only (the daemon's own
+    // find_book_any_author is the real dedup decision), but per the CONTRACT above it must
+    // agree with the daemon or the UI warning stops meaning anything.
+    //
+    // CONTRACT: tightened to subset-of-tokens, not substring-containment/any-overlap
+    // (2026-09-09, user-requested — same session as the "Unknown" fix above). This function
+    // had fallen out of sync with the daemon's own 2026-09-05 tightening of
+    // _is_plausible_author_match (see its CONTRACT comment in putz_manager.py): the old
+    // "one normalized string contains the other, or the token sets overlap at all" check
+    // would predict "Sarah Smith" as a plausible match for "John Smith" (both contain/
+    // tokenize to "smith") — a false-positive class the daemon side was already fixed
+    // against. A false positive here isn't data loss (this is prediction-only), but it's
+    // exactly the kind of divergence the CONTRACT above warns makes the UI warning
+    // meaningless — the user could be told "this might already exist" for a book that
+    // isn't actually a duplicate at all. Subset-of-tokens (either direction) still accepts
+    // every legitimate case (punctuation reformatting, word reordering, a single-author
+    // request against a fuller multi-author record) while rejecting two different people
+    // who merely share one word.
     private fun authorsMatch(author: String, dbAuthor: String): Boolean {
         val normAuthor = normalize(author)
         val normDbAuthor = normalize(dbAuthor)
-        if (normDbAuthor.isBlank() || normDbAuthor == "unknown") return true
-        if (normAuthor.isBlank() || normAuthor == "unknown") return true
-        if (normDbAuthor.contains(normAuthor) || normAuthor.contains(normDbAuthor)) return true
-        return authorTokens(normAuthor).intersect(authorTokens(normDbAuthor)).isNotEmpty()
+        if (normDbAuthor.isBlank() || normDbAuthor == "unknown") return false
+        if (normAuthor.isBlank() || normAuthor == "unknown") return false
+        val authorTokenSet = authorTokens(normAuthor)
+        val dbAuthorTokenSet = authorTokens(normDbAuthor)
+        if (authorTokenSet.isEmpty() || dbAuthorTokenSet.isEmpty()) return false
+        return dbAuthorTokenSet.containsAll(authorTokenSet) || authorTokenSet.containsAll(dbAuthorTokenSet)
     }
 
     // [format] is the uppercase extension (e.g. "EPUB") the file would be added as. A title/
