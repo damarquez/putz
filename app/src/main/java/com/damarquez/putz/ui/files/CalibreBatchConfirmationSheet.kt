@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,8 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.KeyboardDoubleArrowDown
+import androidx.compose.material.icons.filled.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapVert
@@ -50,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -70,6 +74,7 @@ import com.damarquez.putz.data.repository.CalibreBookMatch
 import com.damarquez.putz.ui.components.CompactOutlinedTextField
 import com.damarquez.putz.ui.components.transientVerticalScrollbar
 import com.damarquez.putz.util.MetadataUtils
+import kotlinx.coroutines.launch
 
 /** One row of the batch send-to-Calibre draft: a selected file plus its editable title/author. */
 data class CalibreBatchDraftItem(
@@ -351,9 +356,25 @@ fun CalibreBatchConfirmationSheet(
                 }
 
                 val batchListState = rememberLazyListState(initialScrollIndex, initialScrollOffset)
+                val coroutineScope = rememberCoroutineScope()
+                // Last LazyColumn index: itemsIndexed contributes items.size rows, plus the
+                // trailing `item { ... }` block below holding Send/Mirror/Reverse/Cancel.
+                val lastItemIndex = items.size
                 LaunchedEffect(batchListState) {
                     snapshotFlow { batchListState.firstVisibleItemIndex to batchListState.firstVisibleItemScrollOffset }
                         .collect { (index, offset) -> onScrollPositionChanged(index, offset) }
+                }
+
+                // Fixed (non-scrolling) shortcuts so either end of a long batch is always one tap
+                // away, rather than requiring a manual fling/drag through dozens of rows.
+                if (items.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        CompactIconButton(
+                            onClick = { coroutineScope.launch { batchListState.animateScrollToItem(lastItemIndex) } },
+                            contentDescription = "Jump to bottom",
+                            icon = Icons.Default.KeyboardDoubleArrowDown,
+                        )
+                    }
                 }
                 LazyColumn(
                     modifier = Modifier
@@ -433,6 +454,16 @@ fun CalibreBatchConfirmationSheet(
                         TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                             Text("Cancel")
                         }
+                    }
+                }
+
+                if (items.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        CompactIconButton(
+                            onClick = { coroutineScope.launch { batchListState.animateScrollToItem(0) } },
+                            contentDescription = "Jump to top",
+                            icon = Icons.Default.KeyboardDoubleArrowUp,
+                        )
                     }
                 }
             }
