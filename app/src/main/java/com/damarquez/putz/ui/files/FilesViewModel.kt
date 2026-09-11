@@ -1520,6 +1520,17 @@ class FilesViewModel @Inject constructor(
                         _snackbarMessage.value = reason
                         return
                     }
+                    // CONTRACT: stub convention — NotFound means put.io returned 404/410 for this
+                    // stub's file id (see StubFetchResult.NotFound), i.e. it's genuinely gone
+                    // server-side, not a timing race. Unlike the Failed/"not recorded yet" cases
+                    // below, retrying this FAILED transfer later can never succeed — the file list
+                    // was just stale at tap time (2026-09-11, user-reported: piling up as
+                    // permanently-dead entries only removable one by one). So show the snackbar
+                    // but don't persist a transfer that can never be un-stuck.
+                    if (stubLookup is CalibreRepository.StubLocalPathResult.NotFound) {
+                        _snackbarMessage.value = reason
+                        return
+                    }
                     calibreRepository.addTransfer(
                         putioFileId = file.syncedFileId,
                         fileName = syncedFileName,
