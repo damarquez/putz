@@ -102,6 +102,7 @@ private data class RowMatchCache(
     val matchedBookTitle: String? = null,
     val matchedBookAuthor: String? = null,
     val isUuidMatched: Boolean = false,
+    val queuedForSend: Boolean = false,
     val pendingTransfer: CalibreTransferEntity? = null,
     val pendingTransferChecked: Boolean = false,
     // Inputs the current matchedBook* fields were computed from — lets the LaunchedEffects
@@ -138,6 +139,7 @@ fun CalibreBatchDraftHost(viewModel: FilesViewModel) {
             onItemChange = { updated -> viewModel.updateCalibreBatchDraftItem(updated) },
             checkExists = { title, author, format -> viewModel.checkBookExists(title, author, format) },
             checkExistsByUuid = { uuid -> viewModel.checkBookExistsByUuid(uuid) },
+            checkQueuedForSend = { fileId, fileName -> viewModel.isQueuedForSend(fileId, fileName) },
             checkPendingTransfer = { fileId, fileName -> viewModel.findPendingTransfer(fileId, fileName) },
             readStubFileSize = { file -> viewModel.readStubFileSize(file) },
             onPreview = { file -> viewModel.previewFile(file) },
@@ -170,6 +172,11 @@ fun CalibreBatchConfirmationSheet(
     onItemChange: (CalibreBatchDraftItem) -> Unit,
     checkExists: suspend (String, String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
+    // CONTRACT: batch-send dedup — checked BEFORE checkPendingTransfer's persisted-DB lookup
+    // (see CalibreRepository.isQueuedForSend): an item can sit in the in-flight batch-send queue
+    // for a while before it's ever persisted as a CalibreTransferEntity, so the DB check alone
+    // misses a duplicate selected while an earlier batch is still mid-drain.
+    checkQueuedForSend: (Long, String) -> Boolean = { _, _ -> false },
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity? = { _, _ -> null },
     readStubFileSize: suspend (PutioFile) -> Long? = { null },
     onPreview: (PutioFile) -> Unit,
@@ -397,6 +404,7 @@ fun CalibreBatchConfirmationSheet(
                             previousAuthor = items.getOrNull(index - 1)?.author,
                             checkExists = checkExists,
                             checkExistsByUuid = checkExistsByUuid,
+                            checkQueuedForSend = checkQueuedForSend,
                             checkPendingTransfer = checkPendingTransfer,
                             onChange = onItemChange,
                             onPreview = onPreview,
@@ -554,6 +562,7 @@ private fun CalibreBatchRow(
     previousAuthor: String?,
     checkExists: suspend (String, String, String) -> Long?,
     checkExistsByUuid: suspend (String) -> CalibreBookMatch?,
+    checkQueuedForSend: (Long, String) -> Boolean,
     checkPendingTransfer: suspend (Long, String) -> CalibreTransferEntity?,
     onChange: (CalibreBatchDraftItem) -> Unit,
     onPreview: (PutioFile) -> Unit,
@@ -571,6 +580,7 @@ private fun CalibreBatchRow(
     val matchedBookTitle = cache?.matchedBookTitle
     val matchedBookAuthor = cache?.matchedBookAuthor
     val isUuidMatched = cache?.isUuidMatched ?: false
+    val queuedForSend = cache?.queuedForSend ?: false
     val pendingTransfer = cache?.pendingTransfer
     var showBulkMenu by remember { mutableStateOf(false) }
 
@@ -661,15 +671,24 @@ private fun CalibreBatchRow(
     LaunchedEffect(rowKey, item.file.id) {
         // Row remounted with this already checked (e.g. scrolled back into view) — skip re-query.
         if (rowMatchCache[rowKey]?.pendingTransferChecked == true) return@LaunchedEffect
-        val pending = checkPendingTransfer(item.file.syncedFileId, item.file.displayName)
+        // CONTRACT: batch-send dedup — check the in-flight batch-send queue FIRST, and only fall
+        // back to the persisted-transfer DB lookup when it isn't already queued there. A file can
+        // sit in the queue for a while (behind other items still dispatching) before
+        // dispatchOrStage ever persists a CalibreTransferEntity row for it, so checking the DB
+        // alone misses exactly the case reported live 2026-09-11: selecting the same files again
+        // while an earlier batch send was still mid-drain queued genuine duplicate requests.
+        val queued = checkQueuedForSend(item.file.syncedFileId, item.file.displayName)
+        val pending = if (queued) null else checkPendingTransfer(item.file.syncedFileId, item.file.displayName)
         rowMatchCache[rowKey] = (rowMatchCache[rowKey] ?: RowMatchCache()).copy(
+            queuedForSend = queued,
             pendingTransfer = pending,
             pendingTransferChecked = true,
         )
-        // Auto-deselect: an item already in flight must not be resubmitted just because it
-        // happened to be checked when the batch sheet opened — the checkbox alone previously
-        // let it through with only a visual warning next to it, easy to miss in a long batch.
-        if (pending != null && item.included) {
+        // Auto-deselect: an item already in flight (queued or dispatching in this run, or a
+        // previously placed request) must not be resubmitted just because it happened to be
+        // checked when the batch sheet opened — the checkbox alone previously let it through with
+        // only a visual warning next to it, easy to miss in a long batch.
+        if ((queued || pending != null) && item.included) {
             onChange(item.copy(included = false))
         }
     }
@@ -734,7 +753,23 @@ private fun CalibreBatchRow(
             )
         }
 
-        if (pendingTransfer != null) {
+        if (queuedForSend) {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.height(16.dp).width(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "Already queued in a batch that's still sending — deselected",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        } else if (pendingTransfer != null) {
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(

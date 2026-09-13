@@ -8,6 +8,16 @@
     <!-- CONTRACT: self-update — lets Putz prompt to install a downloaded update APK. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- CONTRACT: signature-level permission gating the relay activities below (FUSE_BOOKS,
+         MOVE_FORMAT, SPLIT_BOOK, MANAGE_VIRTUAL_LIBRARY, RENAME_AUTHOR) that execute daemon
+         actions immediately with no confirmation UI. protectionLevel="signature" means the OS
+         auto-grants this only to apps signed with Putz's own certificate — i.e. calibreAnywhere
+         on this device — and silently denies any other app, with no runtime prompt and no
+         change to the putz:// intent contract itself. -->
+    <permission
+        android:name="com.damarquez.putz.permission.RECEIVE_SIDEKICK_ACTIONS"
+        android:protectionLevel="signature" />
+
     <application
         android:name=".PutzApp"
         android:allowBackup="true"
@@ -157,6 +167,7 @@
         <activity
             android:name=".ui.fusion.FuseBooksActivity"
             android:exported="true"
+            android:permission="com.damarquez.putz.permission.RECEIVE_SIDEKICK_ACTIONS"
             android:launchMode="singleTop"
             android:theme="@style/Theme.Putz">
             <intent-filter>
@@ -177,6 +188,7 @@
         <activity
             android:name=".ui.moveformat.MoveFormatActivity"
             android:exported="true"
+            android:permission="com.damarquez.putz.permission.RECEIVE_SIDEKICK_ACTIONS"
             android:launchMode="singleTop"
             android:theme="@style/Theme.Putz">
             <intent-filter>
@@ -191,6 +203,7 @@
         <activity
             android:name=".ui.splitbook.SplitBookActivity"
             android:exported="true"
+            android:permission="com.damarquez.putz.permission.RECEIVE_SIDEKICK_ACTIONS"
             android:launchMode="singleTop"
             android:theme="@style/Theme.Putz">
             <intent-filter>
@@ -205,6 +218,7 @@
         <activity
             android:name=".ui.virtuallibraries.ManageVirtualLibraryActivity"
             android:exported="true"
+            android:permission="com.damarquez.putz.permission.RECEIVE_SIDEKICK_ACTIONS"
             android:launchMode="singleTop"
             android:theme="@style/Theme.Putz">
             <intent-filter>
@@ -219,6 +233,7 @@
         <activity
             android:name=".ui.authors.RenameAuthorActivity"
             android:exported="true"
+            android:permission="com.damarquez.putz.permission.RECEIVE_SIDEKICK_ACTIONS"
             android:launchMode="singleTop"
             android:theme="@style/Theme.Putz">
             <intent-filter>

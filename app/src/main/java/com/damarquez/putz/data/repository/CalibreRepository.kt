@@ -635,18 +635,43 @@ class CalibreRepository @Inject constructor(
     // All access goes through the synchronized helpers below. Plain JVM synchronization is enough
     // since none of them ever suspend while holding the lock.
     private val batchSendLock = Any()
-    private val batchSendQueue = ArrayDeque<suspend () -> Unit>()
+    private val batchSendQueue = ArrayDeque<QueuedSendItem>()
     private var batchSendTotal = 0
     private var batchSendCompleted = 0
     private var batchSendRunning = false
 
-    /** Adds [work] (one closure per item) to the batch-send queue and bumps the shared total by
-     *  [count]. Returns true when the caller is the one that should actually run
-     *  [drainBatchSendQueue] — i.e. no batch dispatch loop was already in flight — or false when
-     *  an already-running loop will simply pick these up on an upcoming chunk. */
-    fun enqueueBatchSend(count: Int, work: List<suspend () -> Unit>): Boolean = synchronized(batchSendLock) {
-        batchSendQueue.addAll(work)
-        batchSendTotal += count
+    // CONTRACT: batch-send dedup — refcounted (not a plain Set) because two genuinely different
+    // files can share a displayName across folders, and/or the exact same item could in principle
+    // be enqueued twice concurrently before CalibreBatchConfirmationSheet's dedup check catches
+    // up — either way, one item finishing must never clear tracking for another still-in-flight
+    // item that happens to share a key. Entries live from enqueueBatchSend until the matching
+    // releaseQueuedSendItem in drainBatchSendQueue, i.e. for the item's entire time sitting in
+    // batchSendQueue AND while its work() closure is actually running — covering exactly the
+    // window findPendingTransfer's DB-backed check can't see, since dispatchOrStage only persists
+    // a CalibreTransferEntity once work() actually reaches it (see isQueuedForSend below).
+    private val queuedSendFileIds = mutableMapOf<Long, Int>()
+    private val queuedSendFileNames = mutableMapOf<String, Int>()
+
+    /** One item queued for batch send: the identity CalibreBatchConfirmationSheet's dedup check
+     *  needs ([putioFileId]/[fileName], mirroring CalibreTransferDao.findPendingTransfer's own
+     *  match fields) alongside the actual dispatch closure. */
+    data class QueuedSendItem(
+        val putioFileId: Long,
+        val fileName: String,
+        val work: suspend () -> Unit,
+    )
+
+    /** Adds [items] (one per batch entry) to the batch-send queue and bumps the shared total.
+     *  Returns true when the caller is the one that should actually run [drainBatchSendQueue] —
+     *  i.e. no batch dispatch loop was already in flight — or false when an already-running loop
+     *  will simply pick these up on an upcoming chunk. */
+    fun enqueueBatchSend(items: List<QueuedSendItem>): Boolean = synchronized(batchSendLock) {
+        batchSendQueue.addAll(items)
+        for (item in items) {
+            queuedSendFileIds[item.putioFileId] = (queuedSendFileIds[item.putioFileId] ?: 0) + 1
+            queuedSendFileNames[item.fileName] = (queuedSendFileNames[item.fileName] ?: 0) + 1
+        }
+        batchSendTotal += items.size
         updatePrepareProgress(batchSendCompleted to batchSendTotal)
         if (!batchSendRunning) {
             batchSendRunning = true
@@ -656,7 +681,27 @@ class CalibreRepository @Inject constructor(
         }
     }
 
-    private fun pollBatchSendChunk(max: Int): List<suspend () -> Unit> = synchronized(batchSendLock) {
+    /** True if [fileId]/[fileName] is currently sitting in the batch-send queue or actively
+     *  dispatching — i.e. already appended via [enqueueBatchSend] and not yet released by
+     *  [drainBatchSendQueue]. Checked BEFORE [findPendingTransfer]'s persisted-DB lookup by
+     *  CalibreBatchConfirmationSheet's auto-deselect: a queued item can sit here for a while
+     *  before dispatchOrStage ever persists a CalibreTransferEntity row for it, so the DB check
+     *  alone misses it — confirmed live 2026-09-11: selecting the same files again while an
+     *  earlier batch was still mid-drain sent genuine duplicate requests. */
+    fun isQueuedForSend(fileId: Long, fileName: String): Boolean = synchronized(batchSendLock) {
+        queuedSendFileIds.containsKey(fileId) || queuedSendFileNames.containsKey(fileName)
+    }
+
+    private fun releaseQueuedSendItem(item: QueuedSendItem) = synchronized(batchSendLock) {
+        queuedSendFileIds[item.putioFileId]?.let { count ->
+            if (count <= 1) queuedSendFileIds.remove(item.putioFileId) else queuedSendFileIds[item.putioFileId] = count - 1
+        }
+        queuedSendFileNames[item.fileName]?.let { count ->
+            if (count <= 1) queuedSendFileNames.remove(item.fileName) else queuedSendFileNames[item.fileName] = count - 1
+        }
+    }
+
+    private fun pollBatchSendChunk(max: Int): List<QueuedSendItem> = synchronized(batchSendLock) {
         List(minOf(max, batchSendQueue.size)) { batchSendQueue.removeFirst() }
     }
 
@@ -692,9 +737,17 @@ class CalibreRepository @Inject constructor(
                     if (tryFinishBatchSend()) break else continue
                 }
                 coroutineScope {
-                    chunk.map { work ->
+                    chunk.map { item ->
                         async {
-                            work()
+                            try {
+                                item.work()
+                            } finally {
+                                // Released even if work() somehow throws (its own caller already
+                                // isolates per-item exceptions — see FilesViewModel.sendBatchToCalibre
+                                // — but a leaked entry here would falsely mark this file/name as
+                                // still queued forever, silently blocking every future real send).
+                                releaseQueuedSendItem(item)
+                            }
                             updatePrepareProgress(markBatchSendItemDone())
                         }
                     }.awaitAll()

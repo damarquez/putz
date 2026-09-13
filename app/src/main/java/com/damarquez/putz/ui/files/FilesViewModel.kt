@@ -1386,31 +1386,35 @@ class FilesViewModel @Inject constructor(
 
         val baseAddedAt = System.currentTimeMillis()
         val work = items.mapIndexed { index, item ->
-            suspend {
-                // Isolated per item — an uncaught exception here would otherwise cancel every
-                // sibling in the same chunk via coroutineScope+awaitAll (same failure mode fixed
-                // in prefetchBatchLocalPaths). A single book failing to send should not take down
-                // the rest of the batch.
-                try {
-                    sendToCalibreSuspend(
-                        item.file,
-                        item.title.trim(),
-                        item.author.trim().ifBlank { "Unknown" },
-                        isAltVersion = item.isAltVersion,
-                        calibreBookUuid = item.uuid.trim().ifBlank { null },
-                        isProtected = item.isProtected,
-                        convertToPdf = item.convertToPdf,
-                        tags = item.tags.trim().ifBlank { null },
-                        preresolvedLocalPath = item.localPath,
-                        addedAt = baseAddedAt + index,
-                    )
-                } catch (e: Exception) {
-                    _snackbarMessage.value = "Failed to send '${item.title}': ${e.message}"
-                }
-            }
+            CalibreRepository.QueuedSendItem(
+                putioFileId = item.file.syncedFileId,
+                fileName = item.file.displayName,
+                work = {
+                    // Isolated per item — an uncaught exception here would otherwise cancel every
+                    // sibling in the same chunk via coroutineScope+awaitAll (same failure mode fixed
+                    // in prefetchBatchLocalPaths). A single book failing to send should not take down
+                    // the rest of the batch.
+                    try {
+                        sendToCalibreSuspend(
+                            item.file,
+                            item.title.trim(),
+                            item.author.trim().ifBlank { "Unknown" },
+                            isAltVersion = item.isAltVersion,
+                            calibreBookUuid = item.uuid.trim().ifBlank { null },
+                            isProtected = item.isProtected,
+                            convertToPdf = item.convertToPdf,
+                            tags = item.tags.trim().ifBlank { null },
+                            preresolvedLocalPath = item.localPath,
+                            addedAt = baseAddedAt + index,
+                        )
+                    } catch (e: Exception) {
+                        _snackbarMessage.value = "Failed to send '${item.title}': ${e.message}"
+                    }
+                },
+            )
         }
 
-        val shouldStart = calibreRepository.enqueueBatchSend(items.size, work)
+        val shouldStart = calibreRepository.enqueueBatchSend(work)
         if (shouldStart) {
             trackTransferPreparation { appScope.launch {
                 try {
@@ -2315,6 +2319,12 @@ class FilesViewModel @Inject constructor(
 
     suspend fun findPendingTransfer(fileId: Long, fileName: String) =
         calibreRepository.findPendingTransfer(fileId, fileName)
+
+    /** See [CalibreRepository.isQueuedForSend] — checked BEFORE [findPendingTransfer] by
+     *  CalibreBatchConfirmationSheet's auto-deselect, since a file can sit in the in-flight
+     *  batch-send queue for a while before it's ever persisted as a CalibreTransferEntity. */
+    fun isQueuedForSend(fileId: Long, fileName: String) =
+        calibreRepository.isQueuedForSend(fileId, fileName)
 
     fun replaceCover(file: PutioFile, title: String, author: String, calibreBookId: Long, calibreBookUuid: String? = null, addToChain: Boolean = false) {
         viewModelScope.launch {
