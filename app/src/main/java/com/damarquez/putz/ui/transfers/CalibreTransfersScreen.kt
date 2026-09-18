@@ -104,6 +104,7 @@ import com.damarquez.putz.ui.files.CalibreConfirmationSheet
 import com.damarquez.putz.ui.files.TransferRef
 import com.damarquez.putz.ui.GlobalSyncViewModel
 import com.damarquez.putz.ui.components.SyncProgressBanner
+import com.damarquez.putz.ui.components.transientVerticalScrollbar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -892,7 +893,9 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
 
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .transientVerticalScrollbar(listState)
                 ) {
                     if (activeTransfers.isNotEmpty()) {
                         item {
