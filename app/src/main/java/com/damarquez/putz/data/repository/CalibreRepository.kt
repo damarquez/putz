@@ -3149,10 +3149,16 @@ class CalibreRepository @Inject constructor(
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount, "req_convert_$putioFileId.json", jsonStr)
 
+        // Same format on both sides = calibreAnywhere's "Fix format" (daemon rebuilds the file
+        // through Calibre and replaces it — CONTRACTS.md §7a, fix mode).
+        val label = if (sourceFormat.equals(targetFormat, ignoreCase = true))
+            "Fix ${targetFormat.uppercase()}: $title"
+        else
+            "Convert $title to $targetFormat"
         val transfer = CalibreTransferEntity(
             putioFileId = putioFileId,
-            fileName = "Convert $title to $targetFormat",
-            title = "Convert $title to $targetFormat",
+            fileName = label,
+            title = label,
             author = author,
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),
