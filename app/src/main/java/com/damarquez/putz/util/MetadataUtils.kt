@@ -11,7 +11,7 @@ object MetadataUtils {
     private val PLEXAMP_AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "flac", "aac", "wav", "ogg", "opus", "wma", "ape", "alac", "aiff", "dsf")
     // CONTRACT: CONVERT_FORMAT / ADD_BOOK_BATCH "to PDF" — mirrors calibreAnywhere's
     // ConversionRules.kt "-> PDF" source formats. Keep the two lists in sync.
-    private val PDF_CONVERTIBLE_EXTENSIONS = setOf("epub", "mobi", "azw3", "cbz", "cbr", "txt", "txtz", "html", "htm", "htmlz", "docx", "rtf", "odt", "zip", "chm")
+    private val PDF_CONVERTIBLE_EXTENSIONS = setOf("epub", "mobi", "azw3", "cbz", "cbr", "txt", "txtz", "html", "htm", "htmlz", "docx", "rtf", "odt", "zip", "chm", "pdb", "lit")
     // CONTRACT: TEXT_PDF_PACK — the "text document" subset of PDF_CONVERTIBLE_EXTENSIONS (excludes
     // epub/mobi/azw3/cbz/cbr/zip, which are ebook/comic containers with their own Join family).
     private val JOINABLE_TEXT_EXTENSIONS = setOf("rtf", "txt", "txtz", "html", "htm", "htmlz", "docx", "odt")
