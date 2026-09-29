@@ -1028,6 +1028,11 @@ class CalibreRepository @Inject constructor(
         smbPath: String? = null,
         archiveEntry: String? = null,
         localPath: String? = null,   // CONTRACT: stub convention — relative path within the local mirror repo
+        // CONTRACT: use_local without local_path (2026-09-27) — true = dispatch even though
+        // localPath is null, letting the daemon derive it from the put.io stub (see
+        // resolveMissingLocalPaths). Opt-in so the assembly/other park-until-resolved callers keep
+        // their existing behavior.
+        deriveLocalPathOnDaemon: Boolean = false,
         isProtected: Boolean = false,
         ignoreCover: Boolean = false,
         convertToPdf: Boolean = false,
@@ -1112,7 +1117,7 @@ class CalibreRepository @Inject constructor(
 
         // useLocal without local_path: park as PENDING so caller can resolve path before dispatching
         // useLocal/smbPath means we can dispatch immediately without a download URL
-        if (addToChain || assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null) || (useLocal && localPath == null)) return
+        if (addToChain || assembleBook || isUploading || (downloadUrl == null && !useLocal && smbPath == null) || (useLocal && localPath == null && !deriveLocalPathOnDaemon)) return
 
         // Immediately try to upload request
         val gDriveId = daemonTransport.submitRequest(googleAccount,"req_$putioFileId.json", jsonStr, isPriority = priority)
@@ -2562,7 +2567,13 @@ class CalibreRepository @Inject constructor(
         val token = secureStorage.authTokenFlow.value
         if (token.isBlank()) return StubFetchResult.Failed("Not signed in to put.io")
         return withContext(Dispatchers.IO) {
-            when (val result = putioApiClient.downloadFileAsString(token, stubFileId)) {
+            // 429-only backoff, deliberately NOT 5xx: the real cause of the 2026-09-27 mass
+            // "Could not verify '…' is synced" failures was put.io answering 503
+            // FILE_NOT_REACHABLE for the stub's content (persistently, not transiently) — retrying
+            // that just cost ~75s per book before failing anyway. A non-404 failure here is now
+            // handled by dispatching without local_path and letting the daemon derive it
+            // (FilesViewModel/resolveMissingLocalPaths), so failing fast is the right behavior.
+            when (val result = withPutioRetry(retryableCodes = setOf(429)) { putioApiClient.downloadFileAsString(token, stubFileId) }) {
                 is NetworkResult.Success -> {
                     stubRawJsonCache[stubFileId] = result.data
                     try {
@@ -3410,14 +3421,19 @@ class CalibreRepository @Inject constructor(
     // sync-index fallback is dead — see CONTRACTS.md §15), so resubmitting it verbatim just
     // reproduces the same permanent failure. Attempt to fill in the missing path from the
     // put.io stub before resending; returns null if any item is still unresolved.
-    private suspend fun resolveMissingLocalPaths(items: List<CalibreBatchItem>): List<CalibreBatchItem>? {
+    // CONTRACT: use_local without local_path (2026-09-27) — no longer all-or-nothing. Whatever
+    // resolves here is filled in; anything still null is sent as-is and the daemon derives it
+    // from the put.io stub's name + folder (putz_manager._resolve_item_source →
+    // stub_repair.resolve_local_file_for_original), failing with a specific reason only if it
+    // can't. Before, one unreadable stub (put.io 503 FILE_NOT_REACHABLE) blocked the whole
+    // transfer forever with "not confirmed synced yet".
+    private suspend fun resolveMissingLocalPaths(items: List<CalibreBatchItem>): List<CalibreBatchItem> {
         if (items.none { it.use_local == true && it.local_path == null }) return items
-        val resolved = items.map { item ->
+        return items.map { item ->
             if (item.use_local == true && item.local_path == null) {
                 item.copy(local_path = resolveStubLocalPathByOriginalId(item.putio_file_id))
             } else item
         }
-        return if (resolved.any { it.use_local == true && it.local_path == null }) null else resolved
     }
 
     suspend fun retryTransfer(fileId: Long, googleAccount: String): NetworkResult<Unit> {
@@ -3431,11 +3447,8 @@ class CalibreRepository @Inject constructor(
         val storedItems = transfer.batchData?.let {
             try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
         }
+        // Items still missing local_path after this are sent anyway — see resolveMissingLocalPaths.
         val resolvedStoredItems = storedItems?.let { resolveMissingLocalPaths(it) }
-        if (storedItems != null && resolvedStoredItems == null) {
-            calibreTransferDao.updateTransfer(transfer.copy(lastUpdatedAt = System.currentTimeMillis()))
-            return NetworkResult.Error("File not confirmed synced yet — will retry automatically")
-        }
         if (resolvedStoredItems != null && resolvedStoredItems != storedItems) {
             calibreTransferDao.updateTransfer(transfer.copy(batchData = json.encodeToString(resolvedStoredItems)))
         }
@@ -3720,6 +3733,19 @@ class CalibreRepository @Inject constructor(
         calibreTransferDao.deleteTransfer(fileId)
     }
 
+    /** True for a transfer parked FAILED only because a use_local item's local_path couldn't be
+     *  read from its put.io stub yet (FilesViewModel's "Could not verify … is synced" / retryTransfer's
+     *  "not confirmed synced yet" cases). Nothing about the book itself failed, so re-running
+     *  retryTransfer — which re-resolves local_path first — is always safe; this is what lets
+     *  CalibreTransfersViewModel's watchdog actually honor the "will retry automatically" promise. */
+    fun hasUnresolvedLocalPath(transfer: CalibreTransferEntity): Boolean {
+        if (transfer.status != CalibreTransferStatus.FAILED) return false
+        val items = transfer.batchData?.let {
+            try { json.decodeFromString<List<CalibreBatchItem>>(it) } catch (_: Exception) { null }
+        } ?: return false
+        return items.any { it.use_local == true && it.local_path == null }
+    }
+
     suspend fun markPackUploadFailed(fileId: Long, errorMessage: String) {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return
         calibreTransferDao.updateTransfer(transfer.copy(
@@ -3732,12 +3758,16 @@ class CalibreRepository @Inject constructor(
     private val putioRetryableCodes = setOf(429, 500, 502, 503, 504)
 
     /** Retries a put.io call with exponential backoff on rate-limit/server errors. */
-    private suspend fun <T> withPutioRetry(maxAttempts: Int = 5, call: () -> NetworkResult<T>): NetworkResult<T> {
+    private suspend fun <T> withPutioRetry(
+        maxAttempts: Int = 5,
+        retryableCodes: Set<Int> = putioRetryableCodes,
+        call: () -> NetworkResult<T>,
+    ): NetworkResult<T> {
         var delayMs = 5_000L
         var lastResult: NetworkResult<T>
         for (attempt in 1..maxAttempts) {
             lastResult = call()
-            if (lastResult !is NetworkResult.Error || lastResult.code !in putioRetryableCodes || attempt == maxAttempts) {
+            if (lastResult !is NetworkResult.Error || lastResult.code !in retryableCodes || attempt == maxAttempts) {
                 return lastResult
             }
             delay(delayMs)

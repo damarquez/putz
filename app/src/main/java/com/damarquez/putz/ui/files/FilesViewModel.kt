@@ -1513,7 +1513,7 @@ class FilesViewModel @Inject constructor(
                         is CalibreRepository.StubLocalPathResult.NotFound ->
                             "'$title' isn't synced anymore — its local stub was removed (already processed or deleted). Refresh the file list and try again"
                         is CalibreRepository.StubLocalPathResult.Failed ->
-                            "Could not verify '$title' is synced — check your connection and try again"
+                            "Couldn't read '$title''s put.io stub (${stubLookup.message}) — can't stage it in a chain; send it normally instead"
                         else ->
                             "'$title' is synced but its local path hasn't been recorded yet — try again shortly"
                     }
@@ -1535,6 +1535,13 @@ class FilesViewModel @Inject constructor(
                         _snackbarMessage.value = reason
                         return
                     }
+                    // CONTRACT: use_local without local_path (2026-09-27, user-reported: hundreds
+                    // of transfers FAILED "Could not verify … is synced"). The stub exists but its
+                    // body couldn't be read — put.io answered 503 FILE_NOT_REACHABLE for a whole
+                    // batch of stubs while still listing them. Its name + folder still identify
+                    // the file, so dispatch anyway and let the daemon derive local_path
+                    // (putz_manager._resolve_item_source); it reports a specific reason only if it
+                    // truly can't. Only NotFound (stub gone) and chain staging stop here.
                     calibreRepository.addTransfer(
                         putioFileId = file.syncedFileId,
                         fileName = syncedFileName,
@@ -1548,6 +1555,7 @@ class FilesViewModel @Inject constructor(
                         calibreBookUuid = calibreBookUuid,
                         useLocal = true,
                         localPath = null,
+                        deriveLocalPathOnDaemon = true,
                         isProtected = isProtected,
                         ignoreCover = ignoreCover,
                         convertToPdf = convertToPdf,
@@ -1556,8 +1564,7 @@ class FilesViewModel @Inject constructor(
                         addedAt = addedAt,
                         parentFolderId = file.parentId,
                     )
-                    calibreRepository.markPackUploadFailed(file.syncedFileId, reason)
-                    _snackbarMessage.value = reason
+                    _snackbarMessage.value = "Transfer requested for $title (daemon will locate the synced file)"
                     return
                 }
                 calibreRepository.addTransfer(

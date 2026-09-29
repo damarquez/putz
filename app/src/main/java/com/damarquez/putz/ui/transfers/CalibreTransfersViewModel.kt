@@ -16,6 +16,7 @@ import com.damarquez.putz.data.transport.LanDaemonTransport
 import com.damarquez.putz.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +43,14 @@ class CalibreTransfersViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val lanDaemonTransport: LanDaemonTransport,
 ) : ViewModel() {
+
+    // State for maybeAutoRetryUnresolvedLocalPaths. MUST stay declared above `init` (and above
+    // anything else init touches): init → startPolling() launches on Dispatchers.Main.immediate,
+    // so the watchdog loop's first pass runs synchronously inside the constructor, before any
+    // property declared further down has been initialized — declaring these next to that function
+    // crashed the app with an NPE the moment the Calibre transfers screen opened (2026-09-27).
+    private var localPathRetryJob: Job? = null
+    private val localPathRetryAttempts = mutableMapOf<Long, Int>()
 
     val transfers: StateFlow<List<CalibreTransferEntity>> = calibreRepository.getTransfers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -460,6 +469,7 @@ class CalibreTransfersViewModel @Inject constructor(
                     val currentTransfers = calibreRepository.getTransfers().first()
                     val now = System.currentTimeMillis()
                     val activeProgressKeys = calibreRepository.uploadProgress.value.keys
+                    maybeAutoRetryUnresolvedLocalPaths(currentTransfers, account, now)
                     currentTransfers.forEach { transfer ->
                         // CONTRACT: CHAIN — a chain member queued behind slower earlier items can
                         // legitimately sit at REQUESTED far longer than 5 minutes with the daemon
@@ -518,6 +528,45 @@ class CalibreTransfersViewModel @Inject constructor(
                 _isRefreshingDaemonInfo.value = false
             }
         }
+    }
+
+    // CONTRACT: unresolved-local_path auto-retry (user-reported 2026-09-27 — hundreds of
+    // transfers FAILED "Could not verify '…' is synced", and "Retry" said "will retry
+    // automatically" while nothing ever did: the watchdog above only covered never-dispatched and
+    // "upload to GDrive" failures). These transfers failed before reaching the daemon at all —
+    // only the put.io stub read for local_path failed — so re-running retryTransfer (which
+    // re-resolves local_path first) is always safe. Deliberately gentle, since the usual cause is
+    // put.io rate-limiting a large burst in the first place: at most
+    // LOCAL_PATH_RETRIES_PER_TICK per tick, one at a time on a job the watchdog never waits on,
+    // and a per-transfer exponential backoff (in-memory — resets when this screen's ViewModel
+    // does, which only makes it try sooner) so genuinely-gone stubs don't get re-queried every tick.
+    // (State fields live at the top of the class — see localPathRetryAttempts' comment there.)
+    private fun maybeAutoRetryUnresolvedLocalPaths(transfers: List<CalibreTransferEntity>, account: String, now: Long) {
+        if (localPathRetryJob?.isActive == true) return
+        val due = transfers.filter { t ->
+            t.chainId == null && calibreRepository.hasUnresolvedLocalPath(t) &&
+                now - t.lastUpdatedAt > localPathRetryBackoffMs(localPathRetryAttempts[t.putioFileId] ?: 0)
+        }.sortedBy { it.lastUpdatedAt }.take(LOCAL_PATH_RETRIES_PER_TICK)
+        if (due.isEmpty()) return
+        localPathRetryJob = viewModelScope.launch {
+            for (t in due) {
+                val result = calibreRepository.retryTransfer(t.putioFileId, account)
+                if (result is NetworkResult.Success) {
+                    localPathRetryAttempts.remove(t.putioFileId)
+                } else {
+                    localPathRetryAttempts[t.putioFileId] = (localPathRetryAttempts[t.putioFileId] ?: 0) + 1
+                }
+            }
+        }
+    }
+
+    private fun localPathRetryBackoffMs(attempts: Int): Long =
+        minOf(LOCAL_PATH_RETRY_BASE_MS shl minOf(attempts, 6), LOCAL_PATH_RETRY_MAX_MS)
+
+    private companion object {
+        const val LOCAL_PATH_RETRIES_PER_TICK = 5
+        const val LOCAL_PATH_RETRY_BASE_MS = 60_000L
+        const val LOCAL_PATH_RETRY_MAX_MS = 2 * 60 * 60 * 1000L
     }
 
     fun probeTransfer(fileId: Long) {
