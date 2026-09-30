@@ -3160,10 +3160,12 @@ class CalibreRepository @Inject constructor(
         val jsonStr = json.encodeToString(request)
         val gDriveId = daemonTransport.submitRequest(googleAccount, "req_convert_$putioFileId.json", jsonStr)
 
-        // Same format on both sides = calibreAnywhere's "Fix format" (daemon rebuilds the file
-        // through Calibre and replaces it — CONTRACTS.md §7a, fix mode).
-        val label = if (sourceFormat.equals(targetFormat, ignoreCase = true))
-            "Fix ${targetFormat.uppercase()}: $title"
+        // Same format on both sides, or RAR -> ZIP = calibreAnywhere's "Fix format" (daemon
+        // rebuilds/repacks the file and replaces it — CONTRACTS.md §7a, fix mode / RAR repack).
+        val isFix = sourceFormat.equals(targetFormat, ignoreCase = true) ||
+            (sourceFormat.equals("RAR", ignoreCase = true) && targetFormat.equals("ZIP", ignoreCase = true))
+        val label = if (isFix)
+            "Fix ${sourceFormat.uppercase()}: $title"
         else
             "Convert $title to $targetFormat"
         val transfer = CalibreTransferEntity(
