@@ -2513,10 +2513,12 @@ class CalibreRepository @Inject constructor(
                 "ARCHIVE", "ARCHIVE_ENTRY" -> emptyList()
                 else -> {
                     val ext = item.fileName.substringAfterLast('.', "").uppercase()
-                    // Daemon converts PRC to EPUB; Calibre auto-zips HTML/HTM on import
+                    // Daemon converts PRC to EPUB; Calibre auto-zips HTML/HTM on import;
+                    // the daemon packages a KFX-ZIP as KFX (CONTRACTS.md §6 "KFX books")
                     when {
                         ext == "PRC" -> listOf("EPUB")
                         ext == "HTML" || ext == "HTM" -> listOf("ZIP")
+                        ext == "KFX-ZIP" -> listOf("KFX")
                         ext.isNotEmpty() && ext.length <= 5 && !ext.contains(' ') -> listOf(ext)
                         else -> emptyList()
                     }

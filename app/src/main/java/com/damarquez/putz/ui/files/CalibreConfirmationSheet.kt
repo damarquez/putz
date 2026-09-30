@@ -78,6 +78,7 @@ fun formatForFile(fileName: String, convertToPdf: Boolean): String {
     return when (ext) {
         "PRC" -> "EPUB"
         "HTML", "HTM" -> "ZIP"
+        "KFX-ZIP" -> "KFX"
         else -> ext
     }
 }
