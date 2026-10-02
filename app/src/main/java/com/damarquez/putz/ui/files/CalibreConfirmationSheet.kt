@@ -575,6 +575,25 @@ fun CalibreConfirmationSheet(
                         }
                     }
                 }
+                val asin = remember(displayName) { MetadataUtils.kindleAsin(displayName) }
+                val isKindleSample = remember(displayName) { MetadataUtils.isKindleSample(displayName) }
+                if (isKindleSample) {
+                    Text(
+                        "This is Amazon's free sample (_EBSP), not the book — Calibre won't accept it. " +
+                            "Send the _EBOK file instead.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                } else if (!titleAuthorLocked && asin != null && MetadataUtils.titleIsAsinPlaceholder(title, asin)) {
+                    Text(
+                        "Kindle file name: the title and author will be read from the book itself. " +
+                            "Type a title to use your own instead.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth().height(28.dp),

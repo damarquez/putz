@@ -209,6 +209,27 @@ object MetadataUtils {
         }
     }
 
+    // CONTRACT: ASIN-named books (sidekick CONTRACTS.md §6 "KFX books") — mirrors the daemon's
+    // _ASIN_STEM_RE / _title_is_asin_placeholder: a file named <ASIN>_EBOK.<ext> whose title is
+    // still just that ASIN gets its real title/author from the file itself, daemon-side.
+    private val ASIN_STEM_REGEX = Regex("^(B[0-9A-Z]{9})(?:_[A-Z]{4})?$", RegexOption.IGNORE_CASE)
+
+    /** The Amazon ASIN a Kindle-archive file is named after (B0GQ6VJ43X_EBOK.kfx-zip), or null. */
+    fun kindleAsin(fileName: String): String? =
+        ASIN_STEM_REGEX.matchEntire(cleanStubSuffix(fileName).substringBeforeLast('.'))?.groupValues?.get(1)
+
+    /** True for Amazon's free-sample archive (<ASIN>_EBSP.*), which the daemon refuses
+     *  (mirrors its _KINDLE_SAMPLE_RE). */
+    fun isKindleSample(fileName: String): Boolean =
+        kindleAsin(fileName) != null &&
+            cleanStubSuffix(fileName).substringBeforeLast('.').endsWith("_EBSP", ignoreCase = true)
+
+    /** True when [title] carries nothing beyond [asin] — the daemon then reads the file's own title. */
+    fun titleIsAsinPlaceholder(title: String, asin: String): Boolean {
+        val letters = title.uppercase().replace(Regex("[^0-9A-Z]"), "")
+        return letters.replace(asin.uppercase(), "") in setOf("", "EBOK")
+    }
+
     fun extractMetadata(fileName: String): Pair<String, String> {
         // Some release naming conventions mix dash characters (e.g. an en-dash after the
         // author but a plain hyphen before the title) or slip in a non-breaking/unicode space
