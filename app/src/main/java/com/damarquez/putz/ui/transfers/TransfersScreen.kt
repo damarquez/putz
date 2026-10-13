@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.VideoSettings
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.History
@@ -71,6 +72,7 @@ fun TransfersScreen(
     viewModel: TransfersViewModel,
     onNavigateToFiles: (Long, String, Long) -> Unit = { _, _, _ -> },
     onNavigateToHistory: () -> Unit = {},
+    onNavigateToVideoConversions: () -> Unit = {},
     onNavigateToContent: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -146,6 +148,9 @@ fun TransfersScreen(
                 actions = {
                     IconButton(onClick = onNavigateToContent) {
                         Icon(Icons.Default.TravelExplore, contentDescription = "Content")
+                    }
+                    IconButton(onClick = onNavigateToVideoConversions) {
+                        Icon(Icons.Default.VideoSettings, contentDescription = "Video conversions")
                     }
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(Icons.Default.History, contentDescription = "History")

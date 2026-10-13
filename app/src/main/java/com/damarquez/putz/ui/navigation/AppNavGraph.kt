@@ -45,6 +45,7 @@ import com.damarquez.putz.ui.settings.SettingsSearchScreen
 import com.damarquez.putz.ui.transfers.CalibreTransfersScreen
 import com.damarquez.putz.ui.transfers.TransferHistoryScreen
 import com.damarquez.putz.ui.transfers.TransfersScreen
+import com.damarquez.putz.ui.converter.VideoConversionsScreen
 import com.damarquez.putz.ui.viewer.ViewerKind
 import com.damarquez.putz.ui.viewer.ViewerScreen
 
@@ -523,6 +524,7 @@ fun AppNavGraph(
                         navController.navigate(Screen.Files.createRoute(parentId, folderName, highlightId))
                     },
                     onNavigateToHistory = { navController.navigate(Screen.TransferHistory.route) },
+                    onNavigateToVideoConversions = { navController.navigate(Screen.VideoConversions.route) },
                     onNavigateToContent = {
                         if (!searchSelected) {
                             if (isOnNonFilesTab) navController.popBackStack()
@@ -536,6 +538,13 @@ fun AppNavGraph(
 
             composable(Screen.Search.route) {
                 SearchScreen(viewModel = hiltViewModel())
+            }
+
+            composable(Screen.VideoConversions.route) {
+                VideoConversionsScreen(
+                    viewModel = hiltViewModel(),
+                    onNavigateUp = { navController.navigateUp() },
+                )
             }
 
             composable(Screen.TransferHistory.route) {

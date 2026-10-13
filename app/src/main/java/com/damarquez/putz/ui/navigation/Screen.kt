@@ -123,5 +123,6 @@ sealed class Screen(val route: String) {
     data object CalibreTransfers : Screen("calibre_transfers")
     data object LanConnections : Screen("lan_connections")
     data object TransferHistory : Screen("transfer_history")
+    data object VideoConversions : Screen("video_conversions")
     data object Chain : Screen("chain")  // CONTRACT: CHAIN
 }

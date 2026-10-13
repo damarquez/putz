@@ -53,6 +53,9 @@ import com.damarquez.putz.data.model.MergedTransfer
 import com.damarquez.putz.data.model.PutioTransfer
 import com.damarquez.putz.data.model.TransferStatus
 import com.damarquez.putz.ui.theme.LocalAppStyling
+import com.damarquez.putz.util.VideoPlaybackHint
+import java.util.Locale
+import kotlin.math.floor
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -250,6 +253,17 @@ fun TransferItem(
                     )
                 }
 
+                // CONTRACT: video playback hint (CONTRACTS.md §48) — from put.io's resolved
+                // torrent name, so it shows as soon as the magnet resolves, before downloading.
+                val playbackHint = remember(transfer.name) { VideoPlaybackHint.hint(transfer.name) }
+                if (playbackHint != null) {
+                    Text(
+                        text = "🎬 $playbackHint",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+
                 Spacer(Modifier.height(6.dp))
 
                 if (merged.isPendingLocal) {
@@ -291,7 +305,8 @@ fun TransferItem(
 
 @Composable
 private fun DownloadProgress(transfer: PutioTransfer) {
-    val percent = transfer.percentDone / 100f
+    val precise = preciseProgressPercent(transfer)
+    val percent = precise / 100f
 
     LinearProgressIndicator(
         progress = { percent.coerceIn(0f, 1f) },
@@ -306,7 +321,7 @@ private fun DownloadProgress(transfer: PutioTransfer) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            text = "${transfer.percentDone}%  ${formatSize(transfer.downloaded)} / ${formatSize(transfer.size)}",
+            text = "${String.format(Locale.US, "%.1f", precise)}%  ${formatSize(transfer.downloaded)} / ${formatSize(transfer.size)}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -477,6 +492,20 @@ private fun TransferStatusIcon(status: TransferStatus, cornerRadius: Int) {
                 .rotate(rotation),
         )
     }
+}
+
+/**
+ * put.io's `percent_done` is a whole number rounded on its side, so a torrent still missing its
+ * last ~0.1% (e.g. 2 small files out of a 7.4 GB pack whose pieces no peer has) shows "100%"
+ * while it sits there downloading. Derive one decimal from the byte counts instead, rounded
+ * DOWN, and only report 100.0 when put.io and the byte count both agree it's done. Falls back to
+ * put.io's own value when there are no byte counts to work from.
+ */
+internal fun preciseProgressPercent(transfer: PutioTransfer): Float {
+    if (transfer.size <= 0L || transfer.downloaded <= 0L) return transfer.percentDone.toFloat()
+    if (transfer.percentDone >= 100 && transfer.downloaded >= transfer.size) return 100f
+    val tenths = floor(transfer.downloaded.toDouble() * 1000.0 / transfer.size) / 10.0
+    return tenths.toFloat().coerceAtMost(99.9f)
 }
 
 private fun formatSize(bytes: Long): String = when {
