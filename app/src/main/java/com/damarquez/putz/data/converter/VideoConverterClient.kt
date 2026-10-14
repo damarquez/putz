@@ -83,7 +83,13 @@ data class ConverterItem(
     val source: String? = null,
     val error: String? = null,
     val attempts: Int = 0,
+    @SerialName("added_at") val addedAt: Double? = null,
+    @SerialName("started_at") val startedAt: Double? = null,
     @SerialName("finished_at") val finishedAt: Double? = null,
+    /** Path inside the NAS shares, e.g. "Video/Movies/…/X.mkv"; the new file once converted. */
+    @SerialName("nas_path") val nasPath: String? = null,
+    /** The converted file kept after a failed check, for watching it by hand ("Video/_converter_review/…"). */
+    @SerialName("review_nas_path") val reviewNasPath: String? = null,
     val front: Boolean = false,
     val reasons: List<String> = emptyList(),
     val result: JsonObject? = null,
@@ -167,8 +173,11 @@ class VideoConverterClient @Inject constructor(
         return page.items to (page.total ?: page.items.size)
     }
 
-    suspend fun history(limit: Int = 200): List<ConverterItem> =
-        json.decodeFromString<ItemsPage>(call("/history?limit=$limit")).items
+    /** Finished items sorted server-side by [sort] ("finished", "name" or "status"), plus the total. */
+    suspend fun history(limit: Int = 200, sort: String = "finished"): Pair<List<ConverterItem>, Int> {
+        val page = json.decodeFromString<ItemsPage>(call("/history?limit=$limit&sort=$sort"))
+        return page.items to (page.total ?: page.items.size)
+    }
 
     suspend fun moveToFront(id: Long) { call("/item/$id/front", "POST") }
 
@@ -177,6 +186,11 @@ class VideoConverterClient @Inject constructor(
     }
 
     suspend fun remove(id: Long) { call("/item/$id", "DELETE") }
+
+    suspend fun deleteReviewCopy(id: Long) { call("/item/$id/review-copy", "DELETE") }
+
+    /** Replace the original with the kept review copy (no re-conversion). */
+    suspend fun useReviewCopy(id: Long) { call("/item/$id/use-review-copy", "POST") }
 
     suspend fun search(query: String): List<ConverterSearchResult> =
         json.decodeFromString<SearchPage>(

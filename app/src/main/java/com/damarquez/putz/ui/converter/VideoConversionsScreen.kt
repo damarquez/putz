@@ -1,6 +1,7 @@
 package com.damarquez.putz.ui.converter
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +62,10 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** Monitor + control for the daemon PC's video converter (CONTRACTS.md §48). */
@@ -143,7 +148,7 @@ fun VideoConversionsScreen(
                     }
                     when (state.tab) {
                         ConverterTab.QUEUE -> QueueList(state.queue, viewModel)
-                        ConverterTab.HISTORY -> HistoryList(state.history, viewModel)
+                        ConverterTab.HISTORY -> HistoryList(state, viewModel)
                         ConverterTab.ADD -> AddTab(state, viewModel)
                     }
                 }
@@ -161,6 +166,7 @@ private val PHASE_LABELS = mapOf(
     "copying_out" to "Copying back to the NAS",
     "replacing" to "Replacing the original",
     "plex_rescan" to "Waiting for Plex to pick it up",
+    "keeping_for_review" to "Saving the converted file for review",
 )
 
 @Composable
@@ -187,6 +193,12 @@ private fun StatusCard(status: ConverterStatus, error: String?) {
                 }.joinToString(" · ")
                 Text(if (extras.isBlank()) phase else "$phase · $extras",
                     style = MaterialTheme.typography.bodySmall)
+                cur.startedAt?.let { started ->
+                    val running = (System.currentTimeMillis() / 1000.0 - started).toLong()
+                    Text("Started ${formatWhen(started)} · running for ${formatDuration(maxOf(0, running))}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 cur.progress?.let {
                     Spacer(Modifier.height(4.dp))
                     LinearProgressIndicator(progress = { it.toFloat() }, modifier = Modifier.fillMaxWidth())
@@ -268,10 +280,31 @@ private fun QueueList(items: List<ConverterItem>, viewModel: VideoConversionsVie
 }
 
 @Composable
-private fun HistoryList(items: List<ConverterItem>, viewModel: VideoConversionsViewModel) {
+private fun HistoryList(state: VideoConversionsUiState, viewModel: VideoConversionsViewModel) {
+    val items = state.history
     var forceItem by remember { mutableStateOf<ConverterItem?>(null) }
+    var useItem by remember { mutableStateOf<ConverterItem?>(null) }
+    var sortMenu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(if (state.historyTotal > items.size) "Showing ${items.size} of ${state.historyTotal}"
+             else "${state.historyTotal} item(s)",
+            style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+        Box {
+            TextButton(onClick = { sortMenu = true }) { Text("Sort: ${state.historySort.label}") }
+            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                HistorySort.entries.forEach { sort ->
+                    DropdownMenuItem(
+                        text = { Text(if (sort == state.historySort) "✓ ${sort.label}" else sort.label) },
+                        onClick = { sortMenu = false; viewModel.setHistorySort(sort) },
+                    )
+                }
+            }
+        }
+    }
+    HorizontalDivider()
     if (items.isEmpty()) {
-        Text("Nothing converted yet.", Modifier.padding(16.dp))
+        Text(if (state.historyTotal == 0) "Nothing converted yet." else "Loading…", Modifier.padding(16.dp))
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
@@ -287,18 +320,36 @@ private fun HistoryList(items: List<ConverterItem>, viewModel: VideoConversionsV
                     else -> item.state to MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Text(label, color = color, style = MaterialTheme.typography.bodySmall)
+                timingLine(item)?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
                 item.result?.let { r -> resultSummary(r)?.let {
                     Text(it, style = MaterialTheme.typography.labelSmall)
                 } }
+                item.nasPath?.takeIf { it.isNotBlank() }?.let {
+                    // Converted: the new file. Otherwise the original, which was kept.
+                    Text((if (item.state == "done") "📁 " else "📁 Original: ") + it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3,
+                        overflow = TextOverflow.Ellipsis)
+                }
                 item.error?.let {
                     Text(it, style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4,
                         overflow = TextOverflow.Ellipsis)
                 }
+                item.reviewNasPath?.let {
+                    Text("🔍 Converted file kept for review: $it",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary, maxLines = 3,
+                        overflow = TextOverflow.Ellipsis)
+                }
                 if (item.state == "failed" || item.state == "needs_review") {
                     Row {
                         TextButton(onClick = { viewModel.retry(item, force = false) }) { Text("Retry") }
-                        if (item.state == "needs_review") {
+                        if (item.reviewNasPath != null) {
+                            // A converted file exists: use it as-is instead of converting again.
+                            TextButton(onClick = { useItem = item }) { Text("Use this file") }
+                            TextButton(onClick = { viewModel.deleteReviewCopy(item) }) { Text("Delete review copy") }
+                        } else if (item.state == "needs_review") {
                             TextButton(onClick = { forceItem = item }) { Text("Convert anyway") }
                         }
                     }
@@ -306,6 +357,34 @@ private fun HistoryList(items: List<ConverterItem>, viewModel: VideoConversionsV
             }
             HorizontalDivider()
         }
+        if (items.size < state.historyTotal) {
+            item(key = "load-more") {
+                Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center) {
+                    TextButton(onClick = { viewModel.loadMoreHistory() }) {
+                        Text("Load more (${state.historyTotal - items.size} more)")
+                    }
+                }
+            }
+        }
+    }
+    useItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { useItem = null },
+            title = { Text("Use the reviewed file?") },
+            text = {
+                Text("The converted file you checked replaces the original:\n${item.reviewNasPath}\n\n" +
+                    "It didn't pass every automatic check: ${item.error ?: ""}\n\n" +
+                    "Nothing is converted again. It's used only if it's still exactly the file that " +
+                    "was converted and the original hasn't changed since. Plex keeps the same title " +
+                    "and watch status.")
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.useReviewCopy(item); useItem = null }) {
+                    Text("Use this file")
+                }
+            },
+            dismissButton = { TextButton(onClick = { useItem = null }) { Text("Cancel") } },
+        )
     }
     forceItem?.let { item ->
         AlertDialog(
@@ -332,14 +411,43 @@ private fun resultSummary(r: JsonObject): String? {
     val out = r["output_size"]?.jsonPrimitive?.longOrNull ?: return null
     val verification = runCatching { r["verification"]?.jsonObject }.getOrNull()
     val ssim = num(verification, "ssim_mean")
-    val elapsed = num(r, "elapsed_s")
     val encoder = r["encoder"]?.jsonPrimitive?.content
     return buildList {
         add(String.format(Locale.US, "%.0f → %.0f MB", src / 1e6, out / 1e6))
         encoder?.let { add(it) }
         ssim?.let { add(String.format(Locale.US, "match %.3f", it)) }
-        elapsed?.let { add(formatDuration(it.toLong())) }
     }.joinToString(" · ")
+}
+
+/** "Finished Tue 13 Oct, 08:24 · took 11 min (convert 5 min, verify 4 min, copying 1 min)". */
+private fun timingLine(item: ConverterItem): String? {
+    val finished = item.finishedAt ?: return null
+    val took = item.startedAt?.let { (finished - it).toLong() }?.takeIf { it >= 0 }
+    val phases = item.result?.let { phaseBreakdown(it) }
+    return buildString {
+        append(if (item.state == "done") "Finished " else "Ended ")
+        append(formatWhen(finished))
+        took?.let { append(" · took ${formatDuration(it)}") }
+        phases?.let { append(" ($it)") }
+    }
+}
+
+private fun phaseBreakdown(r: JsonObject): String? {
+    val t = runCatching { r["timings"]?.jsonObject }.getOrNull() ?: return null
+    fun sec(key: String) = t[key]?.jsonPrimitive?.doubleOrNull
+    val copying = listOfNotNull(sec("copy_in_s"), sec("copy_out_s")).sum()
+    return listOfNotNull(
+        sec("encode_s")?.let { "convert ${formatDuration(it.toLong())}" },
+        sec("verify_s")?.let { "verify ${formatDuration(it.toLong())}" },
+        copying.takeIf { it > 0 }?.let { "copying ${formatDuration(it.toLong())}" },
+    ).joinToString(", ").ifBlank { null }
+}
+
+/** Epoch seconds as local date + time; the year only when it isn't this year. */
+private fun formatWhen(epochSeconds: Double): String {
+    val t = Instant.ofEpochMilli((epochSeconds * 1000).toLong()).atZone(ZoneId.systemDefault())
+    val pattern = if (t.year == ZonedDateTime.now().year) "EEE d MMM, HH:mm" else "d MMM yyyy, HH:mm"
+    return t.format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))
 }
 
 @Composable

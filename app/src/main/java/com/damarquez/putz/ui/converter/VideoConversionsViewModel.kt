@@ -19,11 +19,23 @@ import javax.inject.Inject
 
 enum class ConverterTab(val label: String) { QUEUE("Queue"), HISTORY("History"), ADD("Add") }
 
+/** History order; [api] is the converter's sort key (CONTRACTS.md §48). */
+enum class HistorySort(val label: String, val api: String) {
+    RECENT("Newest first", "finished"),
+    NAME("Name", "name"),
+    STATUS("Status", "status"),
+}
+
+private const val HISTORY_PAGE = 200
+
 data class VideoConversionsUiState(
     val status: ConverterStatus? = null,
     val queue: List<ConverterItem> = emptyList(),
     val queueTotal: Int = 0,
     val history: List<ConverterItem> = emptyList(),
+    val historyTotal: Int = 0,
+    val historySort: HistorySort = HistorySort.RECENT,
+    val historyLimit: Int = HISTORY_PAGE,
     val tab: ConverterTab = ConverterTab.QUEUE,
     val searchQuery: String = "",
     val searchResults: List<ConverterSearchResult> = emptyList(),
@@ -66,15 +78,29 @@ class VideoConversionsViewModel @Inject constructor(
         try {
             val status = client.status()
             val (queue, total) = client.queue()
-            val history = if (_uiState.value.tab == ConverterTab.HISTORY || !_uiState.value.loaded)
-                client.history() else _uiState.value.history
+            val s = _uiState.value
+            val (history, historyTotal) = if (s.tab == ConverterTab.HISTORY || !s.loaded)
+                client.history(s.historyLimit, s.historySort.api) else s.history to s.historyTotal
             _uiState.update {
-                it.copy(status = status, queue = queue, queueTotal = total, history = history,
-                        error = null, loaded = true)
+                // Drop a page that was fetched for a sort the user has since changed.
+                if (it.historySort != s.historySort) it.copy(status = status, queue = queue, queueTotal = total)
+                else it.copy(status = status, queue = queue, queueTotal = total, history = history,
+                             historyTotal = historyTotal, error = null, loaded = true)
             }
         } catch (e: Exception) {
             _uiState.update { it.copy(error = e.message ?: "Video converter unreachable", loaded = true) }
         }
+    }
+
+    fun setHistorySort(sort: HistorySort) {
+        if (sort == _uiState.value.historySort) return
+        _uiState.update { it.copy(historySort = sort, historyLimit = HISTORY_PAGE, history = emptyList()) }
+        viewModelScope.launch { refresh() }
+    }
+
+    fun loadMoreHistory() {
+        _uiState.update { it.copy(historyLimit = it.historyLimit + HISTORY_PAGE) }
+        viewModelScope.launch { refresh() }
     }
 
     fun selectTab(tab: ConverterTab) {
@@ -97,6 +123,12 @@ class VideoConversionsViewModel @Inject constructor(
     fun moveToFront(item: ConverterItem) = act("“${item.title}” is next") { client.moveToFront(item.id) }
 
     fun remove(item: ConverterItem) = act("Removed from the queue") { client.remove(item.id) }
+
+    fun useReviewCopy(item: ConverterItem) =
+        act("Replacing the original with the reviewed file — queued next") { client.useReviewCopy(item.id) }
+
+    fun deleteReviewCopy(item: ConverterItem) =
+        act("Review copy deleted") { client.deleteReviewCopy(item.id) }
 
     fun retry(item: ConverterItem, force: Boolean) =
         act(if (force) "Converting anyway — queued next" else "Queued next") { client.retry(item.id, force) }
