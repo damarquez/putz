@@ -213,7 +213,8 @@ private fun StatusCard(status: ConverterStatus, error: String?) {
             val c = status.counts
             Text(
                 "Queued ${c["queued"] ?: 0} · Done ${c["done"] ?: 0} · Failed ${c["failed"] ?: 0}" +
-                    " · Review ${c["needs_review"] ?: 0}",
+                    " · Review ${c["needs_review"] ?: 0}" +
+                    ((c["waiting_plex"] ?: 0).takeIf { it > 0 }?.let { " · Waiting for Plex $it" } ?: ""),
                 style = MaterialTheme.typography.bodySmall,
             )
             val t = status.totals
@@ -314,6 +315,8 @@ private fun HistoryList(state: VideoConversionsUiState, viewModel: VideoConversi
                     overflow = TextOverflow.Ellipsis)
                 val (label, color) = when (item.state) {
                     "done" -> "✅ Converted" to MaterialTheme.colorScheme.primary
+                    "waiting_plex" -> "⏳ Converted — waiting for Plex to pick it up (original kept until then)" to
+                        MaterialTheme.colorScheme.secondary
                     "needs_review" -> "⚠ Needs review — original kept" to MaterialTheme.colorScheme.tertiary
                     "failed" -> "❌ Failed — original kept" to MaterialTheme.colorScheme.error
                     "skipped" -> "Skipped" to MaterialTheme.colorScheme.onSurfaceVariant
@@ -425,7 +428,7 @@ private fun timingLine(item: ConverterItem): String? {
     val took = item.startedAt?.let { (finished - it).toLong() }?.takeIf { it >= 0 }
     val phases = item.result?.let { phaseBreakdown(it) }
     return buildString {
-        append(if (item.state == "done") "Finished " else "Ended ")
+        append(if (item.state == "done" || item.state == "waiting_plex") "Converted " else "Ended ")
         append(formatWhen(finished))
         took?.let { append(" · took ${formatDuration(it)}") }
         phases?.let { append(" ($it)") }
