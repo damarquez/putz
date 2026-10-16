@@ -131,6 +131,7 @@ fun CalibreTransferItem(
                         "PRIORITY_PUTIO_SYNC" -> "SYNC"
                         "SEND_TO_PLEX" -> "PLX"
                         "ADD_SUBTITLE_TO_MOVIE" -> "SUB"
+                        "REPLACE_PLEX_MOVIE" -> "RPL"
                         "REGISTER_TRANSFER_HISTORY" -> "HIST"
                         "GLOBAL_STATUS_PROBE" -> "PROB"
                         else -> null

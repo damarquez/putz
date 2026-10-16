@@ -249,6 +249,19 @@ data class PlexAddSubtitleRequest(
     val app_id: String? = null,
 )
 
+// CONTRACT: REPLACE_PLEX_MOVIE
+/** A synced video replaces an existing Plex movie's file; the daemon and the video converter
+ *  swap them so Plex keeps the title and its watch status (CONTRACTS.md §9b). */
+@Serializable
+data class PlexReplaceMovieRequest(
+    val action: String = "REPLACE_PLEX_MOVIE",
+    val putio_file_id: Long,          // CONTRACT: stub convention — original file ID
+    val movie_folder_path: String,    // relative under the Plex library root
+    val movie_file_name: String,      // the file being replaced
+    val items: List<PlexAssemblyItem>,
+    val app_id: String? = null,
+)
+
 // CONTRACT: SEND_TO_PLEXAMP
 @Serializable
 data class PlexampItem(
@@ -2013,6 +2026,49 @@ class CalibreRepository @Inject constructor(
             putioFileId = anchorId,
             fileName = subtitle.displayName,
             title = "Add subtitle → ${movieFileName.substringBeforeLast('.')}",
+            author = movieFolderPath.ifBlank { "Plex" },
+            status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
+            addedAt = System.currentTimeMillis(),
+            lastUpdatedAt = System.currentTimeMillis(),
+            allPutioFileIds = anchorId.toString(),
+            transferType = "PLEX",
+            gdriveRequestId = gDriveId,
+            errorMessage = if (gDriveId == null) "Failed to upload to GDrive" else null,
+            lastRequestPayload = jsonStr,
+        )
+        withContext(NonCancellable) { calibreTransferDao.insertTransfer(transfer) }
+    }
+
+    // CONTRACT: REPLACE_PLEX_MOVIE
+    suspend fun sendReplacePlexMovieRequest(
+        video: PutioFile,
+        movieFolderPath: String,
+        movieFileName: String,
+        googleAccount: String,
+    ) {
+        // CONTRACT: stub convention — use original file ID + local_path for synced files
+        val localPath = readStubLocalPath(video)
+        val anchorId = video.syncedFileId
+        val request = PlexReplaceMovieRequest(
+            putio_file_id = anchorId,
+            movie_folder_path = movieFolderPath,
+            movie_file_name = movieFileName,
+            items = listOf(PlexAssemblyItem(
+                putio_file_id = anchorId,
+                fileName = video.displayName,
+                item_type = "MOVIE",
+                use_local = if (localPath != null) true else null,
+                local_path = localPath,
+                stub_putio_id = if (video.isSynced) video.id else null,
+            )),
+            app_id = settingsRepository.getOrCreateAppId(),
+        )
+        val jsonStr = json.encodeToString(request)
+        val gDriveId = daemonTransport.submitRequest(googleAccount, "req_replace_movie_$anchorId.json", jsonStr)
+        val transfer = CalibreTransferEntity(
+            putioFileId = anchorId,
+            fileName = video.displayName,
+            title = "Replace movie file → ${movieFileName.substringBeforeLast('.')}",
             author = movieFolderPath.ifBlank { "Plex" },
             status = if (gDriveId != null) CalibreTransferStatus.REQUESTED else CalibreTransferStatus.FAILED,
             addedAt = System.currentTimeMillis(),

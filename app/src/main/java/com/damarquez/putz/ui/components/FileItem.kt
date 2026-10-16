@@ -120,6 +120,7 @@ fun FileItem(
     onSendToPlex: (PutioFile) -> Unit,
     onAssembleSubtitleIntoPlex: (PutioFile) -> Unit,
     onAddSubtitleToMovie: (PutioFile) -> Unit,
+    onReplacePlexMovie: (PutioFile) -> Unit = {},
     onSendToPlexamp: (PutioFile) -> Unit,
     onMergeFolder: (PutioFile) -> Unit,
     onMergeArchive: (PutioFile) -> Unit,
@@ -632,6 +633,14 @@ fun FileItem(
                                     onClick = {
                                         showMenu = false
                                         onSendToPlex(file)
+                                    },
+                                )
+                                TightMenuItem(
+                                    text = { Text("Replace movie file in Plex…") },
+                                    enabled = isGoogleSignedIn,
+                                    onClick = {
+                                        showMenu = false
+                                        onReplacePlexMovie(file)
                                     },
                                 )
                             }

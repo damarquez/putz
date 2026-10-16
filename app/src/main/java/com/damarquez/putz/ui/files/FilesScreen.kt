@@ -297,6 +297,7 @@ fun FilesScreen(
 
     // "Add subtitle to existing movie" flow
     var subtitleForMovie by remember { mutableStateOf<PutioFile?>(null) }
+    var videoForReplace by remember { mutableStateOf<PutioFile?>(null) }
     var selectedMovieFile by remember { mutableStateOf<PutioFile?>(null) }
     var selectedMovieFolderPath by remember { mutableStateOf("") }
     val movieBrowserState by viewModel.movieBrowserState.collectAsState()
@@ -1293,6 +1294,38 @@ fun FilesScreen(
         )
     }
 
+    // "Replace movie file in Plex": confirm the movie picked in the browser above.
+    if (videoForReplace != null && selectedMovieFile != null) {
+        val oldName = selectedMovieFile!!.name
+        val newExt = videoForReplace!!.displayName.substringAfterLast('.', "").lowercase()
+        val finalName = oldName.substringBeforeLast('.') + if (newExt.isNotEmpty()) ".$newExt" else ""
+        val dismiss = {
+            videoForReplace = null
+            selectedMovieFile = null
+            selectedMovieFolderPath = ""
+        }
+        AlertDialog(
+            onDismissRequest = dismiss,
+            title = { Text("Replace movie file?") },
+            text = {
+                Text(
+                    "Current: $oldName\nNew: ${videoForReplace!!.displayName}\nSaved as: $finalName\n\n" +
+                        "Plex keeps the movie and its watch status. " +
+                        (if (finalName == oldName) "The current file is replaced right away."
+                         else "The current file is deleted once Plex has picked up the new one.") +
+                        " If the new file won't play directly, it's queued in Video conversions."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.sendReplacePlexMovie(videoForReplace!!, selectedMovieFolderPath, oldName)
+                    dismiss()
+                }) { Text("Replace") }
+            },
+            dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
+        )
+    }
+
     if (subtitleForMovie != null && selectedMovieFile != null) {
         PlexLanguagePicker(
             title = "Subtitle language for ${selectedMovieFile!!.name}",
@@ -2055,6 +2088,12 @@ fun FilesScreen(
                                         onAssembleSubtitleIntoPlex = { subtitleForAssembly = it },
                                         onAddSubtitleToMovie = {
                                             subtitleForMovie = it
+                                            selectedMovieFile = null
+                                            selectedMovieFolderPath = ""
+                                            viewModel.openMovieBrowser()
+                                        },
+                                        onReplacePlexMovie = {
+                                            videoForReplace = it
                                             selectedMovieFile = null
                                             selectedMovieFolderPath = ""
                                             viewModel.openMovieBrowser()

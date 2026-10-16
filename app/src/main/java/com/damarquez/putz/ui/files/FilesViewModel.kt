@@ -2895,6 +2895,18 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun sendReplacePlexMovie(video: PutioFile, movieFolderPath: String, movieFileName: String) {
+        viewModelScope.launch {
+            val account = googleAccount.value
+            if (account.isBlank()) {
+                _snackbarMessage.value = "Google account not configured"
+                return@launch
+            }
+            calibreRepository.sendReplacePlexMovieRequest(video, movieFolderPath, movieFileName, account)
+            _snackbarMessage.value = "Replace request sent"
+        }
+    }
+
     fun sendAddSubtitleToMovie(subtitle: PutioFile, language: String, movieFolderPath: String, movieFileName: String) {
         viewModelScope.launch {
             val account = googleAccount.value
