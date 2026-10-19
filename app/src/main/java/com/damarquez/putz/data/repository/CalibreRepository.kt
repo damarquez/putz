@@ -178,6 +178,11 @@ data class CalibreResponse(
     // start time; elapsed seconds from when a worker actually began fulfilling the request
     // (not from when it first arrived/was queued). See putz_manager.py's send_response().
     val duration_seconds: Double? = null,
+    // CONTRACT: SEND_TO_PLEX Plex check — false on the COMPLETED response (file moved, Plex
+    // hasn't listed it yet) and on probes until Plex lists it; null from older daemons, which
+    // never reported it (treated as listed, the old behavior).
+    val plex_listed: Boolean? = null,
+    val plex_wait_reason: String? = null,
 )
 
 data class CalibreBookMatch(
@@ -497,6 +502,25 @@ class CalibreRepository @Inject constructor(
     // a duplicate delivery of that same response is then correctly treated as a re-confirmation,
     // not a new check. Synchronized since LAN/Drive polling can run concurrently.
     private val probesAwaitingResponse = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
+
+    // CONTRACT: SEND_TO_PLEX Plex check — the daemon's latest reason a moved movie isn't listed
+    // by Plex yet (e.g. "Plex is busy scanning z_Courses…"), keyed by putioFileId. In memory
+    // only: the next automatic probe (a few minutes at most) refills it after a restart.
+    private val _plexWaitReasons = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val plexWaitReasons: StateFlow<Map<Long, String>> = _plexWaitReasons.asStateFlow()
+
+    /** A SEND_TO_PLEX transfer: COMPLETED means the file was moved; it's verified only once the
+     *  daemon reports that Plex lists it. Other PLEX-type actions keep the old rule. */
+    fun isSendToPlex(transfer: CalibreTransferEntity): Boolean =
+        transfer.transferType == "PLEX" && transfer.lastRequestPayload?.let { payload ->
+            try {
+                json.parseToJsonElement(payload).jsonObject["action"]?.jsonPrimitive?.content == "SEND_TO_PLEX"
+            } catch (_: Exception) { false }
+        } == true
+
+    private fun setPlexWaitReason(putioFileId: Long, reason: String?) {
+        _plexWaitReasons.update { if (reason.isNullOrBlank()) it - putioFileId else it + (putioFileId to reason) }
+    }
 
     // GlobalSyncViewModel's background loop and a manually-triggered sync (CalibreTransfersViewModel
     // .syncMetadata) can both call pollResponses() around the same time. Without this, both would
@@ -1786,9 +1810,16 @@ class CalibreRepository @Inject constructor(
                         if (isNewerStatus || isSameStatusFailure || isProcessingUpdate) {
                             // PLEX/PLEXAMP are self-verifying: the daemon's COMPLETED response
                             // is the only confirmation needed (they verify files physically, not
-                            // via a Calibre library state cross-check).
+                            // via a Calibre library state cross-check) — except SEND_TO_PLEX, whose
+                            // COMPLETED only means the file was moved: plex_listed=false keeps it
+                            // "Waiting for Plex" until a probe sees Plex list it (watchdog in
+                            // CalibreTransfersViewModel).
                             val libraryVerified = newStatus == CalibreTransferStatus.COMPLETED &&
-                                (transfer.transferType == "PLEX" || transfer.transferType == "PLEXAMP")
+                                (transfer.transferType == "PLEX" || transfer.transferType == "PLEXAMP") &&
+                                response.plex_listed != false
+                            if (newStatus == CalibreTransferStatus.COMPLETED && isSendToPlex(transfer)) {
+                                setPlexWaitReason(transfer.putioFileId, response.plex_wait_reason.takeIf { response.plex_listed == false })
+                            }
                             val resolvedUuid = if (newStatus == CalibreTransferStatus.COMPLETED) response.calibre_book_uuid ?: transfer.calibreBookUuid else null
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 status = newStatus,
@@ -1882,14 +1913,27 @@ class CalibreRepository @Inject constructor(
                             val isFirstProbeResponse = response.is_probe == true && probesAwaitingResponse.remove(transfer.putioFileId)
                             val isCompletedRecheck = isFirstProbeResponse && transfer.status == CalibreTransferStatus.COMPLETED
                             val isConfirmedByDaemon = isCompletedRecheck && newStatus == CalibreTransferStatus.COMPLETED
+                            // SEND_TO_PLEX probes answer "does Plex list it yet?" (plex_listed).
+                            // The automatic ones while waiting aren't user checks, so only a probe
+                            // of an already-verified transfer (a manual "Check & refresh") counts.
+                            val sendToPlex = isSendToPlex(transfer)
+                            if (isConfirmedByDaemon && sendToPlex) {
+                                setPlexWaitReason(transfer.putioFileId, response.plex_wait_reason.takeIf { response.plex_listed == false })
+                            }
+                            val countsAsCheck = isConfirmedByDaemon && (!sendToPlex || transfer.libraryVerified)
                             calibreTransferDao.updateTransfer(transfer.copy(
                                 lastUpdatedAt = System.currentTimeMillis(),
-                                probeCount = if (isConfirmedByDaemon) transfer.probeCount + 1 else transfer.probeCount,
+                                probeCount = if (countsAsCheck) transfer.probeCount + 1 else transfer.probeCount,
                                 errorMessage = if (isCompletedRecheck && newStatus == CalibreTransferStatus.FAILED) response.error else transfer.errorMessage,
                                 // The daemon checks its live, unsplit metadata.db, so a COMPLETED
                                 // recheck is authoritative even when Putz's local (protection-split)
                                 // copy couldn't find the book — see verifyCompletedTransfers().
-                                libraryVerified = if (isConfirmedByDaemon) true else transfer.libraryVerified,
+                                // For SEND_TO_PLEX it checks Plex itself: listed or not, it's current.
+                                libraryVerified = when {
+                                    isConfirmedByDaemon && sendToPlex -> response.plex_listed != false
+                                    isConfirmedByDaemon -> true
+                                    else -> transfer.libraryVerified
+                                },
                             ))
                         }
                     }
@@ -2477,8 +2521,9 @@ class CalibreRepository @Inject constructor(
                 !checkBookUuidExists(db, transfer.calibreBookUuid)
 
             val verified = when {
-                // Non-Calibre actions need no library check
-                transfer.transferType == "PLEX" -> true
+                // Non-Calibre actions need no library check. SEND_TO_PLEX waits for the daemon
+                // to see Plex list the file — the transfers watchdog probes for that.
+                transfer.transferType == "PLEX" -> !isSendToPlex(transfer)
                 action == "PRIORITY_PUTIO_SYNC" -> true
                 // Must have a UUID to locate the book
                 transfer.calibreBookUuid == null -> true
@@ -3354,6 +3399,7 @@ class CalibreRepository @Inject constructor(
 
     suspend fun sendProbeRequest(fileId: Long, googleAccount: String): Boolean {
         val transfer = calibreTransferDao.getTransferById(fileId) ?: return false
+        if (transfer.transferType == "PLEX") return sendPlexCheckProbe(transfer, googleAccount)
 
         // If we have a GDrive request ID, check if it still exists
         transfer.gdriveRequestId?.let { requestId ->
@@ -3427,6 +3473,34 @@ class CalibreRepository @Inject constructor(
             calibreTransferDao.updateTransfer(transfer.copy(
                 lastUpdatedAt = System.currentTimeMillis()
             ))
+            return true
+        }
+        probesAwaitingResponse.remove(transfer.putioFileId)
+        return false
+    }
+
+    // CONTRACT: SEND_TO_PLEX Plex check — the original request with is_probe=true; the daemon
+    // answers whether Plex lists the moved movie (plex_listed) instead of re-running anything.
+    // Only for a COMPLETED SEND_TO_PLEX: the daemon treats every SEND_TO_PLEX probe as "the
+    // move is done", so an in-flight one is left to its real response. Other PLEX-type actions
+    // have no probe (their batchData never fit the Calibre probe shape below either).
+    private suspend fun sendPlexCheckProbe(transfer: CalibreTransferEntity, googleAccount: String): Boolean {
+        if (transfer.status != CalibreTransferStatus.COMPLETED || !isSendToPlex(transfer)) return false
+        val original = try {
+            json.parseToJsonElement(transfer.lastRequestPayload ?: return false).jsonObject
+        } catch (_: Exception) { return false }
+        val appId = settingsRepository.getOrCreateAppId()
+        val jsonStr = kotlinx.serialization.json.JsonObject(
+            original + mapOf(
+                "is_probe" to kotlinx.serialization.json.JsonPrimitive(true),
+                "app_id" to kotlinx.serialization.json.JsonPrimitive(appId),
+            )
+        ).toString()
+        // Touched before submitting: the answer can arrive over LAN within seconds, and the
+        // watchdog paces itself on lastUpdatedAt.
+        calibreTransferDao.touchTransfer(transfer.putioFileId, System.currentTimeMillis())
+        probesAwaitingResponse.add(transfer.putioFileId)
+        if (daemonTransport.submitRequest(googleAccount, "req_probe_${transfer.putioFileId}.json", jsonStr) != null) {
             return true
         }
         probesAwaitingResponse.remove(transfer.putioFileId)

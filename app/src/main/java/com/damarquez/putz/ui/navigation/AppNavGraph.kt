@@ -3,8 +3,15 @@ package com.damarquez.putz.ui.navigation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.damarquez.putz.util.AppProfile
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddToDrive
 import androidx.compose.material.icons.filled.Book
@@ -177,6 +184,21 @@ fun AppNavGraph(
                 enter = slideInVertically { it },
                 exit = slideOutVertically { it },
             ) {
+                Column {
+                if (AppProfile.isSecondaryProfile) {
+                    // See AppProfile: the Secure Folder copy is easy to mistake for the main one,
+                    // and only the main one is on Tailscale.
+                    Text(
+                        text = "${AppProfile.label} copy of Putz · main-profile Tailscale doesn't cover it",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(vertical = 4.dp),
+                    )
+                }
                 NavigationBar {
                     NavigationBarItem(
                         selected = cloudSelected,
@@ -274,6 +296,7 @@ fun AppNavGraph(
                         },
                         label = { Text("Calibre") },
                     )
+                }
                 }
             }
         },

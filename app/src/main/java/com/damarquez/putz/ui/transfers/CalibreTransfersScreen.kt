@@ -157,6 +157,7 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
     val driveRequestCount by viewModel.driveRequestCount.collectAsState()
     val isRefreshingDaemonInfo by viewModel.isRefreshingDaemonInfo.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
+    val plexWaitReasons by viewModel.plexWaitReasons.collectAsState()
     val pendingAssemblyAppends by viewModel.pendingAssemblyAppends.collectAsState()
     val googleAccount by syncViewModel.googleAccount.collectAsState()
     val isGoogleSignedIn = googleAccount.isNotBlank()
@@ -950,6 +951,8 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
                                 isPendingAppend = transfer.putioFileId in pendingAssemblyAppends,
+                                isWaitingForPlex = remember(transfer) { viewModel.isWaitingForPlex(transfer) },
+                                plexWaitReason = plexWaitReasons[transfer.putioFileId],
                                 onTap = { transferToBrowse = transfer },
                                 onMakePriority = {
                                     scope.launch {
@@ -1036,6 +1039,8 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
                                 },
                                 uploadProgress = uploadProgress[transfer.putioFileId],
                                 isPendingAppend = transfer.putioFileId in pendingAssemblyAppends,
+                                isWaitingForPlex = remember(transfer) { viewModel.isWaitingForPlex(transfer) },
+                                plexWaitReason = plexWaitReasons[transfer.putioFileId],
                                 onCopyUuid = { uuid ->
                                     clipboardManager.setText(AnnotatedString(uuid))
                                     scope.launch { snackbarHostState.showSnackbar("UUID copied") }
@@ -1115,7 +1120,10 @@ fun CalibreTransfersScreen(  // CONTRACT: edit_metadata deep link
         AlertDialog(
             onDismissRequest = { viewModel.dismissDriveSyncConfirmation() },
             title = { Text("Sync via Google Drive?") },
-            text = { Text("Tailscale LAN is not reachable. Are you sure you want to sync using Google Drive?") },
+            text = {
+                val hint = com.damarquez.putz.util.AppProfile.unreachableHint
+                Text("Tailscale LAN is not reachable. Are you sure you want to sync using Google Drive?" + if (hint != null) "\n\n$hint" else "")
+            },
             confirmButton = {
                 TextButton(onClick = { viewModel.confirmDriveSync() }) { Text("Sync") }
             },

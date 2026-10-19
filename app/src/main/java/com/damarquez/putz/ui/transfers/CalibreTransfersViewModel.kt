@@ -81,6 +81,13 @@ class CalibreTransfersViewModel @Inject constructor(
     val uploadProgress: StateFlow<Map<Long, String>> = calibreRepository.uploadProgress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    val plexWaitReasons: StateFlow<Map<Long, String>> = calibreRepository.plexWaitReasons
+
+    /** COMPLETED SEND_TO_PLEX whose movie Plex doesn't list yet — see isPlexCheckDue. */
+    fun isWaitingForPlex(transfer: CalibreTransferEntity): Boolean =
+        transfer.status == CalibreTransferStatus.COMPLETED && !transfer.libraryVerified &&
+            calibreRepository.isSendToPlex(transfer)
+
     val pendingAssemblyAppends: StateFlow<Set<Long>> = calibreRepository.pendingAssemblyAppends
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -499,6 +506,8 @@ class CalibreTransfersViewModel @Inject constructor(
                             calibreRepository.retryTransfer(transfer.putioFileId, account)
                         } else if (isStuck && now - transfer.lastUpdatedAt > 5 * 60 * 1000) {
                             calibreRepository.sendProbeRequest(transfer.putioFileId, account)
+                        } else if (isPlexCheckDue(transfer, now)) {
+                            calibreRepository.sendProbeRequest(transfer.putioFileId, account)
                         }
                     }
                 }
@@ -563,10 +572,28 @@ class CalibreTransfersViewModel @Inject constructor(
     private fun localPathRetryBackoffMs(attempts: Int): Long =
         minOf(LOCAL_PATH_RETRY_BASE_MS shl minOf(attempts, 6), LOCAL_PATH_RETRY_MAX_MS)
 
+    // CONTRACT: SEND_TO_PLEX Plex check — a moved movie Plex doesn't list yet ("Waiting for
+    // Plex") is re-checked every 2 min for its first hour, then every 15 min; after 7 days it's
+    // left alone (long-press "Check & refresh" still works). Paced on lastUpdatedAt, which each
+    // probe touches. A multi-hour scan of another Plex section can hold it up all night
+    // (2026-10-18, The Odyssey behind z_Courses).
+    private fun isPlexCheckDue(transfer: CalibreTransferEntity, now: Long): Boolean {
+        if (transfer.status != CalibreTransferStatus.COMPLETED || transfer.libraryVerified ||
+            transfer.transferType != "PLEX") return false
+        val age = now - transfer.addedAt
+        if (age > PLEX_CHECK_GIVE_UP_MS) return false
+        val interval = if (age < PLEX_CHECK_FAST_PHASE_MS) PLEX_CHECK_FAST_INTERVAL_MS else PLEX_CHECK_SLOW_INTERVAL_MS
+        return now - transfer.lastUpdatedAt > interval && calibreRepository.isSendToPlex(transfer)
+    }
+
     private companion object {
         const val LOCAL_PATH_RETRIES_PER_TICK = 5
         const val LOCAL_PATH_RETRY_BASE_MS = 60_000L
         const val LOCAL_PATH_RETRY_MAX_MS = 2 * 60 * 60 * 1000L
+        const val PLEX_CHECK_FAST_INTERVAL_MS = 2 * 60 * 1000L
+        const val PLEX_CHECK_SLOW_INTERVAL_MS = 15 * 60 * 1000L
+        const val PLEX_CHECK_FAST_PHASE_MS = 60 * 60 * 1000L
+        const val PLEX_CHECK_GIVE_UP_MS = 7 * 24 * 60 * 60 * 1000L
     }
 
     fun probeTransfer(fileId: Long) {

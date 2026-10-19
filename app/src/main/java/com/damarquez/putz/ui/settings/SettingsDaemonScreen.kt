@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.damarquez.putz.util.AppProfile
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,6 +104,14 @@ fun SettingsDaemonScreen(
                         false -> Text("Unreachable", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         null -> Unit
                     }
+                }
+                AppProfile.unreachableHint?.let { hint ->
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
                 }
             }
         }

@@ -41,6 +41,11 @@ interface CalibreTransferDao {
     @Update
     suspend fun updateTransfer(transfer: CalibreTransferEntity)
 
+    // Touches only lastUpdatedAt, so it can't clobber a field pollResponses wrote meanwhile
+    // (a whole-row update from an older snapshot can, e.g. libraryVerified).
+    @Query("UPDATE calibre_transfers SET lastUpdatedAt = :timestamp WHERE putioFileId = :fileId")
+    suspend fun touchTransfer(fileId: Long, timestamp: Long)
+
     @Query("DELETE FROM calibre_transfers WHERE putioFileId = :fileId")
     suspend fun deleteTransfer(fileId: Long)
 

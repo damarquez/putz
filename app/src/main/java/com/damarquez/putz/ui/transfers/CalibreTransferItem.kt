@@ -96,6 +96,8 @@ fun CalibreTransferItem(
     modifier: Modifier = Modifier,
     uploadProgress: String? = null,
     isPendingAppend: Boolean = false,
+    isWaitingForPlex: Boolean = false,
+    plexWaitReason: String? = null,
     onCopyUuid: ((String) -> Unit)? = null,
     onCopyTitle: ((String) -> Unit)? = null,
     onCopyAuthor: ((String) -> Unit)? = null,
@@ -283,6 +285,7 @@ fun CalibreTransferItem(
                         probeCount = transfer.probeCount,
                         durationSeconds = transfer.durationSeconds,
                         chainPosition = transfer.chainPosition,
+                        isWaitingForPlex = isWaitingForPlex,
                     )
                     Spacer(Modifier.weight(1f))
                     if (isAssembled) {
@@ -298,7 +301,8 @@ fun CalibreTransferItem(
                         }
                     } else if (transfer.status == CalibreTransferStatus.PENDING ||
                         transfer.status == CalibreTransferStatus.REQUESTED ||
-                        transfer.status == CalibreTransferStatus.PROCESSING) {
+                        transfer.status == CalibreTransferStatus.PROCESSING ||
+                        isWaitingForPlex) {
                         IconButton(onClick = onProbe) {
                             Icon(
                                 imageVector = Icons.Default.Sync,
@@ -323,6 +327,14 @@ fun CalibreTransferItem(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+                if (isWaitingForPlex && !plexWaitReason.isNullOrBlank()) {
+                    Text(
+                        text = plexWaitReason,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
                 if (isCompleted && !transfer.warnings.isNullOrBlank()) {
                     transfer.warnings.split("\n").forEach { warning ->
@@ -500,7 +512,7 @@ fun CalibreTransferItem(
 }
 
 @Composable
-private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null, probeCount: Int = 0, durationSeconds: Double? = null, chainPosition: Int? = null) {
+private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? = null, isAssemblyUploading: Boolean = false, isAppendPending: Boolean = false, errorMessage: String? = null, probeCount: Int = 0, durationSeconds: Double? = null, chainPosition: Int? = null, isWaitingForPlex: Boolean = false) {
     val (icon, color, label) = when (status) {
         CalibreTransferStatus.CHAINED -> Triple(
             Icons.Default.Link,
@@ -526,7 +538,9 @@ private fun StatusBadge(status: CalibreTransferStatus, uploadProgress: String? =
             Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, progressLabel)
         }
         CalibreTransferStatus.COMPLETED -> {
+            // SEND_TO_PLEX: the file is in place, but Plex doesn't list it yet.
             val base = when {
+                isWaitingForPlex -> "Moved, waiting for Plex"
                 probeCount <= 0 -> "Completed"
                 probeCount == 1 -> "Completed and checked"
                 else -> "Completed and checked ${probeCount}x"
