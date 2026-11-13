@@ -262,14 +262,17 @@ class FilesViewModel @Inject constructor(
         val isProtected: Boolean = false,
         val convertToPdf: Boolean = false,
         val ignoreCover: Boolean = false,
+        // The file-name parse the title/author started from — drives the sheet's missing-author /
+        // needs-review outline. Kept here (not just in the sheet) so it survives the preview round-trip.
+        val parsed: MetadataUtils.ParsedName? = null,
     )
 
     private val _calibreSingleDraft = MutableStateFlow<CalibreSingleDraft?>(null)
     val calibreSingleDraft: StateFlow<CalibreSingleDraft?> = _calibreSingleDraft.asStateFlow()
 
     fun startCalibreSingleDraft(file: PutioFile) {
-        val (title, author) = MetadataUtils.extractMetadata(file.displayName)
-        _calibreSingleDraft.value = CalibreSingleDraft(file = file, title = title, author = author)
+        val parsed = MetadataUtils.extractMetadata(file.displayName)
+        _calibreSingleDraft.value = CalibreSingleDraft(file = file, title = parsed.title, author = parsed.author, parsed = parsed)
     }
 
     fun updateCalibreSingleDraft(transform: (CalibreSingleDraft) -> CalibreSingleDraft) {
@@ -307,10 +310,7 @@ class FilesViewModel @Inject constructor(
         // current folder live and swap in each synced file's fresh counterpart before building the
         // draft so the ID captured is current as of right now.
         if (files.none { it.isSynced }) {
-            _calibreBatchDraft.value = files.map { file ->
-                val (title, author) = MetadataUtils.extractMetadata(file.displayName)
-                CalibreBatchDraftItem(file = file, title = title, author = author)
-            }
+            _calibreBatchDraft.value = files.map { file -> CalibreBatchDraftItem.fromFile(file) }.flaggedFirst()
             return
         }
         viewModelScope.launch {
@@ -319,10 +319,8 @@ class FilesViewModel @Inject constructor(
                 ?.data?.first?.associateBy { it.displayName }
                 .orEmpty()
             val draft = files.map { file ->
-                val current = if (file.isSynced) freshByName[file.displayName] ?: file else file
-                val (title, author) = MetadataUtils.extractMetadata(current.displayName)
-                CalibreBatchDraftItem(file = current, title = title, author = author)
-            }
+                CalibreBatchDraftItem.fromFile(if (file.isSynced) freshByName[file.displayName] ?: file else file)
+            }.flaggedFirst()
             _calibreBatchDraft.value = draft
             prefetchBatchLocalPaths(draft)
         }

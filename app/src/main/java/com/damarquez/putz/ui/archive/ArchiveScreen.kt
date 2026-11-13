@@ -602,14 +602,16 @@ fun ArchiveScreen(
             ?: activeArchiveMergeContentType?.defaultOutputFormat(candidates.map { it.file.displayName })
         if (format != null) {
             val displayName = "${candidates.size} ${(activeArchiveMergeContentType?.label ?: "files").lowercase()} → ${format.outputFileName}"
-            val (initialTitle, initialAuthor) = remember(candidates) {
+            val parsedName = remember(candidates) {
                 MetadataUtils.extractMetadata(candidates.first().file.displayName)
             }
+            val (initialTitle, initialAuthor) = parsedName
             val sizeProgress = rememberSizeProgress(candidates.map { it.file }) { viewModel.readStubFileSize(it) }
             CalibreConfirmationSheet(
                 displayName = displayName,
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
+                parsedName = parsedName,
                 onDismiss = { selectedArchiveMergeFlatFiles = null; archiveMergeOutputFormat = null },
                 onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected, convertToPdf, ignoreCover ->
                     viewModel.sendArchiveMerge(candidates, null, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format, ignoreCover = ignoreCover, convertToPdf = convertToPdf)
@@ -629,15 +631,17 @@ fun ArchiveScreen(
             ?: activeArchiveMergeContentType?.defaultOutputFormat(groups.flatMap { it.files }.map { it.file.displayName })
         if (format != null) {
             val displayName = "${groups.size} chapters → ${format.outputFileName}"
-            val (initialTitle, initialAuthor) = remember(groups) {
+            val parsedName = remember(groups) {
                 MetadataUtils.extractMetadata(groups.first().label)
             }
+            val (initialTitle, initialAuthor) = parsedName
             val allFiles = remember(groups) { groups.flatMap { it.files.map { f -> f.file } } }
             val sizeProgress = rememberSizeProgress(allFiles) { viewModel.readStubFileSize(it) }
             CalibreConfirmationSheet(
                 displayName = displayName,
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
+                parsedName = parsedName,
                 onDismiss = { selectedArchiveMergeGroups = null; archiveMergeOutputFormat = null },
                 onConfirm = { title, author, _, assembleBook, _, _, uuid, _, tags, isProtected, convertToPdf, ignoreCover ->
                     viewModel.sendArchiveMerge(null, groups, title, author, uuid, tags, isProtected, assembleBook, outputFormat = format, ignoreCover = ignoreCover, convertToPdf = convertToPdf)
@@ -653,13 +657,15 @@ fun ArchiveScreen(
 
     // Calibre send sheet
     entryForCalibre?.let { entry ->
-        val (initialTitle, initialAuthor) = remember(entry) {
+        val parsedName = remember(entry) {
             MetadataUtils.extractMetadata(entry.name)
         }
+        val (initialTitle, initialAuthor) = parsedName
         CalibreConfirmationSheet(
             displayName = entry.name,
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { entryForCalibre = null },
             onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _, convertToPdf, _ ->
                 viewModel.sendEntryToCalibre(entry, title, author, assembleBook, null, uuid, convertToPdf = convertToPdf)
@@ -676,13 +682,15 @@ fun ArchiveScreen(
         if (pendingAssemblies.isEmpty()) {
             // No pending assembly — start a new one using the regular send sheet with assembleBook=true
             val entry = entryForAssembly!!
-            val (initialTitle, initialAuthor) = remember(entry) {
+            val parsedName = remember(entry) {
                 MetadataUtils.extractMetadata(entry.name)
             }
+            val (initialTitle, initialAuthor) = parsedName
             CalibreConfirmationSheet(
                 displayName = entry.name,
                 initialTitle = initialTitle,
                 initialAuthor = initialAuthor,
+                parsedName = parsedName,
                 onDismiss = { entryForAssembly = null },
                 onConfirm = { title, author, _, assembleBook, _, _, uuid, _, _, _, convertToPdf, _ ->
                     viewModel.sendEntryToCalibre(entry, title, author, assembleBook = assembleBook, assemblyFileId = null, calibreBookUuid = uuid, convertToPdf = convertToPdf)

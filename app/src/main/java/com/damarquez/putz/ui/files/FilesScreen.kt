@@ -557,6 +557,8 @@ fun FilesScreen(
             displayName = singleFile.displayName,
             initialTitle = draft.title,
             initialAuthor = draft.author,
+            parsedName = draft.parsed,
+            onParsedNameChanged = { parsed -> viewModel.updateCalibreSingleDraft { it.copy(parsed = parsed) } },
             initialUuid = draft.uuid,
             initialComments = draft.comments,
             initialTags = draft.tags,
@@ -600,13 +602,15 @@ fun FilesScreen(
 
     if (selectedFileForCover != null) {
         val imageFile = selectedFileForCover!!
-        val (initialTitle, initialAuthor) = remember(imageFile) {
+        val parsedName = remember(imageFile) {
             MetadataUtils.extractMetadata(imageFile.displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         CalibreConfirmationSheet(
             displayName = imageFile.displayName,
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedFileForCover = null },
             onConfirm = { title, author, _, _, _, matchedId, uuid, _, _, _, _, _ ->
                 if (matchedId != null || uuid != null) {
@@ -661,14 +665,16 @@ fun FilesScreen(
 
     if (selectedPackFiles != null) {
         val packFiles = selectedPackFiles!!
-        val (initialTitle, initialAuthor) = remember(packFiles) {
+        val parsedName = remember(packFiles) {
             MetadataUtils.extractMetadata(packFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(packFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${packFiles.size} audio files",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedPackFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 val fileName = if (isAltVersion) "Audiobook.m4b_bkp" else "Audiobook.m4b"
@@ -689,14 +695,16 @@ fun FilesScreen(
 
     if (selectedPdfFiles != null) {
         val pdfFiles = selectedPdfFiles!!
-        val (initialTitle, initialAuthor) = remember(pdfFiles) {
+        val parsedName = remember(pdfFiles) {
             MetadataUtils.extractMetadata(pdfFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(pdfFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${pdfFiles.size} PDF files",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedPdfFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 viewModel.sendMergeFiles("PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), pdfFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
@@ -730,14 +738,16 @@ fun FilesScreen(
 
     if (selectedEpubFiles != null) {
         val epubFiles = selectedEpubFiles!!
-        val (initialTitle, initialAuthor) = remember(epubFiles) {
+        val parsedName = remember(epubFiles) {
             MetadataUtils.extractMetadata(epubFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(epubFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${epubFiles.size} EPUB files",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedEpubFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 viewModel.sendMergeFiles("EPUB_PACK", applyAltVersion("Book.epub", isAltVersion), epubFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
@@ -771,14 +781,16 @@ fun FilesScreen(
 
     if (selectedMobiFiles != null) {
         val mobiFiles = selectedMobiFiles!!
-        val (initialTitle, initialAuthor) = remember(mobiFiles) {
+        val parsedName = remember(mobiFiles) {
             MetadataUtils.extractMetadata(mobiFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(mobiFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${mobiFiles.size} MOBI files",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedMobiFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 viewModel.sendMergeFiles("MOBI_PACK", applyAltVersion("Book.mobi", isAltVersion), mobiFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
@@ -812,14 +824,16 @@ fun FilesScreen(
 
     if (selectedTextFiles != null) {
         val textFiles = selectedTextFiles!!
-        val (initialTitle, initialAuthor) = remember(textFiles) {
+        val parsedName = remember(textFiles) {
             MetadataUtils.extractMetadata(textFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(textFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${textFiles.size} files",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedTextFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 viewModel.sendMergeFiles("TEXT_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), textFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
@@ -859,14 +873,16 @@ fun FilesScreen(
         val imageFiles = selectedImageFiles!!
         val format = selectedImageFilesFormat
         val quality = selectedImageFilesQuality
-        val (initialTitle, initialAuthor) = remember(imageFiles) {
+        val parsedName = remember(imageFiles) {
             MetadataUtils.extractMetadata(imageFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(imageFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${imageFiles.size} images → ${format.outputFileName}",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedImageFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, convertToPdf, ignoreCover ->
                 viewModel.sendMergeFiles(format.itemType, applyAltVersion(format.outputFileName, isAltVersion), imageFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = quality, comments = comments, convertToPdf = convertToPdf)
@@ -1000,14 +1016,16 @@ fun FilesScreen(
         val format = mergeOutputFormat ?: contentType.defaultOutputFormat()
         val effectiveItemType = format.itemType
         val effectiveOutputFileName = format.outputFileName
-        val (initialTitle, initialAuthor) = remember(candidates) {
+        val parsedName = remember(candidates) {
             MetadataUtils.extractMetadata(candidates.first().file.displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(candidates.map { it.file }) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${candidates.size} ${contentType.label.lowercase()} → $effectiveOutputFileName",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedMergeFlatFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, convertToPdf, ignoreCover ->
                 viewModel.sendMergeFiles(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), candidates.map { it.file }, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality, comments = comments, convertToPdf = convertToPdf)
@@ -1030,15 +1048,17 @@ fun FilesScreen(
         val format = mergeOutputFormat ?: contentType.defaultOutputFormat()
         val effectiveItemType = format.itemType
         val effectiveOutputFileName = format.outputFileName
-        val (initialTitle, initialAuthor) = remember(groups) {
+        val parsedName = remember(groups) {
             MetadataUtils.extractMetadata(groups.first().label)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val allFiles = remember(groups) { groups.flatMap { it.files.map { f -> f.file } } }
         val sizeProgress = rememberSizeProgress(allFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${groups.size} chapters → $effectiveOutputFileName",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedMergeGroups = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, convertToPdf, ignoreCover ->
                 viewModel.sendMergeGroups(effectiveItemType, applyAltVersion(effectiveOutputFileName, isAltVersion), groups, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, imageQuality = mergeImageQuality, comments = comments, convertToPdf = convertToPdf)
@@ -1074,14 +1094,16 @@ fun FilesScreen(
 
     if (selectedCbrFiles != null) {
         val cbrFiles = selectedCbrFiles!!
-        val (initialTitle, initialAuthor) = remember(cbrFiles) {
+        val parsedName = remember(cbrFiles) {
             MetadataUtils.extractMetadata(cbrFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(cbrFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${cbrFiles.size} CBR files → PDF",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedCbrFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 viewModel.sendMergeFiles("CBR_PDF_PACK", applyAltVersion("Book.pdf", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)
@@ -1116,14 +1138,16 @@ fun FilesScreen(
 
     if (selectedCbrCbzFiles != null) {
         val cbrFiles = selectedCbrCbzFiles!!
-        val (initialTitle, initialAuthor) = remember(cbrFiles) {
+        val parsedName = remember(cbrFiles) {
             MetadataUtils.extractMetadata(cbrFiles.first().displayName)
         }
+        val (initialTitle, initialAuthor) = parsedName
         val sizeProgress = rememberSizeProgress(cbrFiles) { viewModel.readStubFileSize(it) }
         CalibreConfirmationSheet(
             displayName = "${cbrFiles.size} CBR files → CBZ",
             initialTitle = initialTitle,
             initialAuthor = initialAuthor,
+            parsedName = parsedName,
             onDismiss = { selectedCbrCbzFiles = null },
             onConfirm = { title, author, _, assembleBook, isAltVersion, _, uuid, comments, tags, isProtected, _, ignoreCover ->
                 viewModel.sendMergeFiles("CBR_CBZ_PACK", applyAltVersion("Book.cbz", isAltVersion), cbrFiles, title, author, uuid, tags, isProtected, assembleBook, ignoreCover = ignoreCover, comments = comments)

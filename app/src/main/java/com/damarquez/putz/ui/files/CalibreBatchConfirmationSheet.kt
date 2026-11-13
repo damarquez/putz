@@ -2,6 +2,7 @@ package com.damarquez.putz.ui.files
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -92,7 +93,28 @@ data class CalibreBatchDraftItem(
     // row is still open for review, so Send can dispatch immediately for items that already
     // resolved instead of waiting on a fresh stub-content read for every file.
     val localPath: String? = null,
-)
+    // The parse title/author came from (file name or re-derive). Null = nothing to check, e.g.
+    // after "Looks right" — see authorMissing / pendingReview.
+    val parsed: MetadataUtils.ParsedName? = null,
+) {
+    /** Blank author on a parsed entry — blocks Send until filled in. */
+    val authorMissing: Boolean get() = parsed?.authorMissing(title, author) == true
+    /** A guessed split the user hasn't edited or confirmed yet. */
+    val pendingReview: MetadataUtils.ParseIssue? get() = parsed?.pendingReview(title, author)
+    val isFlagged: Boolean get() = authorMissing || pendingReview != null
+
+    companion object {
+        fun fromFile(file: PutioFile): CalibreBatchDraftItem {
+            val parsed = MetadataUtils.extractMetadata(file.displayName)
+            return CalibreBatchDraftItem(file = file, title = parsed.title, author = parsed.author, parsed = parsed)
+        }
+    }
+}
+
+/** Missing-author entries first, then ones to review, then the rest — each group in its original
+ *  order. Only applied when the draft is built, so rows never jump around while being edited. */
+fun List<CalibreBatchDraftItem>.flaggedFirst(): List<CalibreBatchDraftItem> =
+    sortedBy { if (it.authorMissing) 0 else if (it.pendingReview != null) 1 else 2 }
 
 // Per-row "already exists" / pending-transfer check results, hoisted out of CalibreBatchRow
 // (see rowMatchCache below) so they survive LazyColumn recycling instead of resetting every
@@ -191,7 +213,9 @@ fun CalibreBatchConfirmationSheet(
     // see startCalibreBatchDraft). Deselecting a row here only affects this draft; "Mirror
     // selection" pushes those deselections back so the underlying file list stays in sync too.
     val deselectedFiles = items.filterNot { it.included }.map { it.file }
-    val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() }
+    val missingAuthorCount = includedItems.count { it.authorMissing }
+    val reviewCount = includedItems.count { !it.authorMissing && it.pendingReview != null }
+    val canSend = includedItems.isNotEmpty() && includedItems.all { it.title.isNotBlank() } && missingAuthorCount == 0
     // Resolved once for the whole list (not per row) so synced stubs' real sizes are fetched a
     // single time and shared, rather than re-fetched by every row's own effect.
     val sizeProgress = rememberSizeProgress(items.map { it.file }, readStubFileSize)
@@ -260,8 +284,9 @@ fun CalibreBatchConfirmationSheet(
                             items.forEachIndexed { index, item ->
                                 val locked = rowMatchCache["$index-${item.file.id}"]?.isUuidMatched == true
                                 if (!locked) {
-                                    val (title, author) = MetadataUtils.extractMetadata(item.title)
-                                    onItemChange(item.copy(title = title, author = author))
+                                    MetadataUtils.extractMetadataFromTitleText(item.title)?.let { parsed ->
+                                        onItemChange(item.copy(title = parsed.title, author = parsed.author, parsed = parsed))
+                                    }
                                 }
                             }
                         },
@@ -375,7 +400,24 @@ fun CalibreBatchConfirmationSheet(
                 // Fixed (non-scrolling) shortcuts so either end of a long batch is always one tap
                 // away, rather than requiring a manual fling/drag through dozens of rows.
                 if (items.isNotEmpty()) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        // Flagged rows are sorted to the top when the draft is built, but edits can
+                        // leave a flagged row further down — tapping this jumps to the next one.
+                        if (missingAuthorCount > 0 || reviewCount > 0) {
+                            val firstFlagged = items.indexOfFirst { it.included && it.isFlagged }
+                            Text(
+                                text = listOfNotNull(
+                                    if (missingAuthorCount > 0) "$missingAuthorCount missing author" else null,
+                                    if (reviewCount > 0) "$reviewCount to review" else null,
+                                ).joinToString(" · "),
+                                style = MaterialTheme.typography.labelMedium.copy(textDecoration = TextDecoration.Underline),
+                                color = if (missingAuthorCount > 0) MaterialTheme.colorScheme.error else ReviewColor,
+                                modifier = Modifier.clickable(enabled = firstFlagged >= 0) {
+                                    coroutineScope.launch { batchListState.animateScrollToItem(firstFlagged) }
+                                },
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
                         CompactIconButton(
                             onClick = { coroutineScope.launch { batchListState.animateScrollToItem(lastItemIndex) } },
                             contentDescription = "Jump to bottom",
@@ -440,6 +482,8 @@ fun CalibreBatchConfirmationSheet(
                                 if (isPreviousBatchSending) {
                                     val (done, _) = previousBatchProgress ?: (0 to 0)
                                     "Add ${includedItems.size} to batch already sending ($done sent so far)"
+                                } else if (missingAuthorCount > 0) {
+                                    "Send (${includedItems.size}) — fill in $missingAuthorCount missing author${if (missingAuthorCount > 1) "s" else ""}"
                                 } else {
                                     "Send (${includedItems.size})"
                                 }
@@ -522,6 +566,34 @@ private fun ReplaceInAllRow(
             Button(onClick = onApply, enabled = from.isNotEmpty()) {
                 Text("Apply")
             }
+        }
+    }
+}
+
+/** Outline/label colour for an entry whose title/author split was a guess (see ParseIssue). */
+internal val ReviewColor = Color(0xFFFFA000)
+
+/** Why a send-to-Calibre entry is outlined, plus a "Looks right" dismiss for guessed splits
+ *  ([onLooksRight] null for a missing author, which only clears by filling the field in).
+ *  Shared by the batch rows and the single-file sheet. */
+@Composable
+internal fun ParseIssueBanner(message: String, color: Color, onLooksRight: (() -> Unit)?) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+            color = color,
+            modifier = Modifier.weight(1f),
+        )
+        if (onLooksRight != null) {
+            TextButton(onClick = onLooksRight) { Text("Looks right") }
         }
     }
 }
@@ -693,7 +765,27 @@ private fun CalibreBatchRow(
         }
     }
 
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    // Locked rows take title/author from the UUID match, so the file-name parse no longer applies.
+    val authorMissing = item.included && !isUuidMatched && item.authorMissing
+    val reviewIssue = if (item.included && !isUuidMatched && !authorMissing) item.pendingReview else null
+    val flagColor = when {
+        authorMissing -> MaterialTheme.colorScheme.error
+        reviewIssue != null -> ReviewColor
+        else -> null
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .then(
+                if (flagColor != null) {
+                    Modifier
+                        .border(2.dp, flagColor, MaterialTheme.shapes.small)
+                        .padding(6.dp)
+                } else Modifier
+            ),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (index != null) {
                 Text(
@@ -822,6 +914,18 @@ private fun CalibreBatchRow(
             // writes title/author back for it (see process_book_batch in putz_manager.py), so
             // editing these fields once matched would be misleading. Lock them, mirroring the
             // single-file dialog.
+            if (flagColor != null) {
+                ParseIssueBanner(
+                    message = if (authorMissing) {
+                        (item.parsed?.issue?.takeIf { it == MetadataUtils.ParseIssue.NO_AUTHOR }?.message
+                            ?: "Author is empty") + " — fill it in or deselect"
+                    } else reviewIssue!!.message,
+                    color = flagColor,
+                    onLooksRight = if (reviewIssue != null) {
+                        { onChange(item.copy(parsed = null)) }
+                    } else null,
+                )
+            }
             Spacer(Modifier.height(6.dp))
             CompactOutlinedTextField(
                 value = item.title,
@@ -839,6 +943,16 @@ private fun CalibreBatchRow(
                                 contentDescription = "Load filename as title",
                                 icon = Icons.Default.FileOpen,
                                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            )
+                            CompactIconButton(
+                                onClick = {
+                                    MetadataUtils.extractMetadataFromTitleText(item.title)?.let { parsed ->
+                                        onChange(item.copy(title = parsed.title, author = parsed.author, parsed = parsed))
+                                    }
+                                },
+                                contentDescription = "Re-derive title/author from title",
+                                icon = Icons.Default.Refresh,
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                             CompactIconButton(
                                 onClick = { onChange(item.copy(title = MetadataUtils.fixTitleCapitalization(item.title))) },
@@ -864,7 +978,8 @@ private fun CalibreBatchRow(
                     value = item.author,
                     onValueChange = { onChange(item.copy(author = it)) },
                     label = "Author",
-                    placeholder = "Unknown",
+                    placeholder = if (item.parsed != null) "Required" else "Unknown",
+                    isError = authorMissing,
                     modifier = Modifier
                         .weight(1f)
                         .then(

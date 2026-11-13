@@ -230,44 +230,129 @@ object MetadataUtils {
         return letters.replace(asin.uppercase(), "") in setOf("", "EBOK")
     }
 
-    fun extractMetadata(fileName: String): Pair<String, String> {
-        // Some release naming conventions mix dash characters (e.g. an en-dash after the
-        // author but a plain hyphen before the title) or slip in a non-breaking/unicode space
-        // next to just one separator. Normalize both to plain "-" and " " first, or splitting
-        // on literal " - " only catches some separators and misparses author/title (author
-        // swallows the series tag, title loses it).
-        val nameWithoutExt = cleanStubSuffix(fileName).substringBeforeLast('.')
-            .replace(Regex("[‐-―−]"), "-")
-            .replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000]"), " ")
+    /** Why a parsed title/author needs the user's attention on the send-to-Calibre sheets. */
+    enum class ParseIssue(val message: String) {
+        /** No pattern matched — the author is left blank and the entry can't be sent until filled in. */
+        NO_AUTHOR("Author not found in the file name"),
+        /** Split at a dash with a space missing on one or both sides — could be a hyphenated word. */
+        UNSPACED_DASH("Split at a dash without spaces — check title and author"),
+        /** Author taken from "Title by Author" — "by" can be part of the title. */
+        BY_AUTHOR("Author taken from \"by …\" — check it"),
+        /** Author taken from trailing parentheses — they often hold a series or edition instead. */
+        PAREN_AUTHOR("Author taken from the parentheses — check it"),
+    }
+
+    /**
+     * A title/author split plus how much to trust it. Destructures as `(title, author)`.
+     * [asin] is set for Kindle-archive file names, whose author may stay blank (the daemon reads
+     * title and author from the book itself while the title is still the ASIN placeholder).
+     */
+    data class ParsedName(
+        val title: String,
+        val author: String,
+        val issue: ParseIssue? = null,
+        val asin: String? = null,
+    ) {
+        /** True when [author] is blank and must be filled in before sending. */
+        fun authorMissing(title: String, author: String): Boolean =
+            author.isBlank() && !(asin != null && titleIsAsinPlaceholder(title, asin))
+
+        /** The review flag still standing for these field values — gone once either field is edited
+         *  away from what the parser produced. NO_AUTHOR is reported by [authorMissing] instead. */
+        fun pendingReview(title: String, author: String): ParseIssue? =
+            issue?.takeIf { it != ParseIssue.NO_AUTHOR && title == this.title && author == this.author }
+    }
+
+    fun extractMetadata(fileName: String): ParsedName {
+        val stem = cleanStubSuffix(fileName).substringBeforeLast('.')
+        val asin = kindleAsin(fileName)
+        val parsed = parseName(stem)
+        // An ASIN-named Kindle file never has an author in its name; the daemon reads it from the book.
+        return if (asin != null && parsed.issue == ParseIssue.NO_AUTHOR) parsed.copy(issue = null, asin = asin)
+        else parsed.copy(asin = asin)
+    }
+
+    /**
+     * Re-runs the [extractMetadata] title/author split on text typed into a Title field — the
+     * "re-derive" buttons on the send-to-Calibre sheets. Unlike [extractMetadata] it doesn't treat
+     * the text as a file name: no extension or stub suffix is stripped, so a period inside the text
+     * ("Tolkien, J.R.R. - The Hobbit", "Dune Vol. 2") survives. Returns null when no title/author
+     * pattern matches, so callers leave both fields as they are instead of blanking the author.
+     */
+    fun extractMetadataFromTitleText(text: String): ParsedName? =
+        parseName(text.trim()).takeIf { it.issue != ParseIssue.NO_AUTHOR }
+
+    /** Some release naming conventions mix dash characters (e.g. an en-dash after the author but
+     * a plain hyphen before the title) or slip in a non-breaking/unicode space next to just one
+     * separator. Normalize both to plain "-" and " " first, or splitting on literal " - " only
+     * catches some separators and misparses author/title (author swallows the series tag, title
+     * loses it). */
+    private fun normalizeSeparators(name: String): String = name
+        .replace(Regex("[‐-―−]"), "-")
+        .replace(Regex("[\\u00A0\\u2000-\\u200A\\u202F\\u205F\\u3000]"), " ")
+
+    /** "X -Y" / "X- Y": a dash with a space on one side only. */
+    private val ONE_SIDED_DASH = Regex("""(?<=\S) -(?=\S)|(?<=\S)- (?=\S)""")
+    /** "X-Y": a dash with no space on either side (also matches every hyphenated word). */
+    private val BARE_DASH = Regex("""(?<=\S)-(?=\S)""")
+    /** Parens holding a digit are a series number, year or edition, never an author. */
+    private val TRAILING_PARENS = Regex("""^(.*?)\s*\(([^()\d]+)\)$""")
+
+    /**
+     * The title/author patterns shared by [extractMetadata] and [extractMetadataFromTitleText],
+     * tried in order:
+     *  1. "Author - Title" — the only split trusted without review.
+     *  2. A dash missing a space ("Author -Title", "Author-Title"), only when there's no " - " at
+     *     all. Prefers a one-sided dash; a fully bare one only when it's the name's only hyphen,
+     *     since "Jean-Paul Sartre-Nausea" can't be told apart from a separator.
+     *  3. "Title by Author".
+     *  4. "Title (Author)", when the parens hold no digits.
+     *  5. Nothing matched: whole name as title, blank author, flagged [ParseIssue.NO_AUTHOR].
+     * Format/junk tags like "(epub)" are removed first, so they can never be taken as the author —
+     * a name whose only parens are "(epub)" falls through to the dash rules or to NO_AUTHOR.
+     */
+    private fun parseName(rawName: String): ParsedName {
+        val name = stripJunkParens(normalizeSeparators(rawName)).replace(Regex("\\s+"), " ").trim()
 
         // Pattern: Author - Title (either side may itself contain " - " separated parts or a
         // "[Series NN]" tag — title and author are frequently flipped between release naming
         // conventions, so both sides get the same junk-paren/bracket/dash cleanup rather than
         // only the half currently guessed to be the title).
-        val dashParts = nameWithoutExt.split(" - ")
+        val dashParts = name.split(" - ")
         if (dashParts.size >= 2) {
             val rawTitle = dashParts.drop(1).joinToString(" - ") { it.trim() }
-            return Pair(cleanParsedPart(rawTitle), cleanParsedPart(dashParts[0]))
+            return ParsedName(cleanParsedPart(rawTitle), cleanParsedPart(dashParts[0]))
         }
-        
-        // Pattern: Title (Author)
-        val parenRegex = """^(.*)\s*\((.*)\)$""".toRegex()
-        val match = parenRegex.find(nameWithoutExt)
-        if (match != null) {
-            return Pair(match.groupValues[1].trim(), match.groupValues[2].trim())
-        }
-        
-        // Pattern: Title by Author
-        val byIndex = nameWithoutExt.lastIndexOf(" by ", ignoreCase = true)
-        if (byIndex != -1) {
-            val title = nameWithoutExt.substring(0, byIndex).trim()
-            val author = nameWithoutExt.substring(byIndex + 4).trim()
+
+        val unspacedDash = ONE_SIDED_DASH.find(name)
+            ?: BARE_DASH.findAll(name).toList().singleOrNull()
+        if (unspacedDash != null) {
+            val author = cleanParsedPart(name.substring(0, unspacedDash.range.first))
+            val title = cleanParsedPart(name.substring(unspacedDash.range.last + 1))
             if (title.isNotEmpty() && author.isNotEmpty()) {
-                return Pair(title, author)
+                return ParsedName(title, author, ParseIssue.UNSPACED_DASH)
             }
         }
 
-        return Pair(nameWithoutExt, "Unknown")
+        val byIndex = name.lastIndexOf(" by ", ignoreCase = true)
+        if (byIndex != -1) {
+            val title = cleanParsedPart(name.substring(0, byIndex))
+            val author = cleanParsedPart(name.substring(byIndex + 4))
+            if (title.isNotEmpty() && author.isNotEmpty()) {
+                return ParsedName(title, author, ParseIssue.BY_AUTHOR)
+            }
+        }
+
+        val parens = TRAILING_PARENS.find(name)
+        if (parens != null) {
+            val title = cleanParsedPart(parens.groupValues[1])
+            val author = cleanParsedPart(parens.groupValues[2])
+            if (title.isNotEmpty() && author.isNotEmpty()) {
+                return ParsedName(title, author, ParseIssue.PAREN_AUTHOR)
+            }
+        }
+
+        return ParsedName(cleanParsedPart(name).ifEmpty { name }, "", ParseIssue.NO_AUTHOR)
     }
 
     /**
@@ -279,6 +364,11 @@ object MetadataUtils {
      * not their first character, since `replaceFirstChar` on "(special)" would only touch the "(".
      * Minor words (a, the, and, ...) stay lowercase unless they're the first or last word of the title,
      * or they immediately follow a "-" standing alone between spaces (treated like a clause break).
+     *
+     * Words with deliberate casing — an uppercase letter after their first letter, e.g. "NASA",
+     * "WWII", "II", "McCarthy", "iPhone", "O'Brien" — are kept exactly as typed. The exception is a
+     * title with no lowercase letters at all ("THE HOBBIT"): that's shouting, not acronyms, so
+     * every word is re-cased.
      */
     fun fixTitleCapitalization(title: String): String {
         val words = stripJunkParens(title)
@@ -287,10 +377,14 @@ object MetadataUtils {
             .trim()
             .split(" ")
             .filter { it.isNotEmpty() }
+        val allCaps = words.none { word -> word.any { it.isLowerCase() } }
 
         return words.mapIndexed { index, word ->
             val lower = word.lowercase()
             val letterIndex = word.indexOfFirst { it.isLetter() }
+            val hasDeliberateCasing = letterIndex >= 0 &&
+                word.substring(letterIndex + 1).any { it.isUpperCase() }
+            if (!allCaps && hasDeliberateCasing) return@mapIndexed word
             val bareWord = if (letterIndex >= 0) lower.substring(letterIndex) else lower
             val afterDash = index > 0 && words[index - 1] == "-"
             val isMinorWord = index != 0 && index != words.lastIndex && !afterDash && bareWord in TITLE_CASE_MINOR_WORDS

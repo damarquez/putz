@@ -1,5 +1,6 @@
 package com.damarquez.putz.ui.files
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PersonSearch
@@ -130,6 +132,11 @@ fun CalibreConfirmationSheet(
     includeComments: Boolean = true,
     coverImageUri: Uri? = null,
     sizeSummary: String? = null,
+    // The file-name parse initialTitle/initialAuthor came from. Non-null makes the author required
+    // and outlines a guessed split for review; null (e.g. clipboard sends) keeps the old behaviour
+    // of a blank author going out as "Unknown".
+    parsedName: MetadataUtils.ParsedName? = null,
+    onParsedNameChanged: (MetadataUtils.ParsedName?) -> Unit = {},
     onDraftFieldsChanged: (
         title: String,
         author: String,
@@ -211,6 +218,17 @@ fun CalibreConfirmationSheet(
     // the one mode where a UUID match's title/author edits actually get applied to the book.
     val titleAuthorLocked = isReplaceCover || (isUuidMatched && !isUpdateComments)
     val requiresUuidMatch = isReplaceCover
+
+    // Replaced by the re-derive button; set to null by "Looks right".
+    var currentParse by remember { mutableStateOf(parsedName) }
+    LaunchedEffect(currentParse) { onParsedNameChanged(currentParse) }
+    val authorMissing = !titleAuthorLocked && currentParse?.authorMissing(title, author) == true
+    val reviewIssue = if (!titleAuthorLocked && !authorMissing) currentParse?.pendingReview(title, author) else null
+    val flagColor = when {
+        authorMissing -> MaterialTheme.colorScheme.error
+        reviewIssue != null -> ReviewColor
+        else -> null
+    }
 
     LaunchedEffect(uuid, autoAddTags) {
         if (uuidFromTransfer) return@LaunchedEffect
@@ -539,6 +557,32 @@ fun CalibreConfirmationSheet(
 
                 Spacer(Modifier.height(4.dp))
 
+                // Title/author block, outlined when the file-name parse failed or guessed.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (flagColor != null) {
+                                Modifier
+                                    .border(2.dp, flagColor, MaterialTheme.shapes.small)
+                                    .padding(6.dp)
+                            } else Modifier
+                        ),
+                ) {
+                if (flagColor != null) {
+                    ParseIssueBanner(
+                        message = if (authorMissing) {
+                            (currentParse?.issue?.takeIf { it == MetadataUtils.ParseIssue.NO_AUTHOR }?.message
+                                ?: "Author is empty") + " — fill it in"
+                        } else reviewIssue!!.message,
+                        color = flagColor,
+                        onLooksRight = if (reviewIssue != null) {
+                            { currentParse = null }
+                        } else null,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -564,6 +608,21 @@ fun CalibreConfirmationSheet(
                     )
                     if (!titleAuthorLocked && title.isNotBlank()) {
                         Spacer(Modifier.width(4.dp))
+                        IconButton(
+                            onClick = {
+                                MetadataUtils.extractMetadataFromTitleText(title)?.let { parsed ->
+                                    title = parsed.title
+                                    author = parsed.author
+                                    currentParse = parsed
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Re-derive title/author from title",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         IconButton(
                             onClick = { title = MetadataUtils.fixTitleCapitalization(title) }
                         ) {
@@ -620,10 +679,10 @@ fun CalibreConfirmationSheet(
                         value = if (isReplaceCover && isUuidMatched) matchedBookAuthor ?: "" else author,
                         onValueChange = { author = it },
                         label = "Author",
-                        placeholder = "Unknown",
+                        placeholder = if (currentParse != null) "Required" else "Unknown",
                         modifier = Modifier.weight(1f),
                         enabled = !titleAuthorLocked,
-                        isError = authorHasAnd,
+                        isError = authorHasAnd || authorMissing,
                         supportingText = if (authorHasAnd) {
                             { Text("Use commas for multiple authors — \"and\" suggests title/author may be swapped") }
                         } else null,
@@ -631,6 +690,7 @@ fun CalibreConfirmationSheet(
                         keyboardActions = KeyboardActions(onDone = {
                             val canSend = title.isNotBlank() &&
                                 !authorHasAnd &&
+                                !authorMissing &&
                                 (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
                                 (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
                                 (!requiresUuidMatch || isUuidMatched || uuidFromTransfer)
@@ -672,6 +732,7 @@ fun CalibreConfirmationSheet(
                         }
                     }
                 }
+                } // end title/author block
 
                 if (!isReplaceCover && !isUpdateComments) {
                     Spacer(Modifier.height(8.dp))
@@ -827,6 +888,7 @@ fun CalibreConfirmationSheet(
 
                 val canConfirm = title.isNotBlank() &&
                     !authorHasAnd &&
+                    !authorMissing &&
                     pendingTransfer == null &&
                     (!isReplaceCover && !isUpdateComments || matchedBookId != null || uuidFromTransfer) &&
                     (uuid.isBlank() || isUuidMatched || uuidFromTransfer) &&
